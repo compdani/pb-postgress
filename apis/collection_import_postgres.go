@@ -9,15 +9,23 @@ import (
 
 func bindCollectionPostgresApi(app core.App, rg *router.RouterGroup[*core.RequestEvent]) {
 	subGroup := rg.Group("/collections").Bind(RequireSuperuserAuth())
+	subGroup.GET("/postgres/status", postgresStatus)
 	subGroup.GET("/postgres/tables", postgresTablesList)
 	subGroup.GET("/postgres/tables/{schema}/{table}", postgresTableView)
 	subGroup.POST("/import/postgres", postgresTableImport)
 	subGroup.POST("/import/postgres/refresh", postgresTableRefresh)
 }
 
+func postgresStatus(e *core.RequestEvent) error {
+	baseApp := core.AsBaseApp(e.App)
+	configured := baseApp != nil && baseApp.HasPostgres()
+
+	return e.JSON(http.StatusOK, map[string]bool{"configured": configured})
+}
+
 func postgresTablesList(e *core.RequestEvent) error {
-	baseApp, ok := e.App.(*core.BaseApp)
-	if !ok || !baseApp.HasPostgres() {
+	baseApp := core.AsBaseApp(e.App)
+	if baseApp == nil || !baseApp.HasPostgres() {
 		return e.BadRequestError("Postgres is not configured.", nil)
 	}
 
@@ -30,8 +38,8 @@ func postgresTablesList(e *core.RequestEvent) error {
 }
 
 func postgresTableView(e *core.RequestEvent) error {
-	baseApp, ok := e.App.(*core.BaseApp)
-	if !ok || !baseApp.HasPostgres() {
+	baseApp := core.AsBaseApp(e.App)
+	if baseApp == nil || !baseApp.HasPostgres() {
 		return e.BadRequestError("Postgres is not configured.", nil)
 	}
 
@@ -48,8 +56,8 @@ func postgresTableView(e *core.RequestEvent) error {
 }
 
 func postgresTableRefresh(e *core.RequestEvent) error {
-	baseApp, ok := e.App.(*core.BaseApp)
-	if !ok || !baseApp.HasPostgres() {
+	baseApp := core.AsBaseApp(e.App)
+	if baseApp == nil || !baseApp.HasPostgres() {
 		return e.BadRequestError("Postgres is not configured.", nil)
 	}
 
@@ -74,8 +82,8 @@ func postgresTableRefresh(e *core.RequestEvent) error {
 }
 
 func postgresTableImport(e *core.RequestEvent) error {
-	baseApp, ok := e.App.(*core.BaseApp)
-	if !ok || !baseApp.HasPostgres() {
+	baseApp := core.AsBaseApp(e.App)
+	if baseApp == nil || !baseApp.HasPostgres() {
 		return e.BadRequestError("Postgres is not configured.", nil)
 	}
 

@@ -139,6 +139,15 @@ func (r *RecordFieldResolver) Dialect() SQLDialect {
 	return r.dialect
 }
 
+// RowidSortExpr implements [search.RowidSortResolver].
+func (r *RecordFieldResolver) RowidSortExpr(direction string) (string, error) {
+	col := "_rowid_"
+	if r.dialect == DialectPostgres {
+		col = "id"
+	}
+	return fmt.Sprintf("[[%s]] %s", col, direction), nil
+}
+
 // TokenFunctionsMap implements search.TokenFunctionsProvider.
 func (r *RecordFieldResolver) TokenFunctionsMap() map[string]func(
 	argTokenResolverFunc func(fexpr.Token) (*search.ResolverResult, error),

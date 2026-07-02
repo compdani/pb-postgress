@@ -9,6 +9,14 @@
             max-width: 220px;
         }
     }
+    .collection-postgres-options {
+        width: 100%;
+        margin-top: var(--smSpacing);
+        padding: var(--smSpacing);
+        border: 1px solid var(--inputBorderColor);
+        border-radius: var(--borderRadius);
+        background: var(--surfaceAlt1Color);
+    }
 }
 
 .new-collection-field-btn-wrapper {

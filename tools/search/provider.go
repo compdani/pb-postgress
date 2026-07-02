@@ -301,7 +301,7 @@ func (s *Provider) Exec(items any) (*Result, error) {
 		countCol := s.countCol
 
 		if len(queryInfo.From) > 0 {
-			firstFrom := dbutils.AliasOrIdentifier(queryInfo.From[0])
+			firstFrom := dbutils.BracketColumnRef(queryInfo.From[0])
 			countCol = firstFrom + "." + countCol
 		}
 

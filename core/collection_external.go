@@ -35,6 +35,10 @@ func (app *BaseApp) IsPostgresBacked(c *Collection) bool {
 		return false
 	}
 
+	if c.UsesPostgresRecords() {
+		return true
+	}
+
 	if c.IsExternal() {
 		return true
 	}
@@ -44,7 +48,11 @@ func (app *BaseApp) IsPostgresBacked(c *Collection) bool {
 
 // ManagesPostgresRecordSchema reports whether PocketBase should create/sync the physical Postgres table.
 func (app *BaseApp) ManagesPostgresRecordSchema(c *Collection) bool {
-	return app.IsPostgresBacked(c) && isPostgresSatelliteCollection(c.Name)
+	if app == nil || c == nil || !app.IsPostgresBacked(c) || c.IsExternal() {
+		return false
+	}
+
+	return c.UsesPostgresRecords() || isPostgresSatelliteCollection(c.Name)
 }
 
 // RecordReadDB returns the db builder used for record reads.
@@ -99,9 +107,26 @@ func modelTableName(app App, model Model) string {
 	return model.TableName()
 }
 
+// BaseAppAccessor is implemented by App wrappers that can expose their underlying BaseApp.
+type BaseAppAccessor interface {
+	UnsafeUnwrapBaseApp() *BaseApp
+}
+
+// AsBaseApp returns the underlying BaseApp instance, including from App wrappers.
+func AsBaseApp(app App) *BaseApp {
+	return asBaseApp(app)
+}
+
+func (app *BaseApp) UnsafeUnwrapBaseApp() *BaseApp {
+	return app
+}
+
 func asBaseApp(app App) *BaseApp {
 	if ba, ok := app.(*BaseApp); ok {
 		return ba
+	}
+	if a, ok := app.(BaseAppAccessor); ok {
+		return a.UnsafeUnwrapBaseApp()
 	}
 	return nil
 }

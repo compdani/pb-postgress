@@ -1,6 +1,9 @@
 package dbutils
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // Regexp for columns and tables (the same as the one in dbx).
 var selectRegex = regexp.MustCompile(`(?i:\s+as\s+|\s+)([\w\-_\.]+)$`)
@@ -15,4 +18,10 @@ func AliasOrIdentifier(columnOrTableIdentifier string) string {
 	}
 
 	return columnOrTableIdentifier
+}
+
+// BracketColumnRef normalizes a table or column reference for use inside [[...]] brackets.
+// It strips surrounding quotes and extracts aliases from SELECT expressions.
+func BracketColumnRef(columnOrTableIdentifier string) string {
+	return strings.ReplaceAll(AliasOrIdentifier(columnOrTableIdentifier), `"`, "")
 }

@@ -31,7 +31,7 @@ var Version = "(untracked)"
 // It implements [core.App] via embedding and all of the app interface methods
 // could be accessed directly through the instance (eg. PocketBase.DataDir()).
 type PocketBase struct {
-	core.App
+	core.App // usually *core.BaseApp
 
 	devFlag           bool
 	dataDirFlag       string
@@ -159,6 +159,14 @@ func NewWithConfig(config Config) *PocketBase {
 	})
 
 	return pb
+}
+
+// UnsafeUnwrapBaseApp implements [core.BaseAppAccessor].
+func (pb *PocketBase) UnsafeUnwrapBaseApp() *core.BaseApp {
+	if ba, ok := pb.App.(*core.BaseApp); ok {
+		return ba
+	}
+	return nil
 }
 
 // Start starts the application, aka. registers the default system

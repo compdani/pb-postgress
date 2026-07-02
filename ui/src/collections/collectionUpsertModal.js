@@ -65,6 +65,8 @@ function collectionUpsertModal(rawCollection, modalSettings) {
         collection: {},
         selectedTab: "",
         errorTabs: {},
+        postgresConfigured: false,
+        isLoadingPostgresStatus: false,
         get activeTab() {
             if (!app.collectionTypes[data.collection.type]?.tabs) {
                 return data.selectedTab;
@@ -130,6 +132,25 @@ function collectionUpsertModal(rawCollection, modalSettings) {
         data.collection = JSON.parse(JSON.stringify(collection));
     }
 
+    async function loadPostgresStatus() {
+        data.isLoadingPostgresStatus = true;
+
+        try {
+            const result = await app.pb.send("/api/collections/postgres/status", {
+                method: "GET",
+                requestKey: uniqueId + "_postgres_status",
+            });
+
+            data.postgresConfigured = !!result?.configured;
+            data.isLoadingPostgresStatus = false;
+        } catch (err) {
+            if (!err.isAbort) {
+                data.postgresConfigured = false;
+                data.isLoadingPostgresStatus = false;
+            }
+        }
+    }
+
     async function confirmSave(close = true) {
         if (!data.canSave) {
             return;
@@ -150,6 +171,26 @@ function collectionUpsertModal(rawCollection, modalSettings) {
     function exportPayload() {
         const payload = JSON.parse(JSON.stringify(data.collection));
         payload.fields = payload.fields || [];
+
+        // preserve immutable postgres routing options on update
+        if (!app.utils.isEmpty(data.originalCollection?.id)) {
+            const original = data.originalCollection;
+            if (original.external) {
+                payload.external = true;
+            }
+            if (original.postgresRecords) {
+                payload.postgresRecords = true;
+            }
+            if (original.postgresTable) {
+                payload.postgresTable = original.postgresTable;
+            }
+            if (original.postgresSchema) {
+                payload.postgresSchema = original.postgresSchema;
+            }
+            if (original.s3Files !== undefined) {
+                payload.s3Files = original.s3Files;
+            }
+        }
 
         // remove fields marked for deletion
         for (let i = payload.fields.length - 1; i >= 0; i--) {
@@ -285,6 +326,7 @@ function collectionUpsertModal(rawCollection, modalSettings) {
             },
             onbeforeopen: () => {
                 initCollection(rawCollection);
+                loadPostgresStatus();
 
                 return modalSettings.onbeforeopen?.(el);
             },
@@ -578,45 +620,97 @@ function collectionUpsertModal(rawCollection, modalSettings) {
                                 },
                             ),
                         ),
-                        () => {
-                            if (!data.collection.external) {
+                    ),
+                    () => {
+                        if (data.collection.type === "view") {
+                            return;
+                        }
+
+                        const s3Enabled = app.store.settings?.s3?.enabled;
+                        const perCollection = app.store.settings?.s3?.scope === "perCollection";
+
+                        const s3FilesToggle = () => {
+                            if (!s3Enabled || !perCollection) {
                                 return;
                             }
 
-                            const s3Enabled = app.store.settings?.s3?.enabled;
-                            const perCollection = app.store.settings?.s3?.scope === "perCollection";
-
                             return t.div(
-                                { className: "field m-t-sm" },
-                                t.label(null, "PostgreSQL table"),
-                                t.input({
-                                    type: "text",
-                                    disabled: true,
-                                    value: () => {
-                                        const schema = data.collection.postgresSchema || "public";
-                                        const table = data.collection.postgresTable || data.collection.name;
-                                        return `${schema}.${table}`;
-                                    },
-                                }),
-                                () => {
-                                    if (!s3Enabled || !perCollection) {
-                                        return;
-                                    }
-
-                                    return t.div(
-                                        { className: "m-t-sm" },
-                                        t.label({ className: "inline-flex" }, () => {
-                                            return t.input({
-                                                type: "checkbox",
-                                                checked: () => !!data.collection.s3Files,
-                                                onchange: (e) => (data.collection.s3Files = e.target.checked),
-                                            });
-                                        }, " Store files in S3"),
-                                    );
-                                },
+                                { className: "m-t-sm" },
+                                t.label({ className: "inline-flex" }, () => {
+                                    return t.input({
+                                        type: "checkbox",
+                                        checked: () => !!data.collection.s3Files,
+                                        onchange: (e) => (data.collection.s3Files = e.target.checked),
+                                    });
+                                }, " Store files in S3"),
                             );
-                        },
-                    ),
+                        };
+
+                        if (data.collection.external) {
+                            return t.div(
+                                { className: "collection-postgres-options" },
+                                t.div(
+                                    { className: "field" },
+                                    t.label(null, "PostgreSQL table (imported)"),
+                                    t.input({
+                                        type: "text",
+                                        disabled: true,
+                                        value: () => {
+                                            const schema = data.collection.postgresSchema || "public";
+                                            const table = data.collection.postgresTable || data.collection.name;
+                                            return `${schema}.${table}`;
+                                        },
+                                    }),
+                                    s3FilesToggle(),
+                                ),
+                            );
+                        }
+
+                        if (data.isNew && data.postgresConfigured) {
+                            return t.div(
+                                { className: "collection-postgres-options" },
+                                t.label({ className: "inline-flex" }, () => {
+                                    return t.input({
+                                        type: "checkbox",
+                                        checked: () => !!data.collection.postgresRecords,
+                                        onchange: (e) => {
+                                            data.collection.postgresRecords = e.target.checked;
+                                            if (e.target.checked && perCollection && s3Enabled) {
+                                                data.collection.s3Files = true;
+                                            } else if (!e.target.checked) {
+                                                delete data.collection.s3Files;
+                                            }
+                                        },
+                                    });
+                                }, " Store records in PostgreSQL"),
+                                t.p(
+                                    { className: "txt-hint m-t-xs" },
+                                    "Creates a new PostgreSQL table managed by PocketBase. This cannot be changed after creation.",
+                                ),
+                                () => (data.collection.postgresRecords ? s3FilesToggle() : null),
+                            );
+                        }
+
+                        if (!data.isNew && data.collection.postgresRecords) {
+                            return t.div(
+                                { className: "collection-postgres-options" },
+                                t.div(
+                                    { className: "field" },
+                                    t.label(null, "Record storage"),
+                                    t.input({
+                                        type: "text",
+                                        disabled: true,
+                                        value: () => {
+                                            const schema = data.collection.postgresSchema || "public";
+                                            const table = data.collection.postgresTable || data.collection.name;
+                                            return `PostgreSQL (${schema}.${table})`;
+                                        },
+                                    }),
+                                    s3FilesToggle(),
+                                ),
+                            );
+                        }
+                    },
                 ),
                 t.div(
                     { className: "col-12" },

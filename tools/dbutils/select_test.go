@@ -36,3 +36,24 @@ func TestAliasOrIdentifier(t *testing.T) {
 		})
 	}
 }
+
+func TestBracketColumnRef(t *testing.T) {
+	scenarios := []struct {
+		value    string
+		expected string
+	}{
+		{`"public"."Test"`, "public.Test"},
+		{"test as alias", "alias"},
+		{"plain", "plain"},
+	}
+
+	for _, s := range scenarios {
+		t.Run(s.value, func(t *testing.T) {
+			result := dbutils.BracketColumnRef(s.value)
+
+			if result != s.expected {
+				t.Fatalf("Expected\n%v\ngot\n%v", s.expected, result)
+			}
+		})
+	}
+}

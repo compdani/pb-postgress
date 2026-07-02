@@ -10,6 +10,12 @@ const (
 	rowidSortKey  string = "@rowid"
 )
 
+// RowidSortResolver is optionally implemented by field resolvers to
+// customize the @rowid sort behavior per SQL dialect.
+type RowidSortResolver interface {
+	RowidSortExpr(direction string) (string, error)
+}
+
 // sort field directions
 const (
 	SortAsc  string = "ASC"
@@ -31,6 +37,9 @@ func (s *SortField) BuildExpr(fieldResolver FieldResolver) (string, error) {
 
 	// special case for the builtin SQLite rowid column
 	if s.Name == rowidSortKey {
+		if rs, ok := fieldResolver.(RowidSortResolver); ok {
+			return rs.RowidSortExpr(s.Direction)
+		}
 		return fmt.Sprintf("[[_rowid_]] %s", s.Direction), nil
 	}
 

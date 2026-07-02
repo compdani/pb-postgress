@@ -5,6 +5,27 @@ import (
 	"testing"
 )
 
+func TestAsBaseApp(t *testing.T) {
+	baseApp := NewBaseApp(BaseAppConfig{DataDir: t.TempDir()})
+	if got := AsBaseApp(baseApp); got != baseApp {
+		t.Fatal("expected direct BaseApp unwrap")
+	}
+
+	wrapper := struct {
+		App
+	}{App: baseApp}
+	if got := AsBaseApp(wrapper); got != nil {
+		t.Fatal("expected nil for non-accessor wrapper")
+	}
+
+	accessor := struct {
+		App
+	}{App: baseApp}
+	if got := AsBaseApp(accessor); got != nil {
+		t.Fatal("expected nil for embedded App without accessor")
+	}
+}
+
 func TestCollectionIsExternal(t *testing.T) {
 	collection := NewBaseCollection("products")
 	if collection.IsExternal() {
@@ -26,6 +47,40 @@ func TestIsPostgresBackedWithoutConnection(t *testing.T) {
 	collection.External = true
 	if app.IsPostgresBacked(collection) {
 		t.Fatal("expected false without postgres connection")
+	}
+
+	collection2 := NewBaseCollection("orders")
+	collection2.PostgresRecords = true
+	if app.IsPostgresBacked(collection2) {
+		t.Fatal("expected false for postgresRecords without postgres connection")
+	}
+}
+
+func TestIsPostgresBackedWithPostgresRecords(t *testing.T) {
+	app := NewBaseApp(BaseAppConfig{DataDir: t.TempDir()})
+	app.postgresConfig = PostgresConfig{DefaultSchema: "public"}
+
+	db, err := DefaultDBConnect(app.DataDir() + "/data.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.postgresNonconcurrentDB = db
+
+	collection := NewBaseCollection("orders")
+	collection.PostgresRecords = true
+
+	if !app.IsPostgresBacked(collection) {
+		t.Fatal("expected postgresRecords collection to be postgres backed")
+	}
+
+	if !app.ManagesPostgresRecordSchema(collection) {
+		t.Fatal("expected postgresRecords collection to manage postgres schema")
+	}
+
+	external := NewBaseCollection("legacy")
+	external.External = true
+	if app.ManagesPostgresRecordSchema(external) {
+		t.Fatal("expected external collection to not manage postgres schema")
 	}
 }
 
@@ -158,5 +213,63 @@ func TestCollectionS3FilesValidation(t *testing.T) {
 	err = pgCollection.collectionExternalOptions.validateExternal(app, pgValidator)
 	if err != nil {
 		t.Fatalf("expected no validation error for external collection with s3Files and S3 enabled, got %v", err)
+	}
+
+	managedCollection := NewBaseCollection("orders")
+	managedCollection.PostgresRecords = true
+	managedValidator := &collectionValidator{
+		app: app,
+		new: managedCollection,
+		ctx: context.Background(),
+	}
+
+	err = managedCollection.collectionExternalOptions.validateExternal(app, managedValidator)
+	if err != nil {
+		t.Fatalf("expected no validation error for postgresRecords collection, got %v", err)
+	}
+
+	viewCollection := NewViewCollection("stats")
+	viewCollection.ViewQuery = "SELECT 1"
+	viewCollection.PostgresRecords = true
+	viewValidator := &collectionValidator{
+		app: app,
+		new: viewCollection,
+		ctx: context.Background(),
+	}
+
+	err = viewCollection.collectionExternalOptions.validateExternal(app, viewValidator)
+	if err == nil {
+		t.Fatal("expected validation error for postgresRecords on view collection")
+	}
+}
+
+func TestRestoreImmutableExternalOptions(t *testing.T) {
+	s3True := true
+	original := collectionExternalOptions{
+		External:        true,
+		PostgresRecords: true,
+		PostgresTable:   "orders",
+		PostgresSchema:  "public",
+		S3Files:         &s3True,
+	}
+
+	updated := collectionExternalOptions{}
+	updated.restoreImmutableExternalOptions(original)
+
+	if !updated.External || !updated.PostgresRecords {
+		t.Fatal("expected external postgres options to be restored")
+	}
+	if updated.PostgresTable != "orders" || updated.PostgresSchema != "public" {
+		t.Fatal("expected postgres table/schema to be restored")
+	}
+	if updated.S3Files == nil || !*updated.S3Files {
+		t.Fatal("expected omitted s3Files to be restored")
+	}
+
+	s3False := false
+	updated.S3Files = &s3False
+	updated.restoreImmutableExternalOptions(original)
+	if updated.S3Files == nil || *updated.S3Files {
+		t.Fatal("expected explicit s3Files value to be preserved")
 	}
 }

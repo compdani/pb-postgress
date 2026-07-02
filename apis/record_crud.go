@@ -81,7 +81,7 @@ func recordsList(e *core.RequestEvent) error {
 
 	// use rowid when available to minimize the need of a covering index with the "id" field
 	if !collection.IsView() {
-		if baseApp, ok := e.App.(*core.BaseApp); !ok || !baseApp.IsPostgresBacked(collection) {
+		if baseApp := core.AsBaseApp(e.App); baseApp == nil || !baseApp.IsPostgresBacked(collection) {
 			searchProvider.CountCol("_rowid_")
 		}
 	}

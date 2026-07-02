@@ -121,9 +121,13 @@ func collectionUpdate(e *core.RequestEvent) error {
 		return e.NotFoundError("", err)
 	}
 
+	originalExternal := *collection
+
 	if err := e.BindBody(collection); err != nil {
 		return e.BadRequestError("Failed to load the submitted data due to invalid formatting.", err)
 	}
+
+	collection.RestoreImmutableExternalOptions(originalExternal)
 
 	event := new(core.CollectionRequestEvent)
 	event.RequestEvent = e

@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/tools/types"
@@ -129,7 +130,7 @@ func (app *BaseApp) UpsertPostgresCollectionMetadata(collection *Collection) err
 
 	fieldsJSON, _ := json.Marshal(exported["fields"])
 	indexesJSON, _ := json.Marshal(exported["indexes"])
-	optionsJSON, _ := json.Marshal(exported["options"])
+	optionsJSON := normalizePostgresMetadataJSON(exported["options"])
 
 	_, err = app.PostgresNonconcurrentDB().NewQuery(fmt.Sprintf(`
 		INSERT INTO %s (
@@ -170,7 +171,7 @@ func (app *BaseApp) UpsertPostgresCollectionMetadata(collection *Collection) err
 			"createRule": exported["createRule"],
 			"updateRule": exported["updateRule"],
 			"deleteRule": exported["deleteRule"],
-			"options":    string(optionsJSON),
+			"options":    optionsJSON,
 			"created":    exported["created"],
 			"updated":    exported["updated"],
 			"instanceId": instanceId,
@@ -226,9 +227,12 @@ func (row *postgresCollectionMetadataRow) toCollection(app App) (*Collection, er
 		"createRule": row.CreateRule,
 		"updateRule": row.UpdateRule,
 		"deleteRule": row.DeleteRule,
-		"options":    json.RawMessage(row.Options),
 		"created":    row.Created,
 		"updated":    row.Updated,
+	}
+
+	if err := mergeCollectionOptionsIntoData(data, row.Options); err != nil {
+		return nil, err
 	}
 
 	raw, err := json.Marshal(data)
@@ -241,7 +245,80 @@ func (row *postgresCollectionMetadataRow) toCollection(app App) (*Collection, er
 		return nil, err
 	}
 
+	collection.RawOptions = row.Options
+
 	return collection, nil
+}
+
+func mergeCollectionOptionsIntoData(data map[string]any, options types.JSONRaw) error {
+	if len(options) == 0 || string(options) == "null" {
+		return nil
+	}
+
+	flat, err := parseJSONObject(options)
+	if err != nil {
+		return err
+	}
+
+	if len(flat) == 0 {
+		return nil
+	}
+
+	for k, v := range flat {
+		data[k] = v
+	}
+
+	return nil
+}
+
+func parseJSONObject(raw types.JSONRaw) (map[string]any, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "{}" {
+		return map[string]any{}, nil
+	}
+
+	flat := map[string]any{}
+	if err := json.Unmarshal(raw, &flat); err == nil {
+		return flat, nil
+	}
+
+	// handle legacy/double-encoded jsonb string values
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err != nil {
+		return nil, err
+	}
+
+	encoded = strings.TrimSpace(encoded)
+	if encoded == "" || encoded == "{}" {
+		return map[string]any{}, nil
+	}
+
+	if err := json.Unmarshal([]byte(encoded), &flat); err != nil {
+		return nil, err
+	}
+
+	return flat, nil
+}
+
+func normalizePostgresMetadataJSON(value any) string {
+	switch v := value.(type) {
+	case types.JSONRaw:
+		if len(v) == 0 {
+			return "{}"
+		}
+		return string(v)
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return "{}"
+		}
+		return v
+	default:
+		raw, err := json.Marshal(v)
+		if err != nil || len(raw) == 0 {
+			return "{}"
+		}
+		return string(raw)
+	}
 }
 
 // FindAllPostgresCollectionMetadata returns all mirrored collection metadata rows.

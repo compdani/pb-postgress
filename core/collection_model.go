@@ -563,7 +563,8 @@ func (m Collection) MarshalJSON() ([]byte, error) {
 		alias := struct {
 			baseCollection
 			collectionAuthOptions
-		}{m.baseCollection, m.collectionAuthOptions}
+			collectionExternalOptions
+		}{m.baseCollection, m.collectionAuthOptions, m.collectionExternalOptions}
 
 		// @todo to avoid the below changes consider omitting the field values from the individual structs json tags
 		//
@@ -749,7 +750,12 @@ func onCollectionDeleteExecute(e *CollectionEvent) error {
 			if err := txApp.DeleteView(e.Collection.Name); err != nil {
 				return err
 			}
-		} else if asBaseApp(txApp).IsPostgresBacked(e.Collection) {
+		} else if ba := asBaseApp(txApp); ba != nil && ba.ManagesPostgresRecordSchema(e.Collection) {
+			tableRef := ba.RecordTable(e.Collection)
+			if _, err := ba.PostgresNonconcurrentDB().NewQuery("DROP TABLE IF EXISTS " + tableRef).Execute(); err != nil {
+				return err
+			}
+		} else if ba := asBaseApp(txApp); ba != nil && ba.IsPostgresBacked(e.Collection) {
 			// external/shared postgres tables are not dropped with collection metadata delete
 		} else if err := txApp.DeleteTable(e.Collection.Name); err != nil {
 			return err

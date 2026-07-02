@@ -32,6 +32,10 @@ func (app *BaseApp) SyncCollectionsFromPostgres() error {
 
 		if existing != nil {
 			imported.MarkAsNotNew()
+			// keep local routing options when the mirrored postgres metadata is stale
+			if imported.collectionExternalOptions.isZero() && !existing.collectionExternalOptions.isZero() {
+				imported.RestoreImmutableExternalOptions(*existing)
+			}
 		}
 
 		if err := app.SaveNoValidate(imported); err != nil {
