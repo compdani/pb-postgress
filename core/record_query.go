@@ -28,14 +28,26 @@ func (app *BaseApp) RecordQuery(collectionModelOrIdentifier any) *dbx.SelectQuer
 
 	collection, collectionErr := getCollectionByModelOrIdentifier(app, collectionModelOrIdentifier)
 	if collection != nil {
-		tableName = collection.Name
+		tableName = app.RecordTable(collection)
 	}
 	if tableName == "" {
 		// update with some fake table name for easier debugging
 		tableName = "@@__invalidCollectionModelOrIdentifier"
 	}
 
-	query := app.ConcurrentDB().Select(app.ConcurrentDB().QuoteSimpleColumnName(tableName) + ".*").From(tableName)
+	db := app.ConcurrentDB()
+	if collection != nil && app.IsPostgresBacked(collection) {
+		db = app.RecordReadDB(collection)
+	}
+
+	selectExpr := "*"
+	if collection != nil && !app.IsPostgresBacked(collection) {
+		selectExpr = db.QuoteSimpleColumnName(collection.Name) + ".*"
+	} else if collection == nil {
+		selectExpr = db.QuoteSimpleColumnName(tableName) + ".*"
+	}
+
+	query := db.Select(selectExpr).From(tableName)
 
 	// in case of an error attach a new context and cancel it immediately with the error
 	if collectionErr != nil {
@@ -561,8 +573,12 @@ func (app *BaseApp) FindAuthRecordByEmail(collectionModelOrIdentifier any, email
 
 	index, ok := dbutils.FindSingleColumnUniqueIndex(collection.Indexes, FieldNameEmail)
 	if ok && strings.EqualFold(index.Columns[0].Collate, "nocase") {
-		// case-insensitive search
-		expr = dbx.NewExp("[["+FieldNameEmail+"]] = {:email} COLLATE NOCASE", dbx.Params{"email": email})
+		if app.IsPostgresBacked(collection) {
+			expr = dbx.NewExp("LOWER([["+FieldNameEmail+"]]) = LOWER({:email})", dbx.Params{"email": email})
+		} else {
+			// case-insensitive search
+			expr = dbx.NewExp("[["+FieldNameEmail+"]] = {:email} COLLATE NOCASE", dbx.Params{"email": email})
+		}
 	} else {
 		expr = dbx.HashExp{FieldNameEmail: email}
 	}

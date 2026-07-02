@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ganigeorgiev/fexpr"
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"github.com/pocketbase/pocketbase/tools/inflector"
 	"github.com/pocketbase/pocketbase/tools/search"
 	"github.com/pocketbase/pocketbase/tools/security"
@@ -55,6 +57,7 @@ type RecordFieldResolver struct {
 	allowedFields     []string
 	joins             []*search.Join
 	allowHiddenFields bool
+	dialect           SQLDialect
 	// ---
 	listRuleJoins       []ruleJoin
 	joinAliasSuffix     string // used for uniqueness in the flatten collection list rule join
@@ -94,6 +97,7 @@ func NewRecordFieldResolver(
 		requestInfo:       requestInfo,
 		allowHiddenFields: allowHiddenFields, // note: it is not based only on the requestInfo.auth since it could be used by a non-request internal method
 		joins:             []*search.Join{},
+		dialect:           DialectSQLite,
 		allowedFields: []string{
 			`^\w+[\w\.\:]*$`,
 			`^\@request\.context$`,
@@ -123,7 +127,48 @@ func NewRecordFieldResolver(
 		}
 	}
 
+	if ba := asBaseApp(app); ba != nil {
+		r.dialect = ba.CollectionDialect(baseCollection)
+	}
+
 	return r
+}
+
+// Dialect returns the SQL dialect used by the resolver.
+func (r *RecordFieldResolver) Dialect() SQLDialect {
+	return r.dialect
+}
+
+// TokenFunctionsMap implements search.TokenFunctionsProvider.
+func (r *RecordFieldResolver) TokenFunctionsMap() map[string]func(
+	argTokenResolverFunc func(fexpr.Token) (*search.ResolverResult, error),
+	args ...fexpr.Token,
+) (*search.ResolverResult, error) {
+	if r.dialect == DialectPostgres {
+		return search.PostgresTokenFunctions
+	}
+	return search.TokenFunctions
+}
+
+func (r *RecordFieldResolver) jsonEach(column string) string {
+	if r.dialect == DialectPostgres {
+		return dbutils.JSONEachPostgres(column)
+	}
+	return dbutils.JSONEach(column)
+}
+
+func (r *RecordFieldResolver) jsonArrayLength(column string) string {
+	if r.dialect == DialectPostgres {
+		return dbutils.JSONArrayLengthPostgres(column)
+	}
+	return dbutils.JSONArrayLength(column)
+}
+
+func (r *RecordFieldResolver) jsonExtract(column, path string) string {
+	if r.dialect == DialectPostgres {
+		return dbutils.JSONExtractPostgres(column, path)
+	}
+	return dbutils.JSONExtract(column, path)
 }
 
 // @todo think of a better a way how to call it automatically after BuildExpr

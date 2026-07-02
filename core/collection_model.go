@@ -381,6 +381,7 @@ type baseCollection struct {
 // Collection defines the table, fields and various options related to a set of records.
 type Collection struct {
 	baseCollection
+	collectionExternalOptions
 	collectionAuthOptions
 	collectionViewOptions
 }
@@ -507,6 +508,10 @@ func (m *Collection) unmarshalRawOptions() error {
 		return nil
 	}
 
+	if err := json.Unmarshal(raw, &m.collectionExternalOptions); err != nil {
+		return err
+	}
+
 	switch m.Type {
 	case CollectionTypeView:
 		return json.Unmarshal(raw, &m.collectionViewOptions)
@@ -584,7 +589,10 @@ func (m Collection) MarshalJSON() ([]byte, error) {
 
 		return json.Marshal(alias)
 	default:
-		return json.Marshal(m.baseCollection)
+		return json.Marshal(struct {
+			baseCollection
+			collectionExternalOptions
+		}{m.baseCollection, m.collectionExternalOptions})
 	}
 }
 
@@ -621,7 +629,28 @@ func (m *Collection) DBExport(app App) (map[string]any, error) {
 			return nil, err
 		}
 	case CollectionTypeAuth:
-		if raw, err := types.ParseJSONRaw(m.collectionAuthOptions); err == nil {
+		export := struct {
+			collectionAuthOptions
+			collectionExternalOptions
+		}{m.collectionAuthOptions, m.collectionExternalOptions}
+		if m.collectionExternalOptions.isZero() {
+			if raw, err := types.ParseJSONRaw(m.collectionAuthOptions); err == nil {
+				result["options"] = raw
+			} else {
+				return nil, err
+			}
+			break
+		}
+		if raw, err := types.ParseJSONRaw(export); err == nil {
+			result["options"] = raw
+		} else {
+			return nil, err
+		}
+	default:
+		if m.collectionExternalOptions.isZero() {
+			break
+		}
+		if raw, err := types.ParseJSONRaw(m.collectionExternalOptions); err == nil {
 			result["options"] = raw
 		} else {
 			return nil, err
@@ -720,10 +749,10 @@ func onCollectionDeleteExecute(e *CollectionEvent) error {
 			if err := txApp.DeleteView(e.Collection.Name); err != nil {
 				return err
 			}
-		} else {
-			if err := txApp.DeleteTable(e.Collection.Name); err != nil {
-				return err
-			}
+		} else if asBaseApp(txApp).IsPostgresBacked(e.Collection) {
+			// external/shared postgres tables are not dropped with collection metadata delete
+		} else if err := txApp.DeleteTable(e.Collection.Name); err != nil {
+			return err
 		}
 
 		if !e.Collection.disableIntegrityChecks {
@@ -738,6 +767,14 @@ func onCollectionDeleteExecute(e *CollectionEvent) error {
 	})
 
 	e.App = originalApp
+
+	if txErr == nil {
+		if ba := asBaseApp(e.App); ba != nil && ba.HasPostgres() && ba.IsPostgresBacked(e.Collection) {
+			if err := ba.DeletePostgresCollectionMetadata(e.Collection); err != nil {
+				e.App.Logger().Warn("Failed to delete postgres collection metadata", "collection", e.Collection.Name, "error", err)
+			}
+		}
+	}
 
 	return txErr
 }
@@ -927,6 +964,15 @@ func onCollectionSaveExecute(e *CollectionEvent) error {
 	// trigger an update for all views with changed fields as a result of the current collection save
 	// (ignoring view errors to allow users to update the query from the UI)
 	resaveViewsWithChangedFields(e.App, e.Collection.Id)
+
+	if ba := asBaseApp(e.App); ba != nil && ba.HasPostgres() && ba.IsPostgresBacked(e.Collection) {
+		if err := ba.UpsertPostgresCollectionMetadata(e.Collection); err != nil {
+			e.App.Logger().Warn("Failed to mirror collection metadata to postgres", "collection", e.Collection.Name, "error", err)
+		}
+		if err := ba.UpsertPostgresTableSchema(e.Collection); err != nil {
+			e.App.Logger().Warn("Failed to mirror table schema to postgres", "collection", e.Collection.Name, "error", err)
+		}
+	}
 
 	return nil
 }

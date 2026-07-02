@@ -122,15 +122,10 @@ func (app *BaseApp) delete(ctx context.Context, model Model, isForAuxDB bool) er
 
 		// db write
 		return e.App.OnModelDeleteExecute().Trigger(event, func(e *ModelEvent) error {
-			var db dbx.Builder
-			if isForAuxDB {
-				db = e.App.AuxNonconcurrentDB()
-			} else {
-				db = e.App.NonconcurrentDB()
-			}
+			db := modelWriteDB(e.App, e.Model, isForAuxDB)
 
 			return baseLockRetry(func(attempt int) error {
-				_, err := db.Delete(e.Model.TableName(), dbx.HashExp{
+				_, err := db.Delete(modelTableName(e.App, e.Model), dbx.HashExp{
 					idColumn: pk,
 				}).WithContext(e.Context).Execute()
 
@@ -288,12 +283,7 @@ func (app *BaseApp) create(ctx context.Context, model Model, withValidations boo
 
 		// db write
 		return e.App.OnModelCreateExecute().Trigger(event, func(e *ModelEvent) error {
-			var db dbx.Builder
-			if isForAuxDB {
-				db = e.App.AuxNonconcurrentDB()
-			} else {
-				db = e.App.NonconcurrentDB()
-			}
+			db := modelWriteDB(e.App, e.Model, isForAuxDB)
 
 			dbErr := baseLockRetry(func(attempt int) error {
 				if m, ok := e.Model.(DBExporter); ok {
@@ -311,7 +301,7 @@ func (app *BaseApp) create(ctx context.Context, model Model, withValidations boo
 						return errors.New("empty primary key is not allowed when using the DBExporter interface")
 					}
 
-					_, err = db.Insert(e.Model.TableName(), data).WithContext(e.Context).Execute()
+					_, err = db.Insert(modelTableName(e.App, e.Model), data).WithContext(e.Context).Execute()
 
 					return err
 				}
@@ -383,12 +373,7 @@ func (app *BaseApp) update(ctx context.Context, model Model, withValidations boo
 
 		// db write
 		return e.App.OnModelUpdateExecute().Trigger(event, func(e *ModelEvent) error {
-			var db dbx.Builder
-			if isForAuxDB {
-				db = e.App.AuxNonconcurrentDB()
-			} else {
-				db = e.App.NonconcurrentDB()
-			}
+			db := modelWriteDB(e.App, e.Model, isForAuxDB)
 
 			return baseLockRetry(func(attempt int) error {
 				if m, ok := e.Model.(DBExporter); ok {
@@ -402,7 +387,7 @@ func (app *BaseApp) update(ctx context.Context, model Model, withValidations boo
 						return errors.New("primary key change is not allowed")
 					}
 
-					_, err = db.Update(e.Model.TableName(), data, dbx.HashExp{
+					_, err = db.Update(modelTableName(e.App, e.Model), data, dbx.HashExp{
 						idColumn: e.Model.LastSavedPK(),
 					}).WithContext(e.Context).Execute()
 

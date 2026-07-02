@@ -687,6 +687,10 @@ func (cv *collectionValidator) checkIndexes(value any) error {
 }
 
 func (validator *collectionValidator) validateOptions() error {
+	if err := validator.new.collectionExternalOptions.validateExternal(validator.app, validator); err != nil {
+		return err
+	}
+
 	switch validator.new.Type {
 	case CollectionTypeAuth:
 		return validator.new.collectionAuthOptions.validate(validator)

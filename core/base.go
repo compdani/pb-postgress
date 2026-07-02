@@ -84,6 +84,10 @@ type BaseApp struct {
 	nonconcurrentDB     dbx.Builder
 	auxConcurrentDB     dbx.Builder
 	auxNonconcurrentDB  dbx.Builder
+	postgresConcurrentDB    dbx.Builder
+	postgresNonconcurrentDB dbx.Builder
+	postgresConfig          PostgresConfig
+	postgresTxInfo          *TxAppInfo
 
 	// app event hooks
 	onBootstrap     *hook.Hook[*BootstrapEvent]
@@ -411,6 +415,10 @@ func (app *BaseApp) Bootstrap() error {
 			return err
 		}
 
+		if err := app.initPostgresDB(); err != nil {
+			return err
+		}
+
 		if err := app.initLogger(); err != nil {
 			return err
 		}
@@ -419,8 +427,24 @@ func (app *BaseApp) Bootstrap() error {
 			return err
 		}
 
+		if app.HasPostgres() {
+			if err := app.InitPostgresMetadata(); err != nil {
+				return err
+			}
+
+			if err := app.SyncCollectionsFromPostgres(); err != nil {
+				return err
+			}
+		}
+
 		if err := app.ReloadCachedCollections(); err != nil {
 			return err
+		}
+
+		if app.HasPostgres() {
+			if err := app.InitPostgresSatelliteTables(); err != nil {
+				return err
+			}
 		}
 
 		if err := app.ReloadSettings(); err != nil {
@@ -458,6 +482,8 @@ func (app *BaseApp) ResetBootstrapState() error {
 		&app.nonconcurrentDB,
 		&app.auxConcurrentDB,
 		&app.auxNonconcurrentDB,
+		&app.postgresConcurrentDB,
+		&app.postgresNonconcurrentDB,
 	}
 
 	for _, db := range dbs {

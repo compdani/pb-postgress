@@ -140,7 +140,9 @@ func (app *BaseApp) registerMFAHooks() {
 			old := e.Record.Original().GetString(FieldNamePassword + ":hash")
 			new := e.Record.GetString(FieldNamePassword + ":hash")
 			if old != new {
-				err = e.App.DeleteAllMFAsByRecord(e.Record)
+				err = RunSatelliteCascade(e.App, func(txApp App) error {
+					return txApp.DeleteAllMFAsByRecord(e.Record)
+				})
 				if err != nil {
 					return fmt.Errorf(
 						"[%s] failed to delete all previous MFAs for record %q: %w",

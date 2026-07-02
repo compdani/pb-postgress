@@ -152,7 +152,7 @@ func (app *BaseApp) registerExternalAuthHooks() {
 			}
 
 			originalApp := e.App
-			return e.App.RunInTransaction(func(txApp App) error {
+			runVerifiedUpgrade := func(txApp App) error {
 				e.App = txApp
 				defer func() { e.App = originalApp }()
 
@@ -171,7 +171,13 @@ func (app *BaseApp) registerExternalAuthHooks() {
 				}
 
 				return e.Next()
-			})
+			}
+
+			if ba := asBaseApp(e.App); ba != nil && ba.HasPostgres() {
+				return RunSatelliteCascade(e.App, runVerifiedUpgrade)
+			}
+
+			return e.App.RunInTransaction(runVerifiedUpgrade)
 		},
 		Priority: 99,
 	})

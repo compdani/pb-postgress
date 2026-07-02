@@ -23,6 +23,13 @@ func (app *BaseApp) SyncRecordTableSchema(newCollection *Collection, oldCollecti
 		return nil // nothing to sync since views don't have records table
 	}
 
+	if app.IsPostgresBacked(newCollection) {
+		if app.ManagesPostgresRecordSchema(newCollection) {
+			return app.SyncPostgresRecordTableSchema(newCollection, oldCollection)
+		}
+		return nil
+	}
+
 	txErr := app.RunInTransaction(func(txApp App) error {
 		// create
 		// -----------------------------------------------------------

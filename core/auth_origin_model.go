@@ -122,7 +122,9 @@ func (app *BaseApp) registerAuthOriginHooks() {
 			old := e.Record.Original().GetString(FieldNamePassword + ":hash")
 			new := e.Record.GetString(FieldNamePassword + ":hash")
 			if old != new {
-				err = e.App.DeleteAllAuthOriginsByRecord(e.Record)
+				err = RunSatelliteCascade(e.App, func(txApp App) error {
+					return txApp.DeleteAllAuthOriginsByRecord(e.Record)
+				})
 				if err != nil {
 					e.App.Logger().Warn(
 						"Failed to delete all previous auth origin fingerprints",
@@ -171,12 +173,8 @@ func recordRefHooks[T RecordProxy](app App, collectionName string, optCollection
 			}
 
 			originalApp := e.App
-			txErr := e.App.RunInTransaction(func(txApp App) error {
+			deleteSatellites := func(txApp App) error {
 				e.App = txApp
-
-				if err := e.Next(); err != nil {
-					return err
-				}
 
 				rels, err := txApp.FindAllRecords(collectionName, dbx.HashExp{"collectionRef": e.Collection.Id})
 				if err != nil {
@@ -190,6 +188,23 @@ func recordRefHooks[T RecordProxy](app App, collectionName string, optCollection
 				}
 
 				return nil
+			}
+
+			if ba := asBaseApp(e.App); ba != nil && ba.HasPostgres() {
+				if err := e.Next(); err != nil {
+					return err
+				}
+
+				txErr := RunSatelliteCascade(e.App, deleteSatellites)
+				e.App = originalApp
+				return txErr
+			}
+
+			txErr := e.App.RunInTransaction(func(txApp App) error {
+				if err := e.Next(); err != nil {
+					return err
+				}
+				return deleteSatellites(txApp)
 			})
 			e.App = originalApp
 
@@ -207,12 +222,8 @@ func recordRefHooks[T RecordProxy](app App, collectionName string, optCollection
 			}
 
 			originalApp := e.App
-			txErr := e.App.RunInTransaction(func(txApp App) error {
+			deleteSatellites := func(txApp App) error {
 				e.App = txApp
-
-				if err := e.Next(); err != nil {
-					return err
-				}
 
 				rels, err := txApp.FindAllRecords(collectionName, dbx.HashExp{
 					"collectionRef": e.Record.Collection().Id,
@@ -229,6 +240,23 @@ func recordRefHooks[T RecordProxy](app App, collectionName string, optCollection
 				}
 
 				return nil
+			}
+
+			if ba := asBaseApp(e.App); ba != nil && ba.HasPostgres() {
+				if err := e.Next(); err != nil {
+					return err
+				}
+
+				txErr := RunSatelliteCascade(e.App, deleteSatellites)
+				e.App = originalApp
+				return txErr
+			}
+
+			txErr := e.App.RunInTransaction(func(txApp App) error {
+				if err := e.Next(); err != nil {
+					return err
+				}
+				return deleteSatellites(txApp)
 			})
 			e.App = originalApp
 

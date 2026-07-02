@@ -39,6 +39,7 @@ func NewRouter(app core.App) (*router.Router[*core.RequestEvent], error) {
 	apiGroup := pbRouter.Group("/api")
 	bindSettingsApi(app, apiGroup)
 	bindCollectionApi(app, apiGroup)
+	bindCollectionPostgresApi(app, apiGroup)
 	bindRecordCrudApi(app, apiGroup)
 	bindRecordAuthApi(app, apiGroup)
 	bindLogsApi(app, apiGroup)

@@ -70,10 +70,11 @@ func (app *BaseApp) createTxApp(tx *dbx.Tx, isForAuxDB bool) *BaseApp {
 
 // TxAppInfo represents an active transaction context associated to an existing app instance.
 type TxAppInfo struct {
-	parent     *BaseApp
-	afterFuncs []func(txErr error) error
-	mu         sync.Mutex
-	isForAuxDB bool
+	parent          *BaseApp
+	afterFuncs      []func(txErr error) error
+	mu              sync.Mutex
+	isForAuxDB      bool
+	isForPostgresDB bool
 }
 
 // OnComplete registers the provided callback that will be invoked

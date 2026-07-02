@@ -136,7 +136,9 @@ func (app *BaseApp) registerOTPHooks() {
 			}
 
 			if !e.Record.Original().IsNew() && e.Record.Original().TokenKey() != e.Record.TokenKey() {
-				err := e.App.DeleteAllOTPsByRecord(e.Record)
+				err := RunSatelliteCascade(e.App, func(txApp App) error {
+					return txApp.DeleteAllOTPsByRecord(e.Record)
+				})
 				if err != nil {
 					return fmt.Errorf(
 						"[%s] failed to delete all previous OTPs for record %q: %w",
