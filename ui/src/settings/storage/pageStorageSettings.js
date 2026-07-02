@@ -152,6 +152,35 @@ export function pageStorageSettings() {
                                         ", etc.",
                                     );
                                 },
+                                after: () => {
+                                    if (!data.formSettings.s3?.enabled) {
+                                        return;
+                                    }
+
+                                    return t.div(
+                                        { className: "field m-t-base" },
+                                        t.label({ htmlFor: "storage_s3_scope" }, "S3 scope"),
+                                        t.select(
+                                            {
+                                                id: "storage_s3_scope",
+                                                value: () => data.formSettings.s3?.scope || "all",
+                                                onchange: (e) => {
+                                                    data.formSettings.s3.scope = e.target.value;
+                                                },
+                                            },
+                                            t.option({ value: "all" }, "All collections"),
+                                            t.option({ value: "perCollection" }, "Per collection"),
+                                        ),
+                                        t.p(
+                                            { className: "txt-hint m-t-xs" },
+                                            "When set to ",
+                                            t.strong(null, "Per collection"),
+                                            ", only PostgreSQL-backed collections with ",
+                                            t.code(null, "s3Files"),
+                                            " enabled will use S3. Other collections stay on local disk.",
+                                        ),
+                                    );
+                                },
                             }),
                         ),
                         t.div({ className: "col-lg-12" }, t.hr()),

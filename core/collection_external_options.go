@@ -12,10 +12,11 @@ type collectionExternalOptions struct {
 	External       bool   `form:"external" json:"external,omitempty"`
 	PostgresTable  string `form:"postgresTable" json:"postgresTable,omitempty"`
 	PostgresSchema string `form:"postgresSchema" json:"postgresSchema,omitempty"`
+	S3Files        *bool  `form:"s3Files" json:"s3Files,omitempty"`
 }
 
 func (o collectionExternalOptions) isZero() bool {
-	return !o.External && o.PostgresTable == "" && o.PostgresSchema == ""
+	return !o.External && o.PostgresTable == "" && o.PostgresSchema == "" && o.S3Files == nil
 }
 
 var postgresSatelliteCollectionNames = []string{
@@ -32,6 +33,20 @@ func isPostgresSatelliteCollection(name string) bool {
 // IsExternal reports whether the collection is explicitly marked as external.
 func (m *Collection) IsExternal() bool {
 	return m != nil && m.collectionExternalOptions.External
+}
+
+// UsesS3Files reports whether the collection should store uploaded files in S3.
+func (m *Collection) UsesS3Files(app App) bool {
+	if m == nil || app == nil || app.Settings() == nil {
+		return false
+	}
+
+	settings := app.Settings().S3
+	if settings.NormalizedScope() == S3ScopePerCollection {
+		return m.S3Files != nil && *m.S3Files && settings.Enabled
+	}
+
+	return settings.Enabled
 }
 
 // PostgresTableName returns the linked PostgreSQL table name.
@@ -65,13 +80,25 @@ func (m *Collection) PostgresSchemaName(app App) string {
 }
 
 func (o *collectionExternalOptions) validateExternal(app App, cv *collectionValidator) error {
-	if !o.External {
-		return nil
+	if o.External {
+		if ba, ok := app.(*BaseApp); ok && !ba.HasPostgres() {
+			return validation.Errors{
+				"external": validation.NewError("validation_external_requires_postgres", "External collections require PB_POSTGRES_URL to be configured."),
+			}
+		}
 	}
 
-	if ba, ok := app.(*BaseApp); ok && !ba.HasPostgres() {
-		return validation.Errors{
-			"external": validation.NewError("validation_external_requires_postgres", "External collections require PB_POSTGRES_URL to be configured."),
+	if o.S3Files != nil && *o.S3Files {
+		if ba, ok := app.(*BaseApp); ok && !ba.IsPostgresBacked(cv.new) {
+			return validation.Errors{
+				"s3Files": validation.NewError("validation_s3files_requires_postgres", "S3 file storage can only be enabled for PostgreSQL-backed collections."),
+			}
+		}
+
+		if !app.Settings().S3.Enabled {
+			return validation.Errors{
+				"s3Files": validation.NewError("validation_s3files_requires_s3", "S3 file storage requires global S3 to be enabled."),
+			}
 		}
 	}
 

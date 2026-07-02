@@ -11,6 +11,7 @@ type PostgresImportConfig struct {
 	CollectionName string
 	Type           string
 	DryRun         bool
+	S3Files        *bool
 }
 
 // ImportPostgresTable registers an existing PostgreSQL table as an external PocketBase collection.
@@ -48,6 +49,13 @@ func (app *BaseApp) ImportPostgresTable(config PostgresImportConfig) (*Collectio
 	collection.External = true
 	collection.PostgresTable = config.Table
 	collection.PostgresSchema = config.Schema
+
+	if config.S3Files != nil {
+		collection.S3Files = config.S3Files
+	} else {
+		s3Files := true
+		collection.S3Files = &s3Files
+	}
 
 	hasId := false
 	for _, col := range columns {

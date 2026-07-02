@@ -436,6 +436,11 @@ func (c SMTPConfig) MarshalJSON() ([]byte, error) {
 
 // -------------------------------------------------------------------
 
+const (
+	S3ScopeAll           = "all"
+	S3ScopePerCollection = "perCollection"
+)
+
 type S3Config struct {
 	Enabled        bool   `form:"enabled" json:"enabled"`
 	Bucket         string `form:"bucket" json:"bucket"`
@@ -444,6 +449,20 @@ type S3Config struct {
 	AccessKey      string `form:"accessKey" json:"accessKey"`
 	Secret         string `form:"secret" json:"secret,omitempty"`
 	ForcePathStyle bool   `form:"forcePathStyle" json:"forcePathStyle"`
+	// Scope controls which collections use S3.
+	//   - "all" (default): all collections use S3 when enabled
+	//   - "perCollection": only collections with options.s3Files=true use S3
+	Scope string `form:"scope" json:"scope,omitempty"`
+}
+
+// NormalizedScope returns the effective S3 scope ("all" if empty or unknown).
+func (c S3Config) NormalizedScope() string {
+	switch c.Scope {
+	case S3ScopePerCollection:
+		return S3ScopePerCollection
+	default:
+		return S3ScopeAll
+	}
 }
 
 // Validate makes S3Config validatable by implementing [validation.Validatable] interface.
@@ -454,6 +473,7 @@ func (c S3Config) Validate() error {
 		validation.Field(&c.Region, validation.When(c.Enabled, validation.Required)),
 		validation.Field(&c.AccessKey, validation.When(c.Enabled, validation.Required)),
 		validation.Field(&c.Secret, validation.When(c.Enabled, validation.Required)),
+		validation.Field(&c.Scope, validation.In(S3ScopeAll, S3ScopePerCollection, "")),
 	)
 }
 

@@ -452,7 +452,7 @@ func (f *FileField) afterRecordExecuteFailure(ctx context.Context, app App, reco
 }
 
 func (f *FileField) deleteEmptyRecordDir(ctx context.Context, app App, record *Record) error {
-	fsys, err := app.NewFilesystem()
+	fsys, err := app.NewFilesystemForCollection(record.Collection())
 	if err != nil {
 		return err
 	}
@@ -519,7 +519,7 @@ func (f *FileField) processFilesToUpload(ctx context.Context, app App, record *R
 		return errors.New("uploading files requires the record to have a valid nonempty id")
 	}
 
-	fsys, err := app.NewFilesystem()
+	fsys, err := app.NewFilesystemForCollection(record.Collection())
 	if err != nil {
 		return err
 	}
@@ -583,7 +583,7 @@ func (f *FileField) deleteFilesByNamesList(ctx context.Context, app App, record 
 		return filenames, errors.New("the record doesn't have an id")
 	}
 
-	fsys, err := app.NewFilesystem()
+	fsys, err := app.NewFilesystemForCollection(record.Collection())
 	if err != nil {
 		return filenames, err
 	}

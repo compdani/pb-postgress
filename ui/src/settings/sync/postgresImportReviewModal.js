@@ -20,6 +20,7 @@ function postgresImportReviewModal(settingsArg) {
         collectionName: "",
         type: "base",
         preview: null,
+        s3Files: true,
         onsubmit: async () => {},
     });
 
@@ -46,6 +47,7 @@ function postgresImportReviewModal(settingsArg) {
                     collectionName: settings.collectionName,
                     type: settings.type,
                     dryRun: true,
+                    s3Files: settings.s3Files,
                 },
             });
 
@@ -71,6 +73,7 @@ function postgresImportReviewModal(settingsArg) {
                     collectionName: settings.collectionName,
                     type: settings.type,
                     dryRun: false,
+                    s3Files: settings.s3Files,
                 },
             });
 
@@ -121,6 +124,45 @@ function postgresImportReviewModal(settingsArg) {
                     t.p(null, () => {
                         return `Import ${settings.schema}.${settings.table} as collection "${settings.collectionName}" (${settings.type}).`;
                     }),
+                    () => {
+                        const s3Enabled = app.store.settings?.s3?.enabled;
+                        const perCollection = app.store.settings?.s3?.scope === "perCollection";
+
+                        if (!s3Enabled) {
+                            return t.div(
+                                { className: "alert warning m-b-base" },
+                                "S3 is not enabled. Files for this collection will be stored on local disk unless you enable S3 in ",
+                                t.a({ href: "#/settings/storage", className: "txt-bold" }, "File storage"),
+                                " settings and set scope to ",
+                                t.strong(null, "Per collection"),
+                                ".",
+                            );
+                        }
+
+                        if (!perCollection) {
+                            return t.div(
+                                { className: "alert info m-b-base" },
+                                "S3 scope is set to ",
+                                t.strong(null, "All collections"),
+                                ". All collections will use S3 when enabled.",
+                            );
+                        }
+
+                        return t.div(
+                            { className: "field m-b-base" },
+                            t.label({ className: "inline-flex" }, () => {
+                                return t.input({
+                                    type: "checkbox",
+                                    checked: () => settings.s3Files,
+                                    onchange: (e) => (settings.s3Files = e.target.checked),
+                                });
+                            }, " Store files in S3"),
+                            t.p(
+                                { className: "txt-hint m-t-xs" },
+                                "When enabled, uploaded files for this PostgreSQL-backed collection are stored in S3 instead of local disk.",
+                            ),
+                        );
+                    },
                     () => {
                         if (data.isDryRunning) {
                             return t.div({ className: "block txt-center m-b-base" }, t.span({ className: "loader" }));

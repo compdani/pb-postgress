@@ -145,7 +145,7 @@ func (api *fileApi) download(e *core.RequestEvent) error {
 		baseFilesPath = fileRecord.BaseFilesPath()
 	}
 
-	fsys, err := e.App.NewFilesystem()
+	fsys, err := e.App.NewFilesystemForCollection(collection)
 	if err != nil {
 		return e.InternalServerError("Filesystem initialization failure.", err)
 	}

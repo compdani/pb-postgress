@@ -451,6 +451,32 @@ func TestS3ConfigValidate(t *testing.T) {
 			},
 			[]string{},
 		},
+		{
+			"invalid scope",
+			core.S3Config{
+				Enabled:   true,
+				Endpoint:  "https://example.com",
+				Bucket:    "test",
+				Region:    "test",
+				AccessKey: "test",
+				Secret:    "test",
+				Scope:     "invalid",
+			},
+			[]string{"scope"},
+		},
+		{
+			"valid perCollection scope",
+			core.S3Config{
+				Enabled:   true,
+				Endpoint:  "https://example.com",
+				Bucket:    "test",
+				Region:    "test",
+				AccessKey: "test",
+				Secret:    "test",
+				Scope:     core.S3ScopePerCollection,
+			},
+			[]string{},
+		},
 	}
 
 	for _, s := range scenarios {

@@ -85,6 +85,7 @@ func postgresTableImport(e *core.RequestEvent) error {
 		CollectionName string `form:"collectionName" json:"collectionName"`
 		Type           string `form:"type" json:"type"`
 		DryRun         bool   `form:"dryRun" json:"dryRun"`
+		S3Files        *bool  `form:"s3Files" json:"s3Files"`
 	}{}
 
 	if err := e.BindBody(&form); err != nil {
@@ -97,6 +98,7 @@ func postgresTableImport(e *core.RequestEvent) error {
 		CollectionName: form.CollectionName,
 		Type:           form.Type,
 		DryRun:         form.DryRun,
+		S3Files:        form.S3Files,
 	})
 	if err != nil {
 		return e.BadRequestError("Failed to import postgres table.", err)

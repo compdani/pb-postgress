@@ -739,6 +739,30 @@ func (app *BaseApp) NewMailClient() mailer.Mailer {
 // NB! Make sure to call Close() on the returned result
 // after you are done working with it.
 func (app *BaseApp) NewFilesystem() (*filesystem.System, error) {
+	return app.NewFilesystemForCollection(nil)
+}
+
+// NewFilesystemForCollection creates a new local or S3 filesystem instance
+// for managing regular app files based on the collection storage options.
+//
+// NB! Make sure to call Close() on the returned result
+// after you are done working with it.
+func (app *BaseApp) NewFilesystemForCollection(c *Collection) (*filesystem.System, error) {
+	useS3 := false
+	if c != nil {
+		useS3 = c.UsesS3Files(app)
+	} else if app.settings != nil {
+		useS3 = app.settings.S3.Enabled
+	}
+
+	if useS3 {
+		return app.newS3Filesystem()
+	}
+
+	return filesystem.NewLocal(filepath.Join(app.DataDir(), LocalStorageDirName))
+}
+
+func (app *BaseApp) newS3Filesystem() (*filesystem.System, error) {
 	if app.settings != nil && app.settings.S3.Enabled {
 		return filesystem.NewS3(
 			app.settings.S3.Bucket,
@@ -750,8 +774,7 @@ func (app *BaseApp) NewFilesystem() (*filesystem.System, error) {
 		)
 	}
 
-	// fallback to local filesystem
-	return filesystem.NewLocal(filepath.Join(app.DataDir(), LocalStorageDirName))
+	return nil, errors.New("S3 storage is not configured")
 }
 
 // NewBackupsFilesystem creates a new local or S3 filesystem instance
@@ -1313,8 +1336,8 @@ func supportFiles(m Model) bool {
 }
 
 func (app *BaseApp) registerBaseHooks() {
-	deletePrefix := func(prefix string) error {
-		fs, err := app.NewFilesystem()
+	deletePrefix := func(collection *Collection, prefix string) error {
+		fs, err := app.NewFilesystemForCollection(collection)
 		if err != nil {
 			return err
 		}
@@ -1325,6 +1348,20 @@ func (app *BaseApp) registerBaseHooks() {
 			return errors.New("failed to delete the files at " + prefix)
 		}
 
+		return nil
+	}
+
+	resolveFilesManagerCollection := func(m Model) *Collection {
+		switch v := m.(type) {
+		case *Collection:
+			return v
+		case *Record:
+			return v.Collection()
+		case RecordProxy:
+			if v.ProxyRecord() != nil {
+				return v.ProxyRecord().Collection()
+			}
+		}
 		return nil
 	}
 
@@ -1357,7 +1394,8 @@ func (app *BaseApp) registerBaseHooks() {
 					routine.FireAndForget(func() {
 						defer deleteSem.Release(1)
 
-						if err := deletePrefix(prefix); err != nil {
+						collection := resolveFilesManagerCollection(e.Model)
+						if err := deletePrefix(collection, prefix); err != nil {
 							app.Logger().Error(
 								"Failed to delete storage prefix (non critical error; usually could happen because of S3 api limits)",
 								slog.String("prefix", prefix),

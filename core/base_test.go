@@ -236,6 +236,70 @@ func TestBaseAppNewFilesystem(t *testing.T) {
 	}
 }
 
+func TestBaseAppNewFilesystemForCollection(t *testing.T) {
+	const testDataDir = "./pb_base_app_test_data_dir_per_collection/"
+	defer os.RemoveAll(testDataDir)
+
+	app := core.NewBaseApp(core.BaseAppConfig{
+		DataDir: testDataDir,
+	})
+	defer app.ResetBootstrapState()
+
+	s3True := true
+	pgCollection := core.NewBaseCollection("products")
+	pgCollection.External = true
+	pgCollection.S3Files = &s3True
+
+	localCollection := core.NewBaseCollection("posts")
+
+	// perCollection scope with S3 disabled -> all local
+	fs, err := app.NewFilesystemForCollection(pgCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fs == nil {
+		t.Fatal("expected local filesystem")
+	}
+	fs.Close()
+
+	fs, err = app.NewFilesystemForCollection(localCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fs == nil {
+		t.Fatal("expected local filesystem")
+	}
+	fs.Close()
+
+	// perCollection scope with S3 enabled -> pg uses S3 (misconfigured), local stays local
+	app.Settings().S3.Enabled = true
+	app.Settings().S3.Scope = core.S3ScopePerCollection
+
+	fs, err = app.NewFilesystemForCollection(localCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fs == nil {
+		t.Fatal("expected local filesystem for non-s3 collection")
+	}
+	fs.Close()
+
+	fs, err = app.NewFilesystemForCollection(pgCollection)
+	if err == nil {
+		t.Fatal("expected S3 config error for pg collection with misconfigured S3")
+	}
+
+	// scope=all with S3 enabled -> all collections would use S3 (misconfigured)
+	app.Settings().S3.Scope = core.S3ScopeAll
+	fs, err = app.NewFilesystemForCollection(localCollection)
+	if err == nil {
+		t.Fatal("expected S3 config error with scope=all and misconfigured S3")
+	}
+	if fs != nil {
+		t.Fatalf("expected nil s3 filesystem, got %v", fs)
+	}
+}
+
 func TestBaseAppNewBackupsFilesystem(t *testing.T) {
 	const testDataDir = "./pb_base_app_test_data_dir/"
 	defer os.RemoveAll(testDataDir)

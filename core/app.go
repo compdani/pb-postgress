@@ -97,6 +97,13 @@ type App interface {
 	// after you are done working with it.
 	NewFilesystem() (*filesystem.System, error)
 
+	// NewFilesystemForCollection creates a new local or S3 filesystem instance
+	// for managing regular app files based on the collection storage options.
+	//
+	// NB! Make sure to call Close() on the returned result
+	// after you are done working with it.
+	NewFilesystemForCollection(collection *Collection) (*filesystem.System, error)
+
 	// NewBackupsFilesystem creates a new local or S3 filesystem instance
 	// for managing app backups based on the current app settings.
 	//

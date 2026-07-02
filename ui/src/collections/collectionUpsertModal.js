@@ -578,6 +578,44 @@ function collectionUpsertModal(rawCollection, modalSettings) {
                                 },
                             ),
                         ),
+                        () => {
+                            if (!data.collection.external) {
+                                return;
+                            }
+
+                            const s3Enabled = app.store.settings?.s3?.enabled;
+                            const perCollection = app.store.settings?.s3?.scope === "perCollection";
+
+                            return t.div(
+                                { className: "field m-t-sm" },
+                                t.label(null, "PostgreSQL table"),
+                                t.input({
+                                    type: "text",
+                                    disabled: true,
+                                    value: () => {
+                                        const schema = data.collection.postgresSchema || "public";
+                                        const table = data.collection.postgresTable || data.collection.name;
+                                        return `${schema}.${table}`;
+                                    },
+                                }),
+                                () => {
+                                    if (!s3Enabled || !perCollection) {
+                                        return;
+                                    }
+
+                                    return t.div(
+                                        { className: "m-t-sm" },
+                                        t.label({ className: "inline-flex" }, () => {
+                                            return t.input({
+                                                type: "checkbox",
+                                                checked: () => !!data.collection.s3Files,
+                                                onchange: (e) => (data.collection.s3Files = e.target.checked),
+                                            });
+                                        }, " Store files in S3"),
+                                    );
+                                },
+                            );
+                        },
                     ),
                 ),
                 t.div(
