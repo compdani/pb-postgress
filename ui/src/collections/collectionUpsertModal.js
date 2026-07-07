@@ -710,6 +710,51 @@ function collectionUpsertModal(rawCollection, modalSettings) {
                                 ),
                             );
                         }
+
+                        if (!data.isNew && data.postgresConfigured) {
+                            return t.div(
+                                { className: "collection-postgres-options" },
+                                t.div(
+                                    { className: "field" },
+                                    t.label(null, "Record storage"),
+                                    t.input({
+                                        type: "text",
+                                        disabled: true,
+                                        value: "SQLite",
+                                    }),
+                                ),
+                                t.p(
+                                    { className: "txt-hint m-t-xs" },
+                                    "This collection stores records in SQLite. Migrate to PostgreSQL to move record data while keeping the same collection name, schema, and record IDs.",
+                                ),
+                                t.div(
+                                    { className: "flex m-t-sm" },
+                                    t.button(
+                                        {
+                                            type: "button",
+                                            className: "btn btn-outline btn-sm",
+                                            disabled: () => data.isSaving,
+                                            onclick: () => {
+                                                app.modals.openPostgresMigrateReview({
+                                                    collection: data.collection,
+                                                    onsubmit: async () => {
+                                                        await app.store.loadCollections();
+                                                        const updated = app.store.collections.find(
+                                                            (c) => c.id == data.collection.id,
+                                                        );
+                                                        if (updated) {
+                                                            await initCollection(updated);
+                                                        }
+                                                    },
+                                                });
+                                            },
+                                        },
+                                        t.i({ className: "ri-database-2-line" }),
+                                        t.span({ className: "txt" }, "Migrate to PostgreSQL"),
+                                    ),
+                                ),
+                            );
+                        }
                     },
                 ),
                 t.div(

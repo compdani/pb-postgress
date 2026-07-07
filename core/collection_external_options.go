@@ -136,7 +136,7 @@ func (o *collectionExternalOptions) validateExternal(app App, cv *collectionVali
 	}
 
 	if cv.original != nil && !cv.original.IsNew() {
-		if cv.original.PostgresRecords != o.PostgresRecords {
+		if cv.original.PostgresRecords != o.PostgresRecords && !cv.new.allowPostgresRecordsMigration {
 			return validation.Errors{
 				"postgresRecords": validation.NewError("validation_postgres_records_immutable", "The PostgreSQL records storage option cannot be changed after collection creation."),
 			}

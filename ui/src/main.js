@@ -38,6 +38,7 @@ import "./apiPreview/apiPreviewModal";
 import "./settings/mail/mailTestModal";
 import "./settings/sync/importCollectionsReviewModal";
 import "./settings/sync/postgresImportReviewModal";
+import "./settings/sync/postgresMigrateReviewModal";
 import "./records/recordSummary";
 import "./records/recordsSearchbar";
 import "./records/recordFileThumb";

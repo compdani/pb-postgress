@@ -14,6 +14,7 @@ func bindCollectionPostgresApi(app core.App, rg *router.RouterGroup[*core.Reques
 	subGroup.GET("/postgres/tables/{schema}/{table}", postgresTableView)
 	subGroup.POST("/import/postgres", postgresTableImport)
 	subGroup.POST("/import/postgres/refresh", postgresTableRefresh)
+	subGroup.POST("/{collection}/migrate/postgres", collectionMigrateToPostgres)
 }
 
 func postgresStatus(e *core.RequestEvent) error {
@@ -113,4 +114,43 @@ func postgresTableImport(e *core.RequestEvent) error {
 	}
 
 	return e.JSON(http.StatusOK, collection)
+}
+
+func collectionMigrateToPostgres(e *core.RequestEvent) error {
+	baseApp := core.AsBaseApp(e.App)
+	if baseApp == nil || !baseApp.HasPostgres() {
+		return e.BadRequestError("Postgres is not configured.", nil)
+	}
+
+	collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+	if err != nil || collection == nil {
+		return e.NotFoundError("", err)
+	}
+
+	form := struct {
+		DryRun           bool   `form:"dryRun" json:"dryRun"`
+		DeleteSQLiteData *bool  `form:"deleteSQLiteData" json:"deleteSQLiteData"`
+		BatchSize        int    `form:"batchSize" json:"batchSize"`
+		PostgresSchema   string `form:"postgresSchema" json:"postgresSchema"`
+		PostgresTable    string `form:"postgresTable" json:"postgresTable"`
+		S3Files          *bool  `form:"s3Files" json:"s3Files"`
+	}{}
+
+	if err := e.BindBody(&form); err != nil {
+		return e.BadRequestError("Invalid migration payload.", err)
+	}
+
+	result, err := baseApp.MigrateCollectionToPostgres(collection, core.CollectionPostgresMigrationConfig{
+		DryRun:           form.DryRun,
+		DeleteSQLiteData:   form.DeleteSQLiteData,
+		BatchSize:        form.BatchSize,
+		PostgresSchema:   form.PostgresSchema,
+		PostgresTable:    form.PostgresTable,
+		S3Files:          form.S3Files,
+	})
+	if err != nil {
+		return e.BadRequestError("Failed to migrate collection to postgres.", err)
+	}
+
+	return e.JSON(http.StatusOK, result)
 }

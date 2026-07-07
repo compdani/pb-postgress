@@ -10,6 +10,7 @@ import { pageStorageSettings } from "@/settings/storage/pageStorageSettings";
 import { pageExportCollections } from "@/settings/sync/pageExportCollections";
 import { pageImportCollections } from "@/settings/sync/pageImportCollections";
 import { pageImportPostgres } from "@/settings/sync/pageImportPostgres";
+import { pageMigratePostgres } from "@/settings/sync/pageMigratePostgres";
 
 window.app = window.app || {};
 window.app.routes = window.app.routes || {};
@@ -173,4 +174,5 @@ app.routes.superuserOnly("#/settings/crons", pageCronsSettings);
 app.routes.superuserOnly("#/settings/export-collections", pageExportCollections);
 app.routes.superuserOnly("#/settings/import-collections", pageImportCollections);
 app.routes.superuserOnly("#/settings/import-postgres", pageImportPostgres);
+app.routes.superuserOnly("#/settings/migrate-postgres", pageMigratePostgres);
 app.routes.superuserOnly("#/settings/sql", pageSQLConsole);
