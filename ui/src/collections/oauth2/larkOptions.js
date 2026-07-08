@@ -42,6 +42,7 @@ window.app.oauth2.lark = function(providerInfo, namePrefix, data) {
                     { className: "field" },
                     t.label({ htmlFor: uniqueId + ".site" }, "Site"),
                     app.components.select({
+                        id: uniqueId + ".site",
                         options: domainOptions,
                         required: true,
                         value: () => local.domain || "",

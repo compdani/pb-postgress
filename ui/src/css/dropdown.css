@@ -82,6 +82,9 @@
         &.active {
             background: var(--surfaceAlt2Color);
             transition-duration: var(--activeAnimationSpeed);
+            code {
+                background: var(--surfaceAlt1Color);
+            }
             &:hover {
                 background: var(--surfaceAlt3Color);
                 transition-duration: var(--animationSpeed);
