@@ -19,9 +19,9 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
-	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/pocketbase/dbx"
+	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/forms"
@@ -79,10 +79,11 @@ func hooksBinds(app core.App, loader *goja.Runtime, executors *vmsPool) {
 				}
 
 				err := executors.run(func(executor *goja.Runtime) error {
-					executor.Set("$app", goja.Undefined())
+					oldApp := executor.Get("$app")
 					executor.Set("__args", handlerArgs)
 					res, err := executor.RunProgram(pr)
 					executor.Set("__args", goja.Undefined())
+					executor.Set("$app", oldApp) // reset to its default for the executor
 
 					// check for returned Go error value
 					if resErr := checkGojaValueForError(app, res); resErr != nil {
@@ -192,10 +193,12 @@ func wrapHandlerFunc(executors *vmsPool, handler goja.Value) (func(*core.Request
 
 		wrappedHandler := func(e *core.RequestEvent) error {
 			return executors.run(func(executor *goja.Runtime) error {
+				oldApp := executor.Get("$app")
 				executor.Set("$app", e.App) // overwrite the global $app with the hook scoped instance
 				executor.Set("__args", []any{e})
 				res, err := executor.RunProgram(pr)
 				executor.Set("__args", goja.Undefined())
+				executor.Set("$app", oldApp)
 
 				// check for returned Go error value
 				if resErr := checkGojaValueForError(e.App, res); resErr != nil {
@@ -247,10 +250,12 @@ func wrapMiddlewares(executors *vmsPool, rawMiddlewares ...goja.Value) ([]*hook.
 				Priority: v.priority,
 				Func: func(e *core.RequestEvent) error {
 					return executors.run(func(executor *goja.Runtime) error {
+						oldApp := executor.Get("$app")
 						executor.Set("$app", e.App) // overwrite the global $app with the hook scoped instance
 						executor.Set("__args", []any{e})
 						res, err := executor.RunProgram(pr)
 						executor.Set("__args", goja.Undefined())
+						executor.Set("$app", oldApp)
 
 						// check for returned Go error value
 						if resErr := checkGojaValueForError(e.App, res); resErr != nil {
@@ -267,10 +272,12 @@ func wrapMiddlewares(executors *vmsPool, rawMiddlewares ...goja.Value) ([]*hook.
 			wrappedMiddlewares[i] = &hook.Handler[*core.RequestEvent]{
 				Func: func(e *core.RequestEvent) error {
 					return executors.run(func(executor *goja.Runtime) error {
+						oldApp := executor.Get("$app")
 						executor.Set("$app", e.App) // overwrite the global $app with the hook scoped instance
 						executor.Set("__args", []any{e})
 						res, err := executor.RunProgram(pr)
 						executor.Set("__args", goja.Undefined())
+						executor.Set("$app", oldApp)
 
 						// check for returned Go error value
 						if resErr := checkGojaValueForError(e.App, res); resErr != nil {
@@ -458,7 +465,8 @@ func BindCore(vm *goja.Runtime) {
 		return &v
 	})
 	vm.Set("nullObject", func() *types.JSONMap[any] {
-		var v types.JSONMap[any]
+		// cannot be nil because of https://github.com/dop251/goja/issues/822
+		v := types.JSONMap[any]{}
 		return &v
 	})
 

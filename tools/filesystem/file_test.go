@@ -64,8 +64,8 @@ func TestNewFileFromPath(t *testing.T) {
 	if match, err := regexp.Match(normalizedNamePattern, []byte(f.Name)); !match {
 		t.Fatalf("Expected Name to match %v, got %q (%v)", normalizedNamePattern, f.Name, err)
 	}
-	if f.Size != 73 {
-		t.Fatalf("Expected Size %v, got %v", 73, f.Size)
+	if f.Size != testFileSize(t, testDir, originalName) {
+		t.Fatalf("Expected Size %v, got %v", testFileSize(t, testDir, originalName), f.Size)
 	}
 	if _, ok := f.Reader.(*filesystem.PathReader); !ok {
 		t.Fatalf("Expected Reader to be PathReader, got %v", f.Reader)

@@ -33,6 +33,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/plugins/jsvm/internal/types/generated"
+	"github.com/pocketbase/pocketbase/tools/routine"
 	"github.com/pocketbase/pocketbase/tools/template"
 )
 
@@ -217,7 +218,27 @@ func (p *plugin) registerMigrations() error {
 		vm.Set("__hooks", absHooksDir)
 
 		vm.Set("migrate", func(up, down func(txApp core.App) error) {
-			core.AppMigrations.Register(up, down, file)
+			// note: safe wrap to capture any eventual panic and to allow
+			// the error message to print the migration filename
+			core.AppMigrations.Register(
+				func(txApp core.App) error {
+					return routine.SafeWrap(func() error {
+						if up == nil {
+							return nil
+						}
+						return up(txApp)
+					})()
+				},
+				func(txApp core.App) error {
+					return routine.SafeWrap(func() error {
+						if down == nil {
+							return nil
+						}
+						return down(txApp)
+					})()
+				},
+				file,
+			)
 		})
 
 		if p.config.OnInit != nil {
@@ -407,7 +428,7 @@ func (p *plugin) watchHooks() error {
 	})
 
 	// start listening for events.
-	go func() {
+	routine.FireAndForget(func() {
 		defer stopDebounceTimer()
 
 		for {
@@ -437,7 +458,7 @@ func (p *plugin) watchHooks() error {
 				color.Red("Watch error:", err)
 			}
 		}
-	}()
+	})
 
 	// add directories to watch
 	//

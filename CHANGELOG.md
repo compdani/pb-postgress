@@ -1,3 +1,14 @@
+## v0.40.6 (Postgres fork backports)
+
+- Added `app.ClearBootstrap()` and `app.OnBootstrapClear()`; `ResetBootstrapState()` remains as a deprecated alias. Cleanup retains both Postgres pools. Fixed log batch writes deadlocking inside auxiliary database transactions and flush queued logs before clearing bootstrap resources.
+- Added recovered panic stacks and safe internal goroutines, JSVM migration filename errors, clean pooled JSVM app state, negative pool size normalization, and the goja nil-map workaround. Updated goja, fexpr, tygoja and PocketBase's validation fork; regenerated JSVM declarations from this fork, including the extensible `PocketBase` interface and Postgres APIs. These dependencies require Go 1.26.
+- Hardened CORS wildcard subdomains and local file bucket boundaries. Added a thumbnail source-pixel limit (`PB_THUMBS_MAX_SOURCE_PIXELS`, default `250<<20`) before image decoding.
+- Added filesystem writers/hooks and upstream tests, adapted image-size assertions to the current Go PNG encoder, and restored test environment variables after thumbnail tests.
+- Added the BugStage-hosted update plugin, retained the deprecated GitHub plugin, and assigned the UI extensions hook a stable id.
+- Fixed body-limit exact-length `io.ReadAll`, self-referenced cascade deletion (retaining Postgres query routing), OAuth2 provider config merging, view/index validation, geo-distance rounding, noninitialized file handling, and filter parameter serialization/replacement. Added `Record.GetInt64()`, `Store.Keys()`, the logs truncation endpoint, cross-origin opener security header, and non-zero command error exits.
+
+This is a selective backend backport, not a full upstream v0.40.6 merge. It retains master's SQLite version, JSON v1 behavior and backup implementation. The experimental Go 1.27/JSON v2 migration (including streaming JSON and log-data truncation), SQLite upgrades, experimental backup refactor, CI toolchain changes, and upstream hosting/migration documentation are not included. UI and its version/build assets are maintained separately.
+
 ## v0.39.6
 
 - Added `Cc` and `Bcc` recipients to the dev `sendmail` command for consistency with the SMTP mailer.

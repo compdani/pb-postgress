@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	validation "github.com/go-ozzo/ozzo-validation/v4"
+	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/core/validators"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"github.com/pocketbase/pocketbase/tools/list"
@@ -732,12 +732,16 @@ func (f *FileField) toSliceValue(raw any) []any {
 	case nil:
 		// nothing to cast
 	case *filesystem.File:
-		result = append(result, value)
+		if value != nil {
+			result = append(result, value)
+		}
 	case filesystem.File:
 		result = append(result, &value)
 	case []*filesystem.File:
 		for _, v := range value {
-			result = append(result, v)
+			if v != nil {
+				result = append(result, v)
+			}
 		}
 	case []filesystem.File:
 		for _, v := range value {
