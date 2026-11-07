@@ -194,6 +194,17 @@ func realtimeSetSubscriptions(e *core.RequestEvent) error {
 		return e.BadRequestError("", err)
 	}
 
+	for _, sub := range form.Subscriptions {
+		collectionName := strings.SplitN(sub, "/", 2)[0]
+		if collectionName != "" {
+			c, err := e.App.FindCachedCollectionByNameOrId(collectionName)
+			if err == nil {
+				if ba := core.AsBaseApp(e.App); ba != nil && !ba.CollectionVisible(c) {
+					return e.NotFoundError("", nil)
+				}
+			}
+		}
+	}
 	// find subscription client
 	client, err := e.App.SubscriptionsBroker().ClientById(form.ClientId)
 	if err != nil {
@@ -336,7 +347,7 @@ func bindRealtimeEvents(app core.App) {
 				return e.Next()
 			}
 
-			cached, _ := e.App.FindCachedCollectionByNameOrId(e.Collection.Id)
+			cached, _ := scopedCollection(e.App, e.Collection.Id)
 
 			if err := e.Next(); err != nil {
 				return err
@@ -552,7 +563,7 @@ func realtimeResolveRecord(app core.App, model core.Model, optCollectionType str
 	}
 
 	// check if it is custom Record model struct
-	collection, _ := app.FindCachedCollectionByNameOrId(tblName)
+	collection, _ := scopedCollection(app, tblName)
 	if collection != nil && (optCollectionType == "" || collection.Type == optCollectionType) {
 		if id, ok := model.PK().(string); ok {
 			record, _ = app.FindRecordById(collection, id)
@@ -572,7 +583,7 @@ func realtimeResolveRecordCollection(app core.App, model core.Model) (collection
 		return m.ProxyRecord().Collection()
 	default:
 		// check if it is custom Record model struct
-		collection, err := app.FindCachedCollectionByNameOrId(model.TableName())
+		collection, err := scopedCollection(app, model.TableName())
 		if err == nil {
 			return collection
 		}
@@ -593,6 +604,9 @@ type recordData struct {
 // If not set, it fallbacks to app.
 func realtimeBroadcastRecord(app core.App, action string, record *core.Record, dryCache bool, optAccessCheckApp ...core.App) error {
 	collection := record.Collection()
+	if ba := core.AsBaseApp(app); ba != nil && !ba.CollectionVisible(collection) {
+		return nil
+	}
 	if collection == nil {
 		return errors.New("[broadcastRecord] Record collection not set")
 	}

@@ -69,7 +69,7 @@ func bindRecordAuthApi(app core.App, rg *router.RouterGroup[*core.RequestEvent])
 }
 
 func findAuthCollection(e *core.RequestEvent) (*core.Collection, error) {
-	collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+	collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 
 	if err != nil || !collection.IsAuth() {
 		return nil, e.NotFoundError("Missing or invalid auth collection context.", err)

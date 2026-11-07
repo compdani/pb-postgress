@@ -57,6 +57,9 @@ func (app *BaseApp) ImportCollections(toImport []map[string]any, deleteMissing b
 			return err
 		}
 
+		if existing != nil && !app.CollectionVisible(existing) {
+			return fmt.Errorf("cannot import hidden collection %s", existing.Name)
+		}
 		if existing != nil {
 			// refetch for deep copy
 			imported, err = app.FindCollectionByNameOrId(existing.Id)
@@ -153,7 +156,7 @@ func (app *BaseApp) ImportCollections(toImport []map[string]any, deleteMissing b
 		// (before saving the imports in case a deleted collection name is being reused)
 		if deleteMissing {
 			for _, existing := range existingCollections {
-				if mappedImported[existing.Id] != nil || existing.System {
+				if mappedImported[existing.Id] != nil || existing.System || !app.CollectionVisible(existing) {
 					continue // exist or system
 				}
 

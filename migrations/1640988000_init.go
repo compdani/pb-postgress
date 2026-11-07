@@ -34,26 +34,26 @@ func init() {
 
 		// -----------------------------------------------------------
 
-		_, execerr := txApp.DB().NewQuery(`
+		execerr := core.ExecuteSchema(txApp, `
 			CREATE TABLE {{_collections}} (
-				[[id]]         TEXT PRIMARY KEY DEFAULT ('r'||lower(hex(randomblob(7)))) NOT NULL,
+				[[id]]         VARCHAR(255) PRIMARY KEY NOT NULL,
 				[[system]]     BOOLEAN DEFAULT FALSE NOT NULL,
-				[[type]]       TEXT DEFAULT "base" NOT NULL,
-				[[name]]       TEXT UNIQUE NOT NULL,
-				[[fields]]     JSON DEFAULT "[]" NOT NULL,
-				[[indexes]]    JSON DEFAULT "[]" NOT NULL,
+				[[type]]       TEXT DEFAULT 'base' NOT NULL,
+				[[name]]       VARCHAR(255) UNIQUE NOT NULL,
+				[[fields]]     JSON DEFAULT ('[]') NOT NULL,
+				[[indexes]]    JSON DEFAULT ('[]') NOT NULL,
 				[[listRule]]   TEXT DEFAULT NULL,
 				[[viewRule]]   TEXT DEFAULT NULL,
 				[[createRule]] TEXT DEFAULT NULL,
 				[[updateRule]] TEXT DEFAULT NULL,
 				[[deleteRule]] TEXT DEFAULT NULL,
-				[[options]]    JSON DEFAULT "{}" NOT NULL,
-				[[created]]    TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')) NOT NULL,
-				[[updated]]    TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')) NOT NULL
+				[[options]]    JSON DEFAULT ('{}') NOT NULL,
+				[[created]]    TEXT DEFAULT '' NOT NULL,
+				[[updated]]    TEXT DEFAULT '' NOT NULL
 			);
 
 			CREATE INDEX IF NOT EXISTS idx__collections_type on {{_collections}} ([[type]]);
-		`).Execute()
+		`)
 		if execerr != nil {
 			return fmt.Errorf("_collections exec error: %w", execerr)
 		}
@@ -105,14 +105,14 @@ func init() {
 }
 
 func createParamsTable(txApp core.App) error {
-	_, execErr := txApp.DB().NewQuery(`
+	execErr := core.ExecuteSchema(txApp, `
 		CREATE TABLE {{_params}} (
-			[[id]]      TEXT PRIMARY KEY DEFAULT ('r'||lower(hex(randomblob(7)))) NOT NULL,
+			[[id]]      VARCHAR(255) PRIMARY KEY NOT NULL,
 			[[value]]   JSON DEFAULT NULL,
-			[[created]] TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')) NOT NULL,
-			[[updated]] TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')) NOT NULL
+			[[created]] TEXT DEFAULT '' NOT NULL,
+			[[updated]] TEXT DEFAULT '' NOT NULL
 		);
-	`).Execute()
+	`)
 
 	return execErr
 }

@@ -38,7 +38,7 @@ func (app *BaseApp) FindAllCollections(collectionTypes ...string) ([]*Collection
 		q.AndWhere(dbx.In("type", list.ToInterfaceSlice(types)...))
 	}
 
-	err := q.OrderBy("rowid ASC").All(&collections)
+	err := q.OrderBy("created ASC", "id ASC").All(&collections)
 	if err != nil {
 		return nil, err
 	}

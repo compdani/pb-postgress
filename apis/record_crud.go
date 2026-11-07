@@ -34,7 +34,7 @@ func bindRecordCrudApi(app core.App, rg *router.RouterGroup[*core.RequestEvent])
 }
 
 func recordsList(e *core.RequestEvent) error {
-	collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+	collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 	if err != nil || collection == nil {
 		return e.NotFoundError("Missing collection context.", err)
 	}
@@ -144,7 +144,7 @@ func randomizedThrottle(softMax int64) {
 }
 
 func recordView(e *core.RequestEvent) error {
-	collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+	collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 	if err != nil || collection == nil {
 		return e.NotFoundError("Missing collection context.", err)
 	}
@@ -210,7 +210,7 @@ func recordView(e *core.RequestEvent) error {
 
 func recordCreate(responseWriteAfterTx bool, optFinalizer func(data any) error) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+		collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 		if err != nil || collection == nil {
 			return e.NotFoundError("Missing collection context.", err)
 		}
@@ -393,7 +393,7 @@ func recordCreate(responseWriteAfterTx bool, optFinalizer func(data any) error) 
 
 func recordUpdate(responseWriteAfterTx bool, optFinalizer func(data any) error) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+		collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 		if err != nil || collection == nil {
 			return e.NotFoundError("Missing collection context.", err)
 		}
@@ -532,7 +532,7 @@ func recordUpdate(responseWriteAfterTx bool, optFinalizer func(data any) error) 
 
 func recordDelete(responseWriteAfterTx bool, optFinalizer func(data any) error) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+		collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 		if err != nil || collection == nil {
 			return e.NotFoundError("Missing collection context.", err)
 		}

@@ -25,7 +25,7 @@ func tokenFunctionsForResolver(fieldResolver FieldResolver) map[string]func(
 	if provider, ok := fieldResolver.(TokenFunctionsProvider); ok {
 		return provider.TokenFunctionsMap()
 	}
-	return TokenFunctions
+	return PostgresTokenFunctions
 }
 
 // PostgresTokenFunctions contains PostgreSQL-specific filter function equivalents.
@@ -33,7 +33,7 @@ var PostgresTokenFunctions = map[string]func(
 	argTokenResolverFunc func(fexpr.Token) (*ResolverResult, error),
 	args ...fexpr.Token,
 ) (*ResolverResult, error){
-	"geoDistance": TokenFunctions["geoDistance"],
+	"geoDistance": MySQLTokenFunctions["geoDistance"],
 	"strftime":    postgresStrftime,
 }
 

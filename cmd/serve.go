@@ -36,6 +36,9 @@ func NewServeCommand(app core.App, showStartBanner bool) *cobra.Command {
 				}
 			}
 
+			if !app.IsBootstrapped() {
+				return apis.ServeInstaller(app, httpAddr)
+			}
 			err := apis.Serve(app, apis.ServeConfig{
 				HttpAddr:           httpAddr,
 				HttpsAddr:          httpsAddr,

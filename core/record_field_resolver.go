@@ -97,7 +97,7 @@ func NewRecordFieldResolver(
 		requestInfo:       requestInfo,
 		allowHiddenFields: allowHiddenFields, // note: it is not based only on the requestInfo.auth since it could be used by a non-request internal method
 		joins:             []*search.Join{},
-		dialect:           DialectSQLite,
+		dialect:           DialectPostgres,
 		allowedFields: []string{
 			`^\w+[\w\.\:]*$`,
 			`^\@request\.context$`,
@@ -141,7 +141,7 @@ func (r *RecordFieldResolver) Dialect() SQLDialect {
 
 // RowidSortExpr implements [search.RowidSortResolver].
 func (r *RecordFieldResolver) RowidSortExpr(direction string) (string, error) {
-	col := "_rowid_"
+	col := "id"
 	if r.dialect == DialectPostgres {
 		col = "id"
 	}
@@ -156,28 +156,28 @@ func (r *RecordFieldResolver) TokenFunctionsMap() map[string]func(
 	if r.dialect == DialectPostgres {
 		return search.PostgresTokenFunctions
 	}
-	return search.TokenFunctions
+	return search.MySQLTokenFunctions
 }
 
 func (r *RecordFieldResolver) jsonEach(column string) string {
 	if r.dialect == DialectPostgres {
 		return dbutils.JSONEachPostgres(column)
 	}
-	return dbutils.JSONEach(column)
+	return dbutils.JSONEachMySQL(column)
 }
 
 func (r *RecordFieldResolver) jsonArrayLength(column string) string {
 	if r.dialect == DialectPostgres {
 		return dbutils.JSONArrayLengthPostgres(column)
 	}
-	return dbutils.JSONArrayLength(column)
+	return dbutils.JSONArrayLengthMySQL(column)
 }
 
 func (r *RecordFieldResolver) jsonExtract(column, path string) string {
 	if r.dialect == DialectPostgres {
 		return dbutils.JSONExtractPostgres(column, path)
 	}
-	return dbutils.JSONExtract(column, path)
+	return dbutils.JSONExtractMySQL(column, path)
 }
 
 // @todo think of a better a way how to call it automatically after BuildExpr
@@ -449,7 +449,14 @@ func (r *RecordFieldResolver) loadCollection(collectionNameOrId string) (*Collec
 		return r.baseCollection, nil
 	}
 
-	return getCollectionByModelOrIdentifier(r.app, collectionNameOrId)
+	c, err := getCollectionByModelOrIdentifier(r.app, collectionNameOrId)
+	if err != nil {
+		return nil, err
+	}
+	if ba := asBaseApp(r.app); ba != nil && !ba.CollectionVisible(c) {
+		return nil, fmt.Errorf("collection is outside instance scope")
+	}
+	return c, nil
 }
 
 func (r *RecordFieldResolver) registerJoin(tableName string, tableAlias string, on dbx.Expression) error {

@@ -25,6 +25,15 @@ func bindSQLApi(app core.App, rg *router.RouterGroup[*core.RequestEvent]) {
 }
 
 func runSQL(e *core.RequestEvent) error {
+	if ba := core.AsBaseApp(e.App); ba != nil {
+		scope, err := ba.InstanceScope()
+		if err != nil {
+			return err
+		}
+		if scope.Mode != "all" {
+			return e.ForbiddenError("Raw SQL is unavailable for scoped instances", nil)
+		}
+	}
 	// extra precaution in case manually invoked from somewhere else
 	if !e.HasSuperuserAuth() {
 		return e.ForbiddenError("", nil)

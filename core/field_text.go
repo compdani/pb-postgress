@@ -164,10 +164,13 @@ func (f *TextField) ColumnType(app App) string {
 		// note: the default is just a last resort fallback to avoid empty
 		// string values in case the record was inserted with raw sql and
 		// it is not actually used when operating with the db abstraction
-		return "TEXT PRIMARY KEY DEFAULT ('r'||lower(hex(randomblob(7)))) NOT NULL"
+		return fieldColumnType(app, "VARCHAR(255) PRIMARY KEY NOT NULL")
 	}
 
-	return "TEXT DEFAULT '' NOT NULL"
+	if ba := asBaseApp(app); ba != nil && ba.SQLDialect() == DialectMySQL && f.Max > 255 {
+		return "TEXT DEFAULT ('') NOT NULL"
+	}
+	return fieldColumnType(app, "TEXT DEFAULT '' NOT NULL")
 }
 
 // PrepareValue implements [Field.PrepareValue] interface method.

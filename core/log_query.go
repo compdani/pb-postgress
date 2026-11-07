@@ -38,8 +38,14 @@ type LogsStatsItem struct {
 func (app *BaseApp) LogsStats(expr dbx.Expression) ([]*LogsStatsItem, error) {
 	result := []*LogsStatsItem{}
 
+	hour := "substring(created, 1, 13) || ' outer'"
+	if app.SQLDialect() == DialectMySQL {
+		hour = "concat(substring(created, 1, 13), ':00:00Z')"
+	} else {
+		hour = "substring(created, 1, 13) || ':00:00Z'"
+	}
 	query := app.LogQuery().
-		Select("count(id) as total", "strftime('%Y-%m-%d %H:00:00', created) as date").
+		Select("count(id) as total", hour+" as date").
 		GroupBy("date")
 
 	if expr != nil {

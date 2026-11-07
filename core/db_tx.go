@@ -52,13 +52,10 @@ func (app *BaseApp) runInTransaction(db dbx.Builder, fn func(txApp App) error, i
 func (app *BaseApp) createTxApp(tx *dbx.Tx, isForAuxDB bool) *BaseApp {
 	clone := *app
 
-	if isForAuxDB {
-		clone.auxConcurrentDB = tx
-		clone.auxNonconcurrentDB = tx
-	} else {
-		clone.concurrentDB = tx
-		clone.nonconcurrentDB = tx
-	}
+	clone.concurrentDB = tx
+	clone.nonconcurrentDB = tx
+	clone.auxConcurrentDB = tx
+	clone.auxNonconcurrentDB = tx
 
 	clone.txInfo = &TxAppInfo{
 		parent:     app,

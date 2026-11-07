@@ -161,7 +161,7 @@ func RequireSameCollectionContextAuth(collectionPathParam string) *hook.Handler[
 				collectionPathParam = "collection"
 			}
 
-			collection, _ := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue(collectionPathParam))
+			collection, _ := scopedCollection(e.App, e.Request.PathValue(collectionPathParam))
 			if collection == nil || e.Auth.Collection().Id != collection.Id {
 				return e.ForbiddenError(fmt.Sprintf("The request requires auth record from %s collection.", e.Auth.Collection().Name), nil)
 			}

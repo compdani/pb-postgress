@@ -721,6 +721,9 @@ func (m *Collection) RemoveIndex(name string) {
 // -------------------------------------------------------------------
 
 func onCollectionDeleteExecute(e *CollectionEvent) error {
+	if ba := asBaseApp(e.App); ba != nil && !ba.CollectionVisible(e.Collection) {
+		return nil
+	}
 	if e.Collection.System {
 		return fmt.Errorf("[%s] system collections cannot be deleted", e.Collection.Name)
 	}
@@ -751,6 +754,10 @@ func onCollectionDeleteExecute(e *CollectionEvent) error {
 
 	txErr := e.App.RunInTransaction(func(txApp App) error {
 		e.App = txApp
+
+		if err := appendCollectionFileDeletes(txApp, e.Collection); err != nil {
+			return err
+		}
 
 		// delete the related view or records table
 		if e.Collection.IsView() {
@@ -894,6 +901,9 @@ func onCollectionSave(e *CollectionEvent) error {
 }
 
 func onCollectionSaveExecute(e *CollectionEvent) error {
+	if ba := asBaseApp(e.App); ba != nil && !e.Collection.IsNew() && !ba.CollectionVisible(e.Collection) {
+		return nil
+	}
 	defer func() {
 		if err := e.App.ReloadCachedCollections(); err != nil {
 			e.App.Logger().Warn("Failed to reload collections cache", "error", err)

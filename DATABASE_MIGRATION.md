@@ -1,0 +1,77 @@
+# Server database transition
+
+Configure one PostgreSQL or MySQL database with `--dbDriver` and `--dbDSN`,
+`PB_DB_DRIVER` and `PB_DB_DSN`, or `pocketbase.Config.DBDriver` / `DBDSN`.
+Main records, metadata, migrations, logs, and auxiliary operations use the same
+configured database. SQLite is no longer opened and modernc dependencies are
+removed. Existing SQLite datasets require an external migration/export process.
+Database archives are unsupported: use `pg_dump`/`pg_restore` or
+`mysqldump`/`mysql`, and back up uploaded files separately.
+
+Without database configuration, `serve` exposes an installer API:
+
+* `GET /api/installer/status`: dbConnected, installed, fileServer, fileMode.
+* `POST /api/installer/test-db`: `{driver, dsn}`.
+* `POST /api/installer/connect`: tests, persists owner-only `pb_data/db.json`,
+  then bootstraps the database. The bootstrap also stores this instance's id.
+* `POST /api/installer/test-s3`: `{endpoint,bucket,region,accessKey,secret,forcePathStyle}`;
+  uploads, reads, verifies, and deletes a unique probe object.
+* `POST /api/installer/complete`: `{email,password,fileMode,isFileServer,fileServerUrl,s3,scope}`.
+  fileMode is local, fileServer, or s3. Modes cannot be changed without an
+  explicit file migration. Remote mode requires a previously registered host.
+
+`_fileHosts(id,url,mode,secret,registered_at)` contains the registered instance
+id, HTTP URL, full/bucket/s3 mode, and shared secret. Secret is excluded from
+API status serialization. Remote object storage uses authenticated HTTP
+PUT/GET/HEAD/DELETE at `/files/{collectionId}/{recordId}/{filename}`; GET
+`/files/?prefix=...` returns a JSON array of blob list objects. Full instances
+also implement this authenticated API. Thumbnails and copy use the same blob
+backend. Uploads finish before record commit. File deletions are retried from
+`_fileDeleteQueue`; `_fileChanges` is retained as an immutable reconciliation
+feed. PostgreSQL emits transactional `pb_file_changes` notifications. MySQL
+consumers poll `_fileChanges.id`. S3 uses the existing backend globally.
+
+`_instances` stores instance identity and all/allow/deny collection scope.
+Superusers can GET/PUT `/api/instance/scope` with `{mode,collections:[]}` and
+GET `/api/instances`. System and auth collections always remain visible;
+unknown collections and required visible-to-hidden relations are rejected.
+The implementation filters common API collection lookups, collection lists,
+realtime publication/subscription, filters, and relation expansion. Raw SQL is
+disabled for scoped instances. Hidden collection imports are rejected and
+schema synchronization/deletion leaves hidden collections untouched.
+
+## Validation and remaining work
+
+The PostgreSQL integration test requires an **empty disposable database**:
+
+```
+PB_TEST_DB_DRIVER=postgres PB_TEST_DB_DSN='postgres://localhost/pb_test?sslmode=disable' \
+  go test ./core -run '^TestServerDatabaseFileChanges$' -count=1
+```
+
+The same test accepts mysql and a MySQL DSN. It writes schema and data; never
+point it at production. It tests bootstrap, rollback of file events, replace,
+delete, host registration, immutable file mode, and two instances sharing a
+DB with different scopes. Remote HTTP and S3 probes have httptest coverage.
+
+This change is incomplete and should not be treated as production ready:
+
+* The old SQLite fixture harness and many SQLite SQL expectation tests still
+  need replacement. `go test ./...` fails; these failures are not suppressed.
+* MySQL has unit coverage but has not been verified against a live server.
+  Arbitrary partial indexes are rejected; the built-in optional email unique
+  index is translated to a NULLIF functional index (MySQL 8 required).
+  MySQL DDL implicitly commits and cannot provide PostgreSQL's transactional
+  schema migration guarantees. Indexing unrestricted TEXT fields needs review.
+* Collection hooks and custom collection cron jobs are not comprehensively
+  scoped. Cross-scope cascades still use core's application-level integrity
+  implementation; database foreign keys/triggers have not been implemented.
+  Scope is therefore not yet a complete isolation/security boundary.
+* Legacy sidecar PostgreSQL introspection/import APIs remain in source, with
+  sidecar initialization disabled. Full retirement/adaptation is outstanding.
+* User-authored SQL, view SQL, geo/date filter compatibility, large MySQL text
+  fields, and existing-schema upgrades need broader integration coverage.
+* The pre-database server uses a basic HTTP listener; full Serve lifecycle,
+  TLS, cancellation, startup cron hooks, and setup across existing multi-instance
+  deployments need further integration. Use a trusted local setup network.
+* UI and standalone bucket implementation were intentionally not modified.

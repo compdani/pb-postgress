@@ -127,7 +127,7 @@ func (f *NumberField) SetHidden(hidden bool) {
 
 // ColumnType implements [Field.ColumnType] interface method.
 func (f *NumberField) ColumnType(app App) string {
-	return "NUMERIC DEFAULT 0 NOT NULL"
+	return fieldColumnType(app, "NUMERIC DEFAULT 0 NOT NULL")
 }
 
 // PrepareValue implements [Field.PrepareValue] interface method.
