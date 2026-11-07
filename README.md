@@ -464,6 +464,10 @@ go test ./...
 
 Check also the [Testing guide](http://pocketbase.io/docs/testing) to learn how to write your own custom application tests.
 
+## File bucket
+
+`cmd/bucket` stores uploaded files on disk for one shared Postgres or MySQL database. Other instances send bytes with `PUT /files/{collection}/{recordId}/{filename}` and a bearer token. The bucket registers itself in `_fileHosts` (`mode=bucket`) and prunes or refreshes files from the `_fileChanges` log. It does not serve S3, and it does not open SQLite. See [tools/bucket/README.md](tools/bucket/README.md).
+
 ## Security
 
 If you discover a security vulnerability within PocketBase, please send an e-mail to **support at pocketbase.io**.
