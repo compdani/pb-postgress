@@ -1,6 +1,7 @@
 package apis
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -71,7 +72,9 @@ func installerStatus(app core.App, detailed bool) (map[string]any, error) {
 	return status, nil
 }
 
-func installerHandler(app core.App) http.Handler {
+// installerHandler serves /api/installer/*. onComplete, when set, is called
+// after setup finishes or after connecting to an already set-up database.
+func installerHandler(app core.App, onComplete func()) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		installerMutex.Lock()
 		defer installerMutex.Unlock()
@@ -131,6 +134,10 @@ func installerHandler(app core.App) http.Handler {
 				if err != nil {
 					fail(500, errors.New("database initialization failed"))
 					return
+				}
+				// Joining a database that another instance already set up.
+				if s, err := installerStatus(app, false); err == nil && s["installed"] == true && onComplete != nil {
+					defer onComplete()
 				}
 			}
 			json.NewEncoder(w).Encode(map[string]any{"ok": true})
@@ -234,6 +241,9 @@ func installerHandler(app core.App) http.Handler {
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			if onComplete != nil {
+				onComplete()
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -241,60 +251,54 @@ func installerHandler(app core.App) http.Handler {
 }
 
 func bindInstallerAPI(app core.App, rg *router.RouterGroup[*core.RequestEvent]) {
-	h := installerHandler(app)
+	h := installerHandler(app, nil)
 	for _, path := range []string{"test-db", "test-s3", "connect", "complete"} {
 		rg.POST("/installer/"+path, WrapStdHandler(h))
 	}
 	rg.GET("/installer/status", WrapStdHandler(h))
 }
 
-// ServeInstaller runs the API before a database is configured. It serves the
-// dashboard so the installer page can load, and prints the setup URL with the
-// one-time installer token. After connecting, the full API is available.
+// ServeInstaller serves only the installer API and the dashboard while no
+// database is configured, and prints the setup URL with the one-time
+// installer token. It returns nil once setup is finished (or the connected
+// database is already set up), so the caller can start the full server with
+// apis.Serve; the installer listener never serves the regular API.
 func ServeInstaller(app core.App, addr string) error {
-	installer := installerHandler(app)
+	done := make(chan struct{})
+	var once sync.Once
+	installer := installerHandler(app, func() { once.Do(func() { close(done) }) })
 	var dashboard http.Handler
 	if ui.DistDirFS != nil {
 		dashboard = http.StripPrefix("/_/", http.FileServerFS(ui.DistDirFS))
 	}
-	var mux http.Handler
-	var mu sync.Mutex
 	server := &http.Server{
 		Addr:              addr,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       time.Minute,
-		WriteTimeout:      2 * time.Minute,
+		ReadTimeout:       5 * time.Minute,
+		WriteTimeout:      5 * time.Minute,
 		IdleTimeout:       2 * time.Minute,
 	}
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/installer/") {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/installer/"):
 			installer.ServeHTTP(w, r)
-			return
-		}
-		mu.Lock()
-		if mux == nil && app.IsBootstrapped() {
-			router, err := NewRouter(app)
-			if err == nil {
-				mux, err = router.BuildMux()
-			}
-			if err != nil {
-				mu.Unlock()
-				http.Error(w, "API initialization failed", 500)
-				return
-			}
-		}
-		handler := mux
-		mu.Unlock()
-		if handler == nil {
-			if dashboard != nil && strings.HasPrefix(r.URL.Path, "/_/") {
-				dashboard.ServeHTTP(w, r)
-				return
-			}
+		case dashboard != nil && r.URL.Path == "/_":
+			http.Redirect(w, r, "/_/", http.StatusMovedPermanently)
+		case dashboard != nil && strings.HasPrefix(r.URL.Path, "/_/"):
+			dashboard.ServeHTTP(w, r)
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		handler.ServeHTTP(w, r)
 	})
+
+	// Hand off once setup is done. Shutdown lets the in-flight installer
+	// response finish before ListenAndServe returns.
+	go func() {
+		<-done
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = server.Shutdown(ctx)
+	}()
 
 	host := addr
 	if strings.HasPrefix(host, ":") || strings.HasPrefix(host, "0.0.0.0:") {
@@ -303,5 +307,9 @@ func ServeInstaller(app core.App, addr string) error {
 	color.Magenta("\n(!) No database is configured. Open the URL below to set up this instance:")
 	color.New(color.Bold).Add(color.FgCyan).Printf("http://%s/_/#/pbinstall/%s\n\n", host, InstallerToken())
 
-	return server.ListenAndServe()
+	err := server.ListenAndServe()
+	if errors.Is(err, http.ErrServerClosed) && app.IsBootstrapped() {
+		return nil
+	}
+	return err
 }

@@ -4,10 +4,28 @@ import (
 	"errors"
 	"fmt"
 	"github.com/go-sql-driver/mysql"
+	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"github.com/pocketbase/pocketbase/tools/security"
 	"strings"
 )
+
+// mysqlVarcharMax is the length of the VARCHAR(255) that fieldColumnType
+// substitutes for an unbounded TEXT column on MySQL.
+const mysqlVarcharMax = 255
+
+// validateMySQLVarchar rejects values that do not fit that column on MySQL,
+// so they fail validation instead of erroring or truncating in the database.
+func validateMySQLVarchar(app App, value string) error {
+	if ba := asBaseApp(app); ba == nil || ba.SQLDialect() != DialectMySQL {
+		return nil
+	}
+	if len([]rune(value)) > mysqlVarcharMax {
+		return validation.NewError("validation_max_text_constraint", "Must be no more than {{.max}} character(s).").
+			SetParams(map[string]any{"max": mysqlVarcharMax})
+	}
+	return nil
+}
 
 func fieldColumnType(app App, typ string) string {
 	ba := asBaseApp(app)

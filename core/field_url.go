@@ -139,6 +139,10 @@ func (f *URLField) ValidateValue(ctx context.Context, app App, record *Record) e
 		return validation.NewError("validation_invalid_url", "Must be a valid url")
 	}
 
+	if err := validateMySQLVarchar(app, val); err != nil {
+		return err
+	}
+
 	// extract host/domain
 	u, _ := url.Parse(val)
 

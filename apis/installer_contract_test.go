@@ -10,7 +10,7 @@ import (
 
 func TestInstallerDisconnectedContract(t *testing.T) {
 	app := core.NewBaseApp(core.BaseAppConfig{DataDir: t.TempDir()})
-	handler := installerHandler(app)
+	handler := installerHandler(app, nil)
 	r := httptest.NewRequest("GET", "/api/installer/status", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)

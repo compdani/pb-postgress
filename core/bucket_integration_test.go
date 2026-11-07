@@ -1,8 +1,13 @@
 package core_test
 
 import (
+	"context"
+	"fmt"
+	"sync"
+
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+	"github.com/pocketbase/pocketbase/tools/bucket"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"net"
 	"os"
@@ -116,5 +121,61 @@ func TestBucketProcessFileLifecycle(t *testing.T) {
 			}
 			wait(func() bool { _, e := os.Stat(key); return os.IsNotExist(e) })
 		})
+	}
+}
+
+// Concurrent bucket registrations leave exactly one _fileHosts row, and a
+// bucket never replaces a full host registered by PocketBase. The concurrent
+// part is a smoke check: these transactions are too short to collide reliably,
+// so the table lock in Register/SetFileHost is what guarantees it.
+func TestFileHostRegistrationIsSerialized(t *testing.T) {
+	cfg := tests.NewDatabaseConfig(t)
+	app := core.NewBaseApp(cfg)
+	if err := app.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { app.ResetBootstrapState() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	db, err := bucket.OpenDB(ctx, cfg.DBDriver, cfg.DBDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.EnsureSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	for round := 0; round < 5; round++ {
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := 0; i < 16; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				<-start
+				if err := db.Register(ctx, bucket.Host{ID: fmt.Sprintf("bucket_%d_%d", round, i), URL: "http://127.0.0.1:8091", Secret: "s"}); err != nil {
+					t.Error(err)
+				}
+			}(i)
+		}
+		close(start)
+		wg.Wait()
+		host, err := app.FileHost()
+		if err != nil || host == nil || host.Mode != "bucket" {
+			t.Fatalf("round %d: after concurrent registration: %+v %v", round, host, err)
+		}
+	}
+
+	if err := app.SetFileHost(core.FileHost{InstanceID: "full_host", URL: "http://127.0.0.1:8090", Mode: "full"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Register(ctx, bucket.Host{ID: "bucket_late", URL: "http://127.0.0.1:8091", Secret: "s"}); err == nil {
+		t.Fatal("bucket replaced a full host")
+	}
+	host, err := app.FileHost()
+	if err != nil || host == nil || host.InstanceID != "full_host" {
+		t.Fatalf("full host lost: %+v %v", host, err)
 	}
 }

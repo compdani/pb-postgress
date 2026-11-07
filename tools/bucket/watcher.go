@@ -34,9 +34,15 @@ type Watcher struct {
 	PollEvery time.Duration
 	// GapGrace is how long a missing id may hold back newer rows. Ids are
 	// allocated at insert but become visible at commit, so a row behind a gap
-	// may belong to a transaction that has not committed yet. After the grace
-	// the gap is treated as a rollback. Non-positive means 30s.
+	// may belong to a transaction that has not committed yet. The wait runs
+	// from when this watcher first saw the gap (and at least GapGrace after
+	// the next row's created_at); after it the gap is treated as a rollback.
+	// A transaction open longer than that is still skipped; PocketBase's own
+	// delete queue covers deletes in that case. Non-positive means 30s.
 	GapGrace time.Duration
+
+	gapAt    int64     // cursor value the current gap follows
+	gapSince time.Time // when that gap was first seen
 }
 
 // Run consumes the feed until ctx is cancelled. Apply errors other than
@@ -84,7 +90,7 @@ func (w *Watcher) drain(ctx context.Context, cursor *int64) error {
 			return nil
 		}
 		for _, change := range batch {
-			if change.ID > *cursor+1 && !change.CreatedAt.IsZero() && time.Since(change.CreatedAt) < w.gapGrace() {
+			if change.ID > *cursor+1 && w.waitForGap(*cursor, change) {
 				// An earlier id may still commit. Wait for it (a commit
 				// notifies, and polling retries) before moving past it.
 				return nil
@@ -102,6 +108,20 @@ func (w *Watcher) drain(ctx context.Context, cursor *int64) error {
 			}
 		}
 	}
+}
+
+// waitForGap reports whether the watcher should keep waiting at cursor for
+// the ids missing before change.
+func (w *Watcher) waitForGap(cursor int64, change Change) bool {
+	now := time.Now()
+	if w.gapSince.IsZero() || w.gapAt != cursor {
+		w.gapAt, w.gapSince = cursor, now
+	}
+	grace := w.gapGrace()
+	if now.Sub(w.gapSince) < grace {
+		return true
+	}
+	return !change.CreatedAt.IsZero() && now.Sub(change.CreatedAt) < grace
 }
 
 func (w *Watcher) gapGrace() time.Duration {

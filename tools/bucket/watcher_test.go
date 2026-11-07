@@ -198,10 +198,20 @@ func TestWatcherWaitsForUncommittedGap(t *testing.T) {
 		t.Fatalf("cursor %d, want 3", cursor)
 	}
 
-	// An old gap (a rolled-back id) does not block forever.
+	// An old row behind a new gap still waits: the grace runs from when
+	// this watcher first saw the gap, not from the row's created_at.
 	src.mu.Lock()
 	src.rows = append(src.rows, Change{ID: 5, Op: "upsert", Collection: "col", RecordID: "rec", Filename: "d.txt", CreatedAt: time.Now().Add(-2 * time.Hour)})
 	src.mu.Unlock()
+	if err := w.drain(context.Background(), &cursor); err != nil {
+		t.Fatal(err)
+	}
+	if cursor != 3 {
+		t.Fatalf("cursor %d moved past a newly seen gap", cursor)
+	}
+
+	// After the grace, the gap is treated as a rollback.
+	w.gapSince = time.Now().Add(-2 * time.Hour)
 	if err := w.drain(context.Background(), &cursor); err != nil {
 		t.Fatal(err)
 	}

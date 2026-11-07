@@ -76,6 +76,15 @@ func (app *BaseApp) SetFileHost(host FileHost) error {
 		host.Secret = security.RandomString(64)
 	}
 	return app.RunInTransaction(func(txApp App) error {
+		// Same lock as the bucket's Register, so a concurrent bucket start
+		// cannot interleave with this replace.
+		lock := "LOCK TABLE {{_fileHosts}} IN EXCLUSIVE MODE"
+		if asBaseApp(txApp).SQLDialect() == DialectMySQL {
+			lock = "SELECT [[id]] FROM {{_fileHosts}} FOR UPDATE"
+		}
+		if _, err := txApp.DB().NewQuery(lock).Execute(); err != nil {
+			return err
+		}
 		if _, err := txApp.DB().Delete("_fileHosts", nil).Execute(); err != nil {
 			return err
 		}

@@ -223,9 +223,8 @@ func (f *TextField) ValidateValue(ctx context.Context, app App, record *Record) 
 	// (see ColumnType), so reject longer values here instead of failing or
 	// truncating in the database.
 	if f.Max == 0 && !f.PrimaryKey {
-		if ba := asBaseApp(app); ba != nil && ba.SQLDialect() == DialectMySQL && len([]rune(newVal)) > 255 {
-			return validation.NewError("validation_max_text_constraint", "Must be no more than {{.max}} character(s).").
-				SetParams(map[string]any{"max": 255})
+		if err := validateMySQLVarchar(app, newVal); err != nil {
+			return err
 		}
 	}
 

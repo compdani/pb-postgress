@@ -140,6 +140,18 @@ func (d *DB) Register(ctx context.Context, h Host) error {
 	}
 	defer tx.Rollback()
 
+	// Serialize with other registrations and with PocketBase's SetFileHost,
+	// which takes the same lock, so the check and the replace are atomic.
+	lock := fmt.Sprintf(`LOCK TABLE %s IN EXCLUSIVE MODE`, d.hostsTable)
+	if d.driver == "mysql" {
+		// A locking read takes next-key locks over the whole index (including
+		// the empty-table gap) under MySQL's default REPEATABLE READ.
+		lock = fmt.Sprintf(`SELECT id FROM %s FOR UPDATE`, d.hostsTable)
+	}
+	if _, err := tx.ExecContext(ctx, lock); err != nil {
+		return err
+	}
+
 	var other string
 	err = tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT mode FROM %s WHERE mode <> %s LIMIT 1`, d.hostsTable, d.ph(1)), h.Mode).Scan(&other)
 	if err == nil {

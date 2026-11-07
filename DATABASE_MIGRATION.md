@@ -8,8 +8,11 @@ removed. Existing SQLite datasets require an external migration/export process.
 Database archives are unsupported: use `pg_dump`/`pg_restore` or
 `mysqldump`/`mysql`, and back up uploaded files separately.
 
-Without database configuration, `serve` exposes an installer API and the
-dashboard, and prints a setup URL (`/_/#/pbinstall/<token>`). The token is a
+Without database configuration, `serve` exposes only the installer API and the
+dashboard, and prints a setup URL (`/_/#/pbinstall/<token>`). When setup
+completes, or `connect` reaches a database that is already set up, the
+installer listener stops and the same process starts the full server
+(`apis.Serve`, with cron and hooks). The token is a
 random per-process secret. Every `POST` below requires it in the
 `X-Installer-Token` header, and the routes return 403 once a superuser other
 than the temporary installer account exists. The same token is printed when a
@@ -29,7 +32,9 @@ configured database has no superuser yet.
 `_fileHosts(id,url,mode,secret,registered_at)` contains the registered instance
 id, HTTP URL, full/bucket/s3 mode, and shared secret. It holds at most one row;
 more than one is an error. A bucket replaces earlier bucket rows on startup but
-refuses to start while a full or s3 host is registered. A bucket host is used
+refuses to start while a full or s3 host is registered. Both writers take a
+table lock (PostgreSQL `LOCK TABLE`, MySQL locking read under the default
+REPEATABLE READ) around the check and replace. A bucket host is used
 only in fileServer mode; a full host serves the other instances. Secret is
 excluded from API status serialization. Remote object storage uses
 authenticated HTTP PUT/GET/HEAD/DELETE at
@@ -77,7 +82,8 @@ This change is incomplete and should not be treated as production ready:
   schema migration guarantees. Indexing unrestricted TEXT fields needs review.
   A text field without a max is `VARCHAR(255)` on MySQL, so it accepts at
   most 255 characters there (5000 on PostgreSQL). Set a max above 255 to get
-  a `TEXT` column.
+  a `TEXT` column. URL fields are also `VARCHAR(255)` on MySQL and validate
+  at 255 characters.
 * Collection hooks and collection-tagged cron jobs enforce instance scope.
   Untagged custom jobs remain global. Cross-scope cascades use application-level integrity
   implementation; database foreign keys/triggers have not been implemented.
