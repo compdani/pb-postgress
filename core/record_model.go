@@ -1456,7 +1456,7 @@ func onRecordSaveExecute(e *RecordEvent) error {
 		}
 		for _, collection := range authCollections {
 			if e.Record.Collection().Id == collection.Id {
-				continue // skip current collection (sqlite will do the check for us)
+				continue // skip current collection (the primary key constraint checks this collection)
 			}
 			record, _ := e.App.FindRecordById(collection, e.Record.Id)
 			if record != nil {
@@ -1499,8 +1499,8 @@ func onRecordSaveExecute(e *RecordEvent) error {
 func onRecordDeleteExecute(e *RecordEvent) error {
 	// fetch rel references (if any)
 	//
-	// note: the select is outside of the transaction to minimize
-	// SQLITE_BUSY errors when mixing read&write in a single transaction
+	// Include all collections, including hidden ones: scope must never suppress
+	// referential integrity maintenance.
 	refs, err := e.App.FindCachedCollectionReferences(e.Record.Collection())
 	if err != nil {
 		return err

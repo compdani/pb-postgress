@@ -21,7 +21,7 @@ func TestGeoPointFieldColumnType(t *testing.T) {
 
 	f := &core.GeoPointField{}
 
-	expected := `JSON DEFAULT '{"lon":0,"lat":0}' NOT NULL`
+	expected := `JSONB DEFAULT ('{"lon":0,"lat":0}') NOT NULL`
 
 	if v := f.ColumnType(app); v != expected {
 		t.Fatalf("Expected\n%q\ngot\n%q", expected, v)

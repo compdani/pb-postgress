@@ -2,7 +2,7 @@ package core_test
 
 import (
 	"errors"
-	"os"
+	"github.com/pocketbase/pocketbase/tests"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -11,15 +11,7 @@ import (
 
 // PB_TEST_DB_DSN must name an empty, disposable database.
 func TestServerDatabaseFileChanges(t *testing.T) {
-	dsn := os.Getenv("PB_TEST_DB_DSN")
-	if dsn == "" {
-		t.Skip("set PB_TEST_DB_DRIVER and PB_TEST_DB_DSN to an empty disposable database")
-	}
-	driver := os.Getenv("PB_TEST_DB_DRIVER")
-	if driver == "" {
-		driver = "postgres"
-	}
-	app := core.NewBaseApp(core.BaseAppConfig{DataDir: t.TempDir(), DBDriver: driver, DBDSN: dsn})
+	app := core.NewBaseApp(tests.NewDatabaseConfig(t))
 	if err := app.Bootstrap(); err != nil {
 		t.Fatal(err)
 	}

@@ -64,6 +64,20 @@ func (app *BaseApp) registerNotifyWatcherHooks() {
 		Priority: -998,
 	})
 
+	app.OnBootstrapClear().Bind(&hook.Handler[*BootstrapEvent]{
+		Id:       systemHookIdNotifyWatcher,
+		Priority: -998,
+		Func: func(e *BootstrapEvent) error {
+			if notifyWatcher != nil {
+				_ = notifyWatcher.Close()
+				notifyWatcher = nil
+			}
+			_ = os.Remove(settingsFile)
+			_ = os.Remove(collectionsFile)
+			return e.Next()
+		},
+	})
+
 	// ---------------------------------------------------------------
 
 	settingsNotify := func(e *ModelEvent) error {

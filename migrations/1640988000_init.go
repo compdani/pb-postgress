@@ -108,7 +108,7 @@ func createParamsTable(txApp core.App) error {
 	execErr := core.ExecuteSchema(txApp, `
 		CREATE TABLE {{_params}} (
 			[[id]]      VARCHAR(255) PRIMARY KEY NOT NULL,
-			[[value]]   JSON DEFAULT NULL,
+			[[value]]   TEXT NULL,
 			[[created]] TEXT DEFAULT '' NOT NULL,
 			[[updated]] TEXT DEFAULT '' NOT NULL
 		);

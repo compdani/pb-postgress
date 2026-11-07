@@ -786,7 +786,7 @@ func TestBindDbx(t *testing.T) {
 
 		v, _ := result.Export().(string)
 
-		if v != s.expected {
+		if v != strings.ReplaceAll(s.expected, "`", `"`) {
 			t.Fatalf("[%s] Expected \n%s, \ngot \n%s", s.js, s.expected, v)
 		}
 	}
@@ -1867,4 +1867,34 @@ func TestBindOSCount(t *testing.T) {
 	BindOS(vm)
 
 	testBindsCount(vm, "$os", 20, t)
+}
+
+func TestCollectionCronScopeChanges(t *testing.T) {
+	app, _ := tests.NewTestApp(t)
+	vm := goja.New()
+	calls := 0
+	pool := newPool(1, func() *goja.Runtime { v := goja.New(); v.Set("called", func() { calls++ }); return v })
+	cronBinds(app, vm, pool)
+	if _, err := vm.RunString(`cronAdd("scoped", "* * * * *", "function(){called()}", "demo1")`); err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range app.Cron().Jobs() {
+		if job.Id() == "scoped" {
+			job.Run()
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("visible job calls: %d", calls)
+	}
+	if err := app.SetInstanceScope(core.InstanceScope{Mode: "deny", Collections: []string{"demo1"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range app.Cron().Jobs() {
+		if job.Id() == "scoped" {
+			job.Run()
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("hidden job ran: %d", calls)
+	}
 }

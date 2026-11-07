@@ -266,9 +266,9 @@ var normalizedIdentifiers = map[string]string{
 	// if `null` field is missing, treat `null` identifier as NULL token
 	"null": "NULL",
 	// if `true` field is missing, treat `true` identifier as TRUE token
-	"true": "1",
+	"true": "TRUE",
 	// if `false` field is missing, treat `false` identifier as FALSE token
-	"false": "0",
+	"false": "FALSE",
 }
 
 func resolveToken(token fexpr.Token, fieldResolver FieldResolver) (*ResolverResult, error) {
@@ -312,11 +312,7 @@ func resolveToken(token fexpr.Token, fieldResolver FieldResolver) (*ResolverResu
 		}, nil
 	case fexpr.TokenNumber:
 		placeholder := "t" + security.PseudorandomString(8)
-
-		return &ResolverResult{
-			Identifier: "{:" + placeholder + "}",
-			Params:     dbx.Params{placeholder: cast.ToFloat64(token.Literal)},
-		}, nil
+		return &ResolverResult{Identifier: "{:" + placeholder + "}", Params: dbx.Params{placeholder: cast.ToFloat64(token.Literal)}}, nil
 	case fexpr.TokenFunction:
 		tokenFunctions := tokenFunctionsForResolver(fieldResolver)
 		fn, ok := tokenFunctions[token.Literal]
@@ -339,7 +335,49 @@ func resolveToken(token fexpr.Token, fieldResolver FieldResolver) (*ResolverResu
 // The expression `a = "" OR a is null` tends to perform better than
 // `COALESCE(a, "") = ""` since the direct match can be accomplished
 // with a seek while the COALESCE will induce a table scan.
+type equalExpression struct {
+	dbx.Expression
+	mysqlExpression dbx.Expression
+	equal           bool
+}
+
+func (e equalExpression) Build(db *dbx.DB, params dbx.Params) string {
+	sql := e.Expression.Build(db, params)
+	if db.DriverName() == "mysql" {
+		sql = e.mysqlExpression.Build(db, params)
+		sql = strings.ReplaceAll(sql, " IS NULL", " __PB_NULL__")
+		sql = strings.ReplaceAll(sql, " = ", " <=> ")
+		sql = strings.ReplaceAll(sql, " IS ", " <=> ")
+		sql = strings.ReplaceAll(sql, " __PB_NULL__", " IS NULL")
+		if !e.equal {
+			sql = "NOT (" + sql + ")"
+		}
+		return sql
+	}
+	if db.DriverName() != "pgx" && db.DriverName() != "postgres" {
+		return sql
+	}
+	if !strings.Contains(sql, "[[") {
+		for name, value := range params {
+			switch value.(type) {
+			case float64, int, int64:
+				sql = strings.ReplaceAll(sql, "{:"+name+"}", "CAST({:"+name+"} AS DOUBLE PRECISION)")
+			}
+		}
+	}
+	// Preserve SQL null predicates while translating null-safe value comparisons.
+	sql = strings.ReplaceAll(sql, " IS NOT NULL", " __PB_NOT_NULL__")
+	sql = strings.ReplaceAll(sql, " IS NULL", " __PB_NULL__")
+	sql = strings.ReplaceAll(sql, " IS NOT ", " __PB_DISTINCT__ ")
+	sql = strings.ReplaceAll(sql, " IS ", " IS NOT DISTINCT FROM ")
+	sql = strings.ReplaceAll(sql, " __PB_DISTINCT__ ", " IS DISTINCT FROM ")
+	sql = strings.ReplaceAll(sql, " __PB_NOT_NULL__", " IS NOT NULL")
+	return strings.ReplaceAll(sql, " __PB_NULL__", " IS NULL")
+}
 func resolveEqualExpr(equal bool, left, right *ResolverResult) dbx.Expression {
+	return equalExpression{Expression: resolveEqualExprRaw(equal, left, right), mysqlExpression: resolveEqualExprRaw(true, left, right), equal: equal}
+}
+func resolveEqualExprRaw(equal bool, left, right *ResolverResult) dbx.Expression {
 	equalOp := "="
 	nullEqualOp := "IS"
 	concatOp := "OR"

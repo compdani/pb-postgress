@@ -3,6 +3,8 @@ package validators
 import (
 	"database/sql"
 	"errors"
+	"github.com/go-sql-driver/mysql"
+	"github.com/jackc/pgx/v5/pgconn"
 	"strings"
 
 	"github.com/pocketbase/dbx"
@@ -54,6 +56,26 @@ func NormalizeUniqueIndexError(err error, tableOrAlias string, fieldNames []stri
 		return err
 	}
 
+	var pg *pgconn.PgError
+	var my *mysql.MySQLError
+	var columns string
+	if errors.As(err, &pg) && pg.Code == "23505" {
+		columns = pg.Detail
+	}
+	if errors.As(err, &my) && my.Number == 1062 {
+		columns = my.Message
+	}
+	if columns != "" {
+		normalized := validation.Errors{}
+		for _, name := range fieldNames {
+			if strings.Contains(columns, "("+name+")") || strings.Contains(columns, "_"+name+"_") || strings.Contains(columns, "."+name+"'") {
+				normalized[name] = validation.NewError("validation_not_unique", "Value must be unique")
+			}
+		}
+		if len(normalized) > 0 {
+			return normalized
+		}
+	}
 	msg := strings.ToLower(err.Error())
 
 	// check for unique constraint failure

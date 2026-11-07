@@ -9,6 +9,7 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/security"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -60,9 +61,12 @@ func newTestDatabase(tb testing.TB) (string, string, func(), error) {
 			return "", "", nil, e
 		}
 		c.Database = name
-		// pgconn.Config has no DSN serializer; quote libpq connection values.
-		q := func(s string) string { return "'" + escapeConn(s) + "'" }
-		dsn = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", q(c.Host), c.Port, q(c.User), q(c.Password), q(name))
+		if u, e := url.Parse(dsn); e == nil && (u.Scheme == "postgres" || u.Scheme == "postgresql") {
+			u.Path = "/" + name
+			dsn = u.String()
+		} else {
+			dsn += " dbname='" + name + "'"
+		}
 	}
 	return dsn, driver, cleanup, nil
 }
@@ -132,5 +136,28 @@ func seedFixtures(app *core.BaseApp) error {
 			}
 		}
 	}
+	for _, name := range []string{"view1", "view2", "numeric_id_view"} {
+		c, err := app.FindCachedCollectionByNameOrId(name)
+		if err != nil {
+			continue
+		}
+		if _, err := app.DB().NewQuery("CREATE VIEW " + app.DB().QuoteSimpleTableName(c.Name) + " AS " + c.ViewQuery).Execute(); err != nil {
+			return fmt.Errorf("fixture view %s: %w", name, err)
+		}
+	}
 	return app.ReloadSettings()
+}
+
+// NewDatabaseConfig allocates an empty isolated database and drops it at test cleanup.
+func NewDatabaseConfig(tb testing.TB) core.BaseAppConfig {
+	tb.Helper()
+	if os.Getenv("PB_TEST_DB_DSN") == "" {
+		tb.Skip("database test requires PB_TEST_DB_DSN")
+	}
+	dsn, driver, cleanup, err := newTestDatabase(tb)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tb.Cleanup(cleanup)
+	return core.BaseAppConfig{DataDir: tb.TempDir(), DBDSN: dsn, DBDriver: driver}
 }

@@ -21,7 +21,7 @@ func TestJSONFieldColumnType(t *testing.T) {
 
 	f := &core.JSONField{}
 
-	expected := "JSON DEFAULT NULL"
+	expected := "JSONB DEFAULT NULL"
 
 	if v := f.ColumnType(app); v != expected {
 		t.Fatalf("Expected\n%q\ngot\n%q", expected, v)

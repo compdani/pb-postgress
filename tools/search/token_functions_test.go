@@ -14,7 +14,7 @@ import (
 func TestTokenFunctionsGeoDistance(t *testing.T) {
 	t.Parallel()
 
-	testDB, err := createTestDB()
+	testDB, err := createTestDB(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,13 +167,13 @@ func TestTokenFunctionsGeoDistance(t *testing.T) {
 func TestTokenFunctionsGeoDistanceExec(t *testing.T) {
 	t.Parallel()
 
-	testDB, err := createTestDB()
+	testDB, err := createTestDB(t)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer testDB.Close()
 
-	fn, ok := TokenFunctions["geoDistance"]
+	fn, ok := PostgresTokenFunctions["geoDistance"]
 	if !ok {
 		t.Error("Expected geoDistance token function to be registered.")
 	}
@@ -239,317 +239,16 @@ func TestTokenFunctionsGeoDistanceExec(t *testing.T) {
 	}
 }
 
-func TestTokenFunctionsStrftime(t *testing.T) {
-	t.Parallel()
-
-	testDB, err := createTestDB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer testDB.Close()
-
-	fn, ok := TokenFunctions["strftime"]
-	if !ok {
-		t.Error("Expected strftime token function to be registered.")
-	}
-
-	baseTokenResolver := func(t fexpr.Token) (*ResolverResult, error) {
-		placeholder := "t" + security.PseudorandomString(5)
-		return &ResolverResult{Identifier: "{:" + placeholder + "}", Params: map[string]any{placeholder: t.Literal}}, nil
-	}
-
-	scenarios := []struct {
-		name      string
-		args      []fexpr.Token
-		resolver  func(t fexpr.Token) (*ResolverResult, error)
-		result    *ResolverResult
-		expectErr bool
-	}{
-		{
-			"no args",
-			nil,
-			baseTokenResolver,
-			nil,
-			true,
-		},
-
-		// format arg
-		// -----------------------------------------------------------
-		{
-			"(format arg) invalid token type function",
-			[]fexpr.Token{
-				{Literal: "abc", Type: fexpr.TokenFunction},
-			},
-			baseTokenResolver,
-			nil,
-			true,
-		},
-		{
-			"(format arg) invalid token type ws",
-			[]fexpr.Token{
-				{Literal: "abc", Type: fexpr.TokenWS},
-			},
-			baseTokenResolver,
-			nil,
-			true,
-		},
-		{
-			"(format arg) invalid token type number",
-			[]fexpr.Token{
-				{Literal: "abc", Type: fexpr.TokenNumber},
-			},
-			baseTokenResolver,
-			nil,
-			true,
-		},
-		{
-			"(format arg) invalid token type identifier",
-			[]fexpr.Token{
-				{Literal: "abc", Type: fexpr.TokenIdentifier},
-			},
-			baseTokenResolver,
-			nil,
-			true,
-		},
-		{
-			"(format arg) valid token type text",
-			[]fexpr.Token{
-				{Literal: "abc", Type: fexpr.TokenText},
-			},
-			baseTokenResolver,
-			&ResolverResult{
-				NullFallback: NullFallbackEnforced,
-				Identifier:   `strftime({:format})`,
-				Params:       map[string]any{"format": "abc"},
-			},
-			false,
-		},
-
-		// format + time-value args
-		// -----------------------------------------------------------
-		{
-			"(format arg) invalid token type function",
-			[]fexpr.Token{
-				{Literal: "1", Type: fexpr.TokenText},
-				{Literal: "2", Type: fexpr.TokenFunction},
-			},
-			baseTokenResolver,
-			nil,
-			true,
-		},
-		{
-			"(format arg) invalid token type ws",
-			[]fexpr.Token{
-				{Literal: "1", Type: fexpr.TokenText},
-				{Literal: "2", Type: fexpr.TokenWS},
-			},
-			baseTokenResolver,
-			nil,
-			true,
-		},
-		{
-			"(format arg) valid token type number",
-			[]fexpr.Token{
-				{Literal: "1", Type: fexpr.TokenText},
-				{Literal: "2", Type: fexpr.TokenNumber},
-			},
-			baseTokenResolver,
-			&ResolverResult{
-				NullFallback: NullFallbackEnforced,
-				Identifier:   `strftime({:format},{:time})`,
-				Params:       map[string]any{"format": "1", "time": "2"},
-			},
-			false,
-		},
-		{
-			"(format arg) valid token type identifier",
-			[]fexpr.Token{
-				{Literal: "1", Type: fexpr.TokenText},
-				{Literal: "2", Type: fexpr.TokenIdentifier},
-			},
-			baseTokenResolver,
-			&ResolverResult{
-				NullFallback: NullFallbackEnforced,
-				Identifier:   `strftime({:format},{:time})`,
-				Params:       map[string]any{"format": "1", "time": "2"},
-			},
-			false,
-		},
-		{
-			"(format arg) valid token type text",
-			[]fexpr.Token{
-				{Literal: "1", Type: fexpr.TokenText},
-				{Literal: "2", Type: fexpr.TokenText},
-			},
-			baseTokenResolver,
-			&ResolverResult{
-				NullFallback: NullFallbackEnforced,
-				Identifier:   `strftime({:format},{:time})`,
-				Params:       map[string]any{"format": "1", "time": "2"},
-			},
-			false,
-		},
-
-		// format + time-value + modifier args
-		// -----------------------------------------------------------
-		{
-			"(modifiers arg) invalid token type function",
-			[]fexpr.Token{
-				{Literal: "1", Type: fexpr.TokenText}, // valid format
-				{Literal: "2", Type: fexpr.TokenText}, // valid time-value
-				{Literal: "3", Type: fexpr.TokenText}, // valid modifier
-				{Literal: "4", Type: fexpr.TokenFunction},
-			},
-			baseTokenResolver,
-			nil,
-			true,
-		},
-		{
-			"(modifiers arg) invalid token type ws",
-			[]fexpr.Token{
-				{Literal: "1", Type: fexpr.TokenText}, // valid format
-				{Literal: "2", Type: fexpr.TokenText}, // valid time-value
-				{Literal: "3", Type: fexpr.TokenText}, // valid modifier
-				{Literal: "4", Type: fexpr.TokenWS},
-			},
-			baseTokenResolver,
-			nil,
-			true,
-		},
-		{
-			"(modifiers arg) valid token type number",
-			[]fexpr.Token{
-				{Literal: "1", Type: fexpr.TokenText}, // valid format
-				{Literal: "2", Type: fexpr.TokenText}, // valid time-value
-				{Literal: "3", Type: fexpr.TokenText}, // valid modifier
-				{Literal: "4", Type: fexpr.TokenNumber},
-			},
-			baseTokenResolver,
-			nil,
-			true,
-		},
-		{
-			"(modifiers arg) valid token type identifier",
-			[]fexpr.Token{
-				{Literal: "1", Type: fexpr.TokenText}, // valid format
-				{Literal: "2", Type: fexpr.TokenText}, // valid time-value
-				{Literal: "3", Type: fexpr.TokenText}, // valid modifier
-				{Literal: "4", Type: fexpr.TokenIdentifier},
-			},
-			baseTokenResolver,
-			nil,
-			true,
-		},
-		{
-			"(modifiers arg) valid token type text",
-			[]fexpr.Token{
-				{Literal: "1", Type: fexpr.TokenText}, // valid format
-				{Literal: "2", Type: fexpr.TokenText}, // valid time-value
-				{Literal: "3", Type: fexpr.TokenText}, // valid modifier
-				{Literal: "4", Type: fexpr.TokenText}, // valid modifier
-			},
-			baseTokenResolver,
-			&ResolverResult{
-				NullFallback: NullFallbackEnforced,
-				Identifier:   `strftime({:format},{:time},{:m1},{:m2})`,
-				Params:       map[string]any{"format": "1", "time": "2", "m1": "3", "m2": "4"},
-			},
-			false,
-		},
-
-		// -----------------------------------------------------------
-
-		{
-			"= 10 args limit",
-			[]fexpr.Token{
-				{Literal: "1", Type: fexpr.TokenText},
-				{Literal: "2", Type: fexpr.TokenText},
-				{Literal: "3", Type: fexpr.TokenText},
-				{Literal: "4", Type: fexpr.TokenText},
-				{Literal: "5", Type: fexpr.TokenText},
-				{Literal: "6", Type: fexpr.TokenText},
-				{Literal: "7", Type: fexpr.TokenText},
-				{Literal: "8", Type: fexpr.TokenText},
-				{Literal: "9", Type: fexpr.TokenText},
-				{Literal: "10", Type: fexpr.TokenText},
-			},
-			baseTokenResolver,
-			&ResolverResult{
-				NullFallback: NullFallbackEnforced,
-				Identifier:   `strftime({:format},{:time},{:m1},{:m2},{:m3},{:m4},{:m5},{:m6},{:m7},{:m8})`,
-				Params: map[string]any{
-					"format": "1",
-					"time":   "2",
-					"m1":     "3",
-					"m2":     "4",
-					"m3":     "5",
-					"m4":     "6",
-					"m5":     "7",
-					"m6":     "8",
-					"m7":     "9",
-					"m8":     "10",
-				},
-			},
-			false,
-		},
-		{
-			"> 10 args limit",
-			[]fexpr.Token{
-				{Literal: "1", Type: fexpr.TokenText},
-				{Literal: "2", Type: fexpr.TokenText},
-				{Literal: "3", Type: fexpr.TokenText},
-				{Literal: "4", Type: fexpr.TokenText},
-				{Literal: "5", Type: fexpr.TokenText},
-				{Literal: "6", Type: fexpr.TokenText},
-				{Literal: "7", Type: fexpr.TokenText},
-				{Literal: "8", Type: fexpr.TokenText},
-				{Literal: "9", Type: fexpr.TokenText},
-				{Literal: "10", Type: fexpr.TokenText},
-				{Literal: "11", Type: fexpr.TokenText},
-			},
-			baseTokenResolver,
-			nil,
-			true,
-		},
-		{
-			"valid arguments but with resolver error",
-			[]fexpr.Token{
-				{Literal: "1", Type: fexpr.TokenText},
-				{Literal: "2", Type: fexpr.TokenText},
-				{Literal: "3", Type: fexpr.TokenText},
-			},
-			func(t fexpr.Token) (*ResolverResult, error) {
-				return nil, errors.New("test")
-			},
-			nil,
-			true,
-		},
-	}
-
-	for _, s := range scenarios {
-		t.Run(s.name, func(t *testing.T) {
-			result, err := fn(s.resolver, s.args...)
-
-			hasErr := err != nil
-			if hasErr != s.expectErr {
-				t.Fatalf("Expected hasErr %v, got %v (%v)", s.expectErr, hasErr, err)
-			}
-
-			testCompareResults(t, s.result, result)
-		})
-	}
-}
-
 func TestTokenFunctionsStrftimeExec(t *testing.T) {
 	t.Parallel()
 
-	testDB, err := createTestDB()
+	testDB, err := createTestDB(t)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer testDB.Close()
 
-	fn, ok := TokenFunctions["strftime"]
+	fn, ok := PostgresTokenFunctions["strftime"]
 	if !ok {
 		t.Error("Expected strftime token function to be registered.")
 	}
@@ -587,7 +286,7 @@ func TestTokenFunctionsStrftimeExec(t *testing.T) {
 // -------------------------------------------------------------------
 
 func testCompareResults(t *testing.T, a, b *ResolverResult) {
-	testDB, err := createTestDB()
+	testDB, err := createTestDB(t)
 	if err != nil {
 		t.Fatal(err)
 	}

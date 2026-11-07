@@ -117,6 +117,7 @@ func NewTestAppWithConfig(tb testing.TB, config core.BaseAppConfig) (*TestApp, e
 
 	tempDir, err := TempDirClone(config.DataDir)
 	if err != nil {
+		tb.Fatal(err)
 		return nil, err
 	}
 
@@ -142,19 +143,23 @@ func NewTestAppWithConfig(tb testing.TB, config core.BaseAppConfig) (*TestApp, e
 
 	// load data dir and db connections
 	if err := app.Bootstrap(); err != nil {
+		tb.Fatal(err)
 		return nil, err
 	}
 
 	// ensure that the Dao and DB configurations are properly loaded
 	if _, err := app.DB().NewQuery("Select 1").Execute(); err != nil {
+		tb.Fatal(err)
 		return nil, err
 	}
 	if _, err := app.AuxDB().NewQuery("Select 1").Execute(); err != nil {
+		tb.Fatal(err)
 		return nil, err
 	}
 
 	// apply any missing migrations
 	if err := app.RunAllMigrations(); err != nil {
+		tb.Fatal(err)
 		return nil, err
 	}
 

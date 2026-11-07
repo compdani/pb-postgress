@@ -37,7 +37,7 @@ func TestRelationFieldColumnType(t *testing.T) {
 		{
 			"multiple",
 			&core.RelationField{MaxSelect: 2},
-			"JSON DEFAULT '[]' NOT NULL",
+			"JSONB DEFAULT '[]' NOT NULL",
 		},
 	}
 

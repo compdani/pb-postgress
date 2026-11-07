@@ -50,7 +50,7 @@ func (app *BaseApp) SaveView(dangerousViewName string, dangerousSelectQuery stri
 		//
 		// note: the query is wrapped in a secondary SELECT as a rudimentary
 		// measure to discourage multiple inline sql statements execution
-		viewQuery := fmt.Sprintf("CREATE VIEW {{%s}} AS SELECT * FROM (%s)", dangerousViewName, dangerousSelectQuery)
+		viewQuery := fmt.Sprintf("CREATE VIEW {{%s}} AS SELECT * FROM (%s) AS __pb_view", dangerousViewName, dangerousSelectQuery)
 		_, err = txApp.DB().NewQuery(viewQuery).Execute()
 		if err != nil {
 			return err
@@ -169,7 +169,7 @@ func (app *BaseApp) DryRunView(dangerousSelectQuery string, sampleSize int) (*Dr
 	err = app.RecordQuery(tempCollection).
 		// note: the query is wrapped in a secondary SELECT as a rudimentary
 		// measure to discourage multiple inline sql statements execution
-		From("(SELECT * FROM (" + dangerousSelectQuery + ")) as " + tempName).
+		From("(" + dangerousSelectQuery + ") as " + tempName).
 		Limit(int64(sampleSize)).
 		All(&records)
 	if err != nil {

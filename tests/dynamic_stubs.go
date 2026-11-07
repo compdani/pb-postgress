@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"github.com/pocketbase/dbx"
 	"strconv"
 	"time"
 
@@ -113,35 +114,18 @@ func StubMFARecords(app core.App) error {
 }
 
 func StubLogsData(app *TestApp) error {
-	_, err := app.AuxDB().NewQuery(`
-		delete from {{_logs}};
-
-		insert into {{_logs}} (
-			[[id]],
-			[[level]],
-			[[message]],
-			[[data]],
-			[[created]],
-			[[updated]]
-		)
-		values
-		(
-			"873f2133-9f38-44fb-bf82-c8f53b310d91",
-			0,
-			"test_message1",
-			'{"status":200}',
-			"2022-05-01 10:00:00.123Z",
-			"2022-05-01 10:00:00.123Z"
-		),
-		(
-			"f2133873-44fb-9f38-bf82-c918f53b310d",
-			8,
-			"test_message2",
-			'{"status":400}',
-			"2022-05-02 10:00:00.123Z",
-			"2022-05-02 10:00:00.123Z"
-		);
-	`).Execute()
-
-	return err
+	return app.RunInTransaction(func(tx core.App) error {
+		if _, err := tx.DB().Delete("_logs", nil).Execute(); err != nil {
+			return err
+		}
+		for _, row := range []dbx.Params{
+			{"id": "873f2133-9f38-44fb-bf82-c8f53b310d91", "level": 0, "message": "test_message1", "data": `{"status":200}`, "created": "2022-05-01 10:00:00.123Z"},
+			{"id": "f2133873-44fb-9f38-bf82-c918f53b310d", "level": 8, "message": "test_message2", "data": `{"status":400}`, "created": "2022-05-02 10:00:00.123Z"},
+		} {
+			if _, err := tx.DB().Insert("_logs", row).Execute(); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

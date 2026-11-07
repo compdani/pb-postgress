@@ -79,12 +79,7 @@ func recordsList(e *core.RequestEvent) error {
 
 	searchProvider := search.NewProvider(fieldsResolver).Query(query)
 
-	// use rowid when available to minimize the need of a covering index with the "id" field
-	if !collection.IsView() {
-		if baseApp := core.AsBaseApp(e.App); baseApp == nil || !baseApp.IsPostgresBacked(collection) {
-			searchProvider.CountCol("_rowid_")
-		}
-	}
+	searchProvider.CountCol("id")
 
 	records := []*core.Record{}
 	result, err := searchProvider.ParseAndExec(e.Request.URL.Query().Encode(), &records)

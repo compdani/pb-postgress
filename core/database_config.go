@@ -2,15 +2,17 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/pocketbase/dbx"
 )
 
@@ -42,7 +44,22 @@ func ConnectDatabase(driver, dsn string) (*dbx.DB, error) {
 	if driver == "postgres" {
 		sqlDriver = "pgx"
 	}
-	db, err := dbx.Open(sqlDriver, dsn)
+	var db *dbx.DB
+	var err error
+	if driver == "postgres" {
+		db, err = dbx.Open(sqlDriver, dsn)
+	} else {
+		var cfg *mysql.Config
+		cfg, err = mysql.ParseDSN(dsn)
+		if err == nil {
+			cfg.ParseTime = true
+			var raw *sql.DB
+			raw, err = sql.Open(sqlDriver, cfg.FormatDSN())
+			if err == nil {
+				db = dbx.NewFromDB(raw, sqlDriver)
+			}
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("open %s database failed", driver)
 	}

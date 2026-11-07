@@ -1,7 +1,9 @@
 package core
 
 import (
+	"errors"
 	"fmt"
+	"github.com/go-sql-driver/mysql"
 	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"github.com/pocketbase/pocketbase/tools/security"
 	"strings"
@@ -28,10 +30,16 @@ func ExecuteSchema(app App, sql string) error {
 		if strings.TrimSpace(statement) == "" {
 			continue
 		}
+		optionalIndex := strings.Contains(statement, "INDEX IF NOT EXISTS")
 		if ba != nil && ba.SQLDialect() == DialectMySQL {
 			statement = strings.ReplaceAll(statement, "INDEX IF NOT EXISTS", "INDEX")
+			statement = strings.ReplaceAll(statement, "TEXT DEFAULT", "VARCHAR(255) DEFAULT")
 		}
 		if _, err := app.DB().NewQuery(statement).Execute(); err != nil {
+			var my *mysql.MySQLError
+			if optionalIndex && errors.As(err, &my) && my.Number == 1061 {
+				continue
+			}
 			return err
 		}
 	}
@@ -60,8 +68,17 @@ func indexCreateSQL(app App, idx dbutils.Index) (string, error) {
 			if normalized == col+" != ''" {
 				return "CREATE UNIQUE INDEX " + d.Quote(idx.IndexName) + " ON " + d.Quote(idx.TableName) + " ((NULLIF(" + d.Quote(col) + ", '')))", nil
 			}
+			if normalized == col+" != '[]'" {
+				return "CREATE UNIQUE INDEX " + d.Quote(idx.IndexName) + " ON " + d.Quote(idx.TableName) + " ((NULLIF(CAST(" + d.Quote(col) + " AS CHAR(255)), '[]')))", nil
+			}
 		}
 		return "", fmt.Errorf("MySQL does not support this partial index predicate")
+	}
+	for i, col := range idx.Columns {
+		if strings.EqualFold(col.Collate, "nocase") {
+			idx.Columns[i].Collate = ""
+			idx.Columns[i].Name = "LOWER(" + d.Quote(strings.Trim(col.Name, "`\"")) + ")"
+		}
 	}
 	idx.Optional = false
 	raw := idx.Build()

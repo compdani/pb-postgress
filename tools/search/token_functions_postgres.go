@@ -58,6 +58,11 @@ func postgresStrftime(argTokenResolverFunc func(fexpr.Token) (*ResolverResult, e
 	}
 
 	pgFormat := sqliteToPostgresDateFormat(formatArgResult.Identifier)
+	for name, value := range formatArgResult.Params {
+		if format, ok := value.(string); ok {
+			formatArgResult.Params[name] = sqliteToPostgresDateFormat(format)
+		}
+	}
 
 	if totalArgs == 1 {
 		formatArgResult.NullFallback = NullFallbackEnforced
@@ -94,7 +99,15 @@ func postgresStrftime(argTokenResolverFunc func(fexpr.Token) (*ResolverResult, e
 		Params:       dbx.Params{},
 	}
 
-	timeExpr := "to_timestamp(" + timeValueArgResult.Identifier + ", 'YYYY-MM-DD HH24:MI:SS')"
+	timeExpr := "CAST(" + timeValueArgResult.Identifier + " AS timestamptz)"
+	for i, m := range resolvedModifierArgs {
+		modifier := strings.TrimSpace(strings.ToLower(args[i+2].Literal))
+		if strings.HasPrefix(modifier, "+") || strings.HasPrefix(modifier, "-") {
+			timeExpr = "(" + timeExpr + " + CAST(" + m.Identifier + " AS interval))"
+		} else {
+			return nil, fmt.Errorf("unsupported date modifier %q", modifier)
+		}
+	}
 	if err = concatUniqueParams(result.Params, formatArgResult.Params); err != nil {
 		return nil, err
 	}

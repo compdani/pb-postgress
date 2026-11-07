@@ -81,7 +81,7 @@ func TestSettings_DBExport(t *testing.T) {
 
 				valueStr = string(decrypted)
 			} else {
-				valueStr = string(export["value"].([]byte))
+				valueStr = export["value"].(string)
 			}
 
 			expected := `{"superuserIPs":[],"smtp":{"enabled":false,"port":0,"host":"smtp_host","username":"smtp_username","password":"","authMethod":"","tls":false,"localName":""},"backups":{"cron":"* * * * *","cronMaxKeep":0,"s3":{"enabled":true,"bucket":"","region":"","endpoint":"","accessKey":"","forcePathStyle":false}},"s3":{"enabled":false,"bucket":"","region":"","endpoint":"s3_endpoint","accessKey":"","secret":"s3_secret","forcePathStyle":false},"meta":{"accentColor":"","appName":"test_app_name","appURL":"","senderName":"","senderAddress":"","hideControls":false},"rateLimits":{"rules":[],"excludedIPs":[],"enabled":true},"trustedProxy":{"headers":[],"useLeftmostIP":true},"batch":{"enabled":false,"maxRequests":0,"timeout":15,"maxBodySize":0},"logs":{"maxDays":123,"minLevel":0,"logIP":false,"logAuthId":false}}`

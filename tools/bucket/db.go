@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/pocketbase/pocketbase/tools/fileschema"
 	"log"
 	"strings"
 	"time"
@@ -271,45 +272,8 @@ func changeColumns() []columnDef {
 	}
 }
 
-func (d *DB) createHostsSQL(quoted string) string {
-	if d.driver == "mysql" {
-		return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			id VARCHAR(128) NOT NULL PRIMARY KEY,
-			url TEXT NOT NULL,
-			mode VARCHAR(32) NOT NULL,
-			secret VARCHAR(512) NOT NULL DEFAULT '',
-			registered_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-		)`, quoted)
-	}
-	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-		id VARCHAR(128) PRIMARY KEY,
-		url TEXT NOT NULL,
-		mode VARCHAR(32) NOT NULL,
-		secret VARCHAR(512) NOT NULL DEFAULT '',
-		registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-	)`, quoted)
-}
-
-func (d *DB) createChangesSQL(quoted string) string {
-	if d.driver == "mysql" {
-		return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-			op VARCHAR(16) NOT NULL,
-			collection VARCHAR(255) NOT NULL,
-			record_id VARCHAR(255) NOT NULL,
-			filename VARCHAR(1024) NOT NULL,
-			created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-		)`, quoted)
-	}
-	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-		id BIGSERIAL PRIMARY KEY,
-		op VARCHAR(16) NOT NULL,
-		collection TEXT NOT NULL,
-		record_id TEXT NOT NULL,
-		filename TEXT NOT NULL,
-		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-	)`, quoted)
-}
+func (d *DB) createHostsSQL(quoted string) string   { return fileschema.Hosts(d.driver, quoted) }
+func (d *DB) createChangesSQL(quoted string) string { return fileschema.Changes(d.driver, quoted) }
 
 func (d *DB) ensureTable(ctx context.Context, canonical string, create func(string) string, cols []columnDef) (string, error) {
 	name, err := d.findTable(ctx, canonical)

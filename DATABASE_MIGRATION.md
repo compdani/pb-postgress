@@ -75,3 +75,45 @@ This change is incomplete and should not be treated as production ready:
   TLS, cancellation, startup cron hooks, and setup across existing multi-instance
   deployments need further integration. Use a trusted local setup network.
 * UI and standalone bucket implementation were intentionally not modified.
+
+## Follow-up implementation (2026-11-07)
+
+The harness now takes `testing.TB` (`tests.NewTestApp(t)`), skips database
+callers when `PB_TEST_DB_DSN` is absent, allocates a uniquely named database
+per app, and closes/drops it during idempotent `Cleanup`. The configured user
+needs CREATE/DROP DATABASE permission. `PB_TEST_DB_DRIVER` defaults to postgres;
+set it to mysql for a MySQL DSN. Connection options are preserved. Both main
+and auxiliary state belong to that isolated database. Fixtures are seeded
+from `tests/data/fixtures.json`; `tests/data/export_fixtures.py` documents the
+one-time export of the historical data. Go tests do not open SQLite files.
+
+`tools/fileschema` is now the canonical DDL for core and bucket. Both use real
+TIMESTAMPTZ/DATETIME(6) columns and time.Time values, matching IDs, modes and
+secret sizes, and no restrictive CHECKs. The merged bucket branch consumes
+that same definition. `TestBucketProcessFileLifecycle` builds and runs the
+actual cmd/bucket process and verifies both schema creation orders, core
+uploads and deletes with a remote mode=bucket host, timestamp scanning, and
+feed-driven deletion of bytes reintroduced after the synchronous deletion.
+The core calls this remote file mode `fileServer`.
+
+Hidden collection metadata writes are rejected before collection hooks,
+including attempts to rename a hidden collection. Collection hook adapters
+skip hidden collections. JS `cronAdd` accepts optional collection names after
+the handler; these are checked on every execution so scope changes apply to
+already registered jobs. Untagged custom cron jobs have no collection identity
+and remain global. Application-level relation cascades deliberately query all
+collections; tests verify deletion and unsetting references in hidden collections.
+Direct SQL remains outside these application-level integrity guarantees.
+
+Legacy sidecar transaction implementations have been replaced by compatibility
+aliases to the instance transaction. Other sidecar metadata/introspection types
+and exported APIs are temporarily retained for source compatibility with App,
+JS bindings and the independently maintained collection import UI. Bootstrap
+never initializes a sidecar connection; those legacy import/introspection paths
+cannot provide a working split-database configuration. Removing these exported
+APIs and their UI clients together remains follow-up work; retaining their
+source must not be interpreted as supported sidecar operation.
+
+MySQL live testing fixed TEXT defaults in bootstrap DDL, optional-index creation,
+JSON-array uniqueness in the fixture, time scanning, and null-safe comparisons.
+Encrypted settings are stored in a text column, since ciphertext is not JSON.

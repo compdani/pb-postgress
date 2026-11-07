@@ -51,7 +51,7 @@ func TestBaseAppLoggerLevelDevPrint(t *testing.T) {
 			const testDataDir = "./pb_base_app_test_data_dir/"
 			defer os.RemoveAll(testDataDir)
 
-			app := NewBaseApp(BaseAppConfig{
+			app := newDatabaseTestApp(t, BaseAppConfig{
 				DataDir: testDataDir,
 				IsDev:   s.isDev,
 			})

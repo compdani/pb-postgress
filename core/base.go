@@ -90,7 +90,6 @@ type BaseApp struct {
 	postgresConcurrentDB    dbx.Builder
 	postgresNonconcurrentDB dbx.Builder
 	postgresConfig          PostgresConfig
-	postgresTxInfo          *TxAppInfo
 
 	// app event hooks
 	onBootstrap      *hook.Hook[*BootstrapEvent]
@@ -508,7 +507,7 @@ func (app *BaseApp) ClearBootstrap() error {
 
 // DB returns the default app data.db builder instance.
 //
-// To minimize SQLITE_BUSY errors, it automatically routes the
+// It automatically routes the
 // SELECT queries to the underlying concurrent db pool and everything
 // else to the nonconcurrent one.
 //
@@ -545,7 +544,7 @@ func (app *BaseApp) ConcurrentDB() dbx.Builder {
 // meaning that it can process only 1 db operation at a time (other queries queue up).
 //
 // This method is used mainly internally and in the tests to execute write
-// (save/delete) db operations as it helps with minimizing the SQLITE_BUSY errors.
+// (save/delete) db operations to coordinate writes within a transaction.
 //
 // Most users should use simply DB() as it will automatically
 // route the query execution to ConcurrentDB() or NonconcurrentDB().
@@ -557,7 +556,7 @@ func (app *BaseApp) NonconcurrentDB() dbx.Builder {
 
 // AuxDB returns the app auxiliary.db builder instance.
 //
-// To minimize SQLITE_BUSY errors, it automatically routes the
+// It automatically routes the
 // SELECT queries to the underlying concurrent db pool and everything
 // else to the nonconcurrent one.
 //
@@ -594,7 +593,7 @@ func (app *BaseApp) AuxConcurrentDB() dbx.Builder {
 // meaning that it can process only 1 db operation at a time (other queries queue up).
 //
 // This method is used mainly internally and in the tests to execute write
-// (save/delete) db operations as it helps with minimizing the SQLITE_BUSY errors.
+// (save/delete) db operations to coordinate writes within a transaction.
 //
 // Most users should use simply AuxDB() as it will automatically
 // route the query execution to AuxConcurrentDB() or AuxNonconcurrentDB().
@@ -1350,6 +1349,30 @@ func supportFiles(m Model) bool {
 }
 
 func (app *BaseApp) registerBaseHooks() {
+	// Reject hidden metadata writes before collection-specific hooks can run.
+	guardCollection := func(e *ModelEvent) error {
+		if c, ok := e.Model.(*Collection); ok {
+			ba := asBaseApp(e.App)
+			if !ba.CollectionVisible(c) {
+				return errors.New("collection is outside this instance scope")
+			}
+			if !c.IsNew() {
+				old, err := e.App.FindCollectionByNameOrId(c.Id)
+				if err != nil {
+					return err
+				}
+				if !ba.CollectionVisible(old) {
+					return errors.New("collection is outside this instance scope")
+				}
+			}
+		}
+		return e.Next()
+	}
+	app.OnModelValidate().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
+	app.OnModelCreate().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
+	app.OnModelUpdate().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
+	app.OnModelDelete().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
+
 	app.OnModelUpdate().BindFunc(func(e *ModelEvent) error {
 		if settings, ok := e.Model.(*Settings); ok && app.IsBootstrapped() && app.HasTable("_fileConfig") {
 			mode, err := app.FileMode()

@@ -278,7 +278,7 @@ func (s *Settings) DBExport(app App) (map[string]any, error) {
 
 		result["value"] = encryptVal
 	} else {
-		result["value"] = encoded
+		result["value"] = string(encoded)
 	}
 
 	return result, nil
