@@ -205,17 +205,50 @@ func (d *remoteDriver) Copy(ctx context.Context, dst, src string) error {
 	return w.Close()
 }
 
-// The host returns a JSON array of blob.ListObject (keys relative to /files/).
+// ListPaged reads one page from GET /files/?prefix=&after=.
+//
+// A bucket host returns {"items":[{key,size,updated}],"truncated":bool} and
+// pages with after=<last key>. A full PocketBase file host returns a plain
+// JSON array of blob.ListObject with no paging. Both are accepted.
 func (d *remoteDriver) ListPaged(ctx context.Context, opts *blob.ListOptions) (*blob.ListPage, error) {
-	r, e := d.request(ctx, "GET", d.base+"/files/?prefix="+url.QueryEscape(opts.Prefix), nil, "", "")
+	q := url.Values{}
+	q.Set("prefix", opts.Prefix)
+	if len(opts.PageToken) > 0 {
+		q.Set("after", string(opts.PageToken))
+	}
+	r, e := d.request(ctx, "GET", d.base+"/files/?"+q.Encode(), nil, "", "")
 	if e != nil {
 		return nil, e
 	}
 	defer r.Body.Close()
-	var rows []*blob.ListObject
-	if e = json.NewDecoder(r.Body).Decode(&rows); e != nil {
+	raw, e := io.ReadAll(r.Body)
+	if e != nil {
 		return nil, e
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].Key < rows[j].Key })
-	return &blob.ListPage{Objects: rows}, nil
+	page := &blob.ListPage{}
+	if trimmed := strings.TrimSpace(string(raw)); strings.HasPrefix(trimmed, "[") {
+		if e = json.Unmarshal(raw, &page.Objects); e != nil {
+			return nil, e
+		}
+	} else {
+		var body struct {
+			Items []struct {
+				Key     string    `json:"key"`
+				Size    int64     `json:"size"`
+				Updated time.Time `json:"updated"`
+			} `json:"items"`
+			Truncated bool `json:"truncated"`
+		}
+		if e = json.Unmarshal(raw, &body); e != nil {
+			return nil, e
+		}
+		for _, item := range body.Items {
+			page.Objects = append(page.Objects, &blob.ListObject{Key: item.Key, Size: item.Size, ModTime: item.Updated})
+		}
+		if body.Truncated && len(body.Items) > 0 {
+			page.NextPageToken = []byte(body.Items[len(body.Items)-1].Key)
+		}
+	}
+	sort.Slice(page.Objects, func(i, j int) bool { return page.Objects[i].Key < page.Objects[j].Key })
+	return page, nil
 }

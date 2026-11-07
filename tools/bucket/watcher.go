@@ -3,6 +3,7 @@ package bucket
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 )
@@ -31,6 +32,11 @@ type Watcher struct {
 	Source    ChangeSource
 	Store     *Store
 	PollEvery time.Duration
+	// GapGrace is how long a missing id may hold back newer rows. Ids are
+	// allocated at insert but become visible at commit, so a row behind a gap
+	// may belong to a transaction that has not committed yet. After the grace
+	// the gap is treated as a rollback. Non-positive means 30s.
+	GapGrace time.Duration
 }
 
 // Run consumes the feed until ctx is cancelled. Apply errors other than
@@ -42,8 +48,8 @@ func (w *Watcher) Run(ctx context.Context) error {
 	}
 	cursor, err := w.Store.LoadCursor()
 	if err != nil {
-		log.Printf("bucket watcher: resetting cursor: %v", err)
-		cursor = 0
+		// Replaying the whole log from 0 is not safe to do silently.
+		return fmt.Errorf("read watcher cursor (fix or remove %s to replay the log): %w", w.Store.cursorPath(), err)
 	}
 	notify := w.Source.Notify(ctx)
 	poll := time.NewTicker(w.pollEvery())
@@ -78,6 +84,11 @@ func (w *Watcher) drain(ctx context.Context, cursor *int64) error {
 			return nil
 		}
 		for _, change := range batch {
+			if change.ID > *cursor+1 && !change.CreatedAt.IsZero() && time.Since(change.CreatedAt) < w.gapGrace() {
+				// An earlier id may still commit. Wait for it (a commit
+				// notifies, and polling retries) before moving past it.
+				return nil
+			}
 			if err := w.Store.ApplyChange(change); err != nil {
 				if errors.Is(err, ErrInvalidKey) {
 					log.Printf("bucket watcher: skip change %d: %v", change.ID, err)
@@ -91,6 +102,13 @@ func (w *Watcher) drain(ctx context.Context, cursor *int64) error {
 			}
 		}
 	}
+}
+
+func (w *Watcher) gapGrace() time.Duration {
+	if w.GapGrace > 0 {
+		return w.GapGrace
+	}
+	return 30 * time.Second
 }
 
 func (w *Watcher) pollEvery() time.Duration {

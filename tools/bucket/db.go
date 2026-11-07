@@ -121,7 +121,9 @@ func (d *DB) EnsureSchema(ctx context.Context) error {
 	return nil
 }
 
-// Register upserts this bucket into _fileHosts.
+// Register makes this bucket the registered file host. _fileHosts holds one
+// row: earlier bucket rows (e.g. from a wiped bucket directory) are replaced,
+// but a full PocketBase host or S3 registration is never overwritten.
 func (d *DB) Register(ctx context.Context, h Host) error {
 	if d.hostsTable == "" {
 		return errors.New("file host registry is not initialized")
@@ -132,22 +134,29 @@ func (d *DB) Register(ctx context.Context, h Host) error {
 	if h.RegisteredAt.IsZero() {
 		h.RegisteredAt = time.Now().UTC()
 	}
-	var q string
-	if d.driver == "mysql" {
-		q = fmt.Sprintf(`INSERT INTO %s (id, url, mode, secret, registered_at)
-			VALUES (?, ?, ?, ?, ?)
-			ON DUPLICATE KEY UPDATE url=VALUES(url), mode=VALUES(mode), secret=VALUES(secret), registered_at=VALUES(registered_at)`, d.hostsTable)
-	} else {
-		q = fmt.Sprintf(`INSERT INTO %s (id, url, mode, secret, registered_at)
-			VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (id) DO UPDATE SET
-				url = EXCLUDED.url,
-				mode = EXCLUDED.mode,
-				secret = EXCLUDED.secret,
-				registered_at = EXCLUDED.registered_at`, d.hostsTable)
+	tx, err := d.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return err
 	}
-	_, err := d.sql.ExecContext(ctx, q, h.ID, h.URL, h.Mode, h.Secret, h.RegisteredAt)
-	return err
+	defer tx.Rollback()
+
+	var other string
+	err = tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT mode FROM %s WHERE mode <> %s LIMIT 1`, d.hostsTable, d.ph(1)), h.Mode).Scan(&other)
+	if err == nil {
+		return fmt.Errorf("a %q file host is already registered; remove it from _fileHosts before starting a bucket", other)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s`, d.hostsTable)); err != nil {
+		return err
+	}
+	q := fmt.Sprintf(`INSERT INTO %s (id, url, mode, secret, registered_at) VALUES (%s, %s, %s, %s, %s)`,
+		d.hostsTable, d.ph(1), d.ph(2), d.ph(3), d.ph(4), d.ph(5))
+	if _, err := tx.ExecContext(ctx, q, h.ID, h.URL, h.Mode, h.Secret, h.RegisteredAt); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // FetchAfter implements ChangeSource.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -139,4 +140,72 @@ func mustMeta(t *testing.T, store *Store, collection, recordID, filename string)
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestApplyDeleteKeepsNewerObject(t *testing.T) {
+	store, err := OpenStore(t.TempDir(), 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logged := time.Now().Add(-time.Minute)
+	if _, _, err := store.Put("col", "rec", "a.txt", bytes.NewReader([]byte("new")), false, ""); err != nil {
+		t.Fatal(err)
+	}
+	// A delete logged before the current upload must not remove it.
+	if err := store.ApplyChange(Change{ID: 1, Op: "delete", Collection: "col", RecordID: "rec", Filename: "a.txt", CreatedAt: logged}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Stat("col", "rec", "a.txt"); err != nil {
+		t.Fatalf("newer object deleted: %v", err)
+	}
+	// A delete logged after the upload removes it.
+	if err := store.ApplyChange(Change{ID: 2, Op: "delete", Collection: "col", RecordID: "rec", Filename: "a.txt", CreatedAt: time.Now().Add(time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Stat("col", "rec", "a.txt"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stale object kept: %v", err)
+	}
+}
+
+func TestWatcherWaitsForUncommittedGap(t *testing.T) {
+	store, err := OpenStore(t.TempDir(), 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := &fakeSource{rows: []Change{
+		{ID: 1, Op: "upsert", Collection: "col", RecordID: "rec", Filename: "a.txt", CreatedAt: time.Now()},
+		// id 2 is allocated but not committed yet
+		{ID: 3, Op: "upsert", Collection: "col", RecordID: "rec", Filename: "b.txt", CreatedAt: time.Now()},
+	}}
+	w := &Watcher{Source: src, Store: store, GapGrace: time.Hour}
+	cursor := int64(0)
+	if err := w.drain(context.Background(), &cursor); err != nil {
+		t.Fatal(err)
+	}
+	if cursor != 1 {
+		t.Fatalf("cursor %d moved past an uncommitted gap", cursor)
+	}
+
+	// Once id 2 commits, the watcher continues in order.
+	src.mu.Lock()
+	src.rows = append(src.rows, Change{ID: 2, Op: "upsert", Collection: "col", RecordID: "rec", Filename: "c.txt", CreatedAt: time.Now()})
+	sort.Slice(src.rows, func(i, j int) bool { return src.rows[i].ID < src.rows[j].ID })
+	src.mu.Unlock()
+	if err := w.drain(context.Background(), &cursor); err != nil {
+		t.Fatal(err)
+	}
+	if cursor != 3 {
+		t.Fatalf("cursor %d, want 3", cursor)
+	}
+
+	// An old gap (a rolled-back id) does not block forever.
+	src.mu.Lock()
+	src.rows = append(src.rows, Change{ID: 5, Op: "upsert", Collection: "col", RecordID: "rec", Filename: "d.txt", CreatedAt: time.Now().Add(-2 * time.Hour)})
+	src.mu.Unlock()
+	if err := w.drain(context.Background(), &cursor); err != nil {
+		t.Fatal(err)
+	}
+	if cursor != 5 {
+		t.Fatalf("cursor %d, want 5", cursor)
+	}
 }

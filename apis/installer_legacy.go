@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/fatih/color"
 	"github.com/pocketbase/dbx"
@@ -17,8 +16,8 @@ import (
 
 // DefaultInstallerFunc is the default PocketBase installer function.
 //
-// It will attempt to open a link in the browser (with a short-lived auth
-// token for the systemSuperuser) to the installer UI so that users can
+// It will attempt to open a link in the browser (with the one-time
+// [InstallerToken] for this process) to the installer UI so that users can
 // create their own custom superuser record.
 //
 // See https://github.com/pocketbase/pocketbase/discussions/5814.
@@ -28,10 +27,7 @@ func DefaultInstallerFunc(app core.App, systemSuperuser *core.Record, baseURL st
 		return nil
 	}
 
-	token, err := systemSuperuser.NewStaticAuthToken(30 * time.Minute)
-	if err != nil {
-		return err
-	}
+	token := InstallerToken()
 
 	// launch url (ignore errors and always print a help text as fallback)
 	url := fmt.Sprintf("%s/_/#/pbinstall/%s", strings.TrimRight(baseURL, "/"), token)

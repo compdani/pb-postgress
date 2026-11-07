@@ -760,7 +760,10 @@ func (app *BaseApp) NewFilesystemForCollection(c *Collection) (*filesystem.Syste
 		if err != nil {
 			return nil, err
 		}
-		if host != nil {
+		// A full PocketBase host serves the other instances in any mode. A
+		// bucket serves only fileServer mode, so a bucket started next to
+		// local-mode instances cannot silently move their files.
+		if host != nil && (host.Mode == "full" || (host.Mode == "bucket" && mode == "fileServer")) {
 			id, err := app.InstanceID()
 			if err != nil {
 				return nil, err

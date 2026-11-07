@@ -8,9 +8,15 @@ removed. Existing SQLite datasets require an external migration/export process.
 Database archives are unsupported: use `pg_dump`/`pg_restore` or
 `mysqldump`/`mysql`, and back up uploaded files separately.
 
-Without database configuration, `serve` exposes an installer API:
+Without database configuration, `serve` exposes an installer API and the
+dashboard, and prints a setup URL (`/_/#/pbinstall/<token>`). The token is a
+random per-process secret. Every `POST` below requires it in the
+`X-Installer-Token` header, and the routes return 403 once a superuser other
+than the temporary installer account exists. The same token is printed when a
+configured database has no superuser yet.
 
-* `GET /api/installer/status`: dbConnected, installed, fileServer, fileMode.
+* `GET /api/installer/status`: dbConnected, installed. With the token, also
+  fileServer and fileMode.
 * `POST /api/installer/test-db`: `{driver, dsn}`.
 * `POST /api/installer/connect`: tests, persists owner-only `pb_data/db.json`,
   then bootstraps the database. The bootstrap also stores this instance's id.
@@ -21,11 +27,16 @@ Without database configuration, `serve` exposes an installer API:
   explicit file migration. Remote mode requires a previously registered host.
 
 `_fileHosts(id,url,mode,secret,registered_at)` contains the registered instance
-id, HTTP URL, full/bucket/s3 mode, and shared secret. Secret is excluded from
-API status serialization. Remote object storage uses authenticated HTTP
-PUT/GET/HEAD/DELETE at `/files/{collectionId}/{recordId}/{filename}`; GET
-`/files/?prefix=...` returns a JSON array of blob list objects. Full instances
-also implement this authenticated API. Thumbnails and copy use the same blob
+id, HTTP URL, full/bucket/s3 mode, and shared secret. It holds at most one row;
+more than one is an error. A bucket replaces earlier bucket rows on startup but
+refuses to start while a full or s3 host is registered. A bucket host is used
+only in fileServer mode; a full host serves the other instances. Secret is
+excluded from API status serialization. Remote object storage uses
+authenticated HTTP PUT/GET/HEAD/DELETE at
+`/files/{collectionId}/{recordId}/{filename...}` (thumbnails nest one level,
+`thumbs_<file>/<size>_<file>`). GET `/files/?prefix=` lists objects: a bucket
+returns `{items,truncated}` and pages with `&after=<last key>`; a full instance
+returns a JSON array of blob list objects. The client accepts both. Thumbnails and copy use the same blob
 backend. Uploads finish before record commit. File deletions are retried from
 `_fileDeleteQueue`; `_fileChanges` is retained as an immutable reconciliation
 feed. PostgreSQL emits transactional `pb_file_changes` notifications. MySQL
@@ -64,6 +75,9 @@ This change is incomplete and should not be treated as production ready:
   index is translated to a NULLIF functional index (MySQL 8 required).
   MySQL DDL implicitly commits and cannot provide PostgreSQL's transactional
   schema migration guarantees. Indexing unrestricted TEXT fields needs review.
+  A text field without a max is `VARCHAR(255)` on MySQL, so it accepts at
+  most 255 characters there (5000 on PostgreSQL). Set a max above 255 to get
+  a `TEXT` column.
 * Collection hooks and collection-tagged cron jobs enforce instance scope.
   Untagged custom jobs remain global. Cross-scope cascades use application-level integrity
   implementation; database foreign keys/triggers have not been implemented.

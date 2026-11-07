@@ -73,3 +73,21 @@ func withinRoot(root, full string) error {
 	}
 	return nil
 }
+
+// maxNameDepth bounds the segments below collection/recordId. PocketBase
+// stores thumbnails one level down (thumbs_<file>/<size>_<file>).
+const maxNameDepth = 4
+
+// splitName validates a filename that may contain nested "/" segments.
+func splitName(filename string) ([]string, error) {
+	parts := strings.Split(filename, "/")
+	if len(parts) > maxNameDepth {
+		return nil, ErrInvalidKey
+	}
+	for _, part := range parts {
+		if err := validSegment(part); err != nil {
+			return nil, err
+		}
+	}
+	return parts, nil
+}

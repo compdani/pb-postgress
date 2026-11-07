@@ -1,28 +1,61 @@
 package apis
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/fatih/color"
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
+	"github.com/pocketbase/pocketbase/tools/security"
+	"github.com/pocketbase/pocketbase/ui"
 )
 
 var installerMutex sync.Mutex
 
-func installerStatus(app core.App) (map[string]any, error) {
-	status := map[string]any{"dbConnected": app.IsBootstrapped(), "installed": false, "fileServer": nil, "fileMode": ""}
+var (
+	installerTokenOnce  sync.Once
+	installerTokenValue string
+)
+
+// InstallerToken is the one-time setup secret for this process. Installer
+// mutations require it in the X-Installer-Token header. It is printed with the
+// installer URL and never stored.
+func InstallerToken() string {
+	installerTokenOnce.Do(func() {
+		installerTokenValue = security.RandomString(48)
+	})
+	return installerTokenValue
+}
+
+func installerAuthorized(r *http.Request) bool {
+	got := r.Header.Get("X-Installer-Token")
+	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(InstallerToken())) == 1
+}
+
+// installerStatus reports setup progress. File host details are only
+// included for a caller holding the setup token.
+func installerStatus(app core.App, detailed bool) (map[string]any, error) {
+	status := map[string]any{"dbConnected": app.IsBootstrapped(), "installed": false}
 	if !app.IsBootstrapped() {
 		return status, nil
 	}
-	count, err := app.CountRecords(core.CollectionNameSuperusers)
+	// The temporary installer superuser does not count as an installation.
+	count, err := app.CountRecords(core.CollectionNameSuperusers, dbx.Not(dbx.HashExp{"email": core.DefaultInstallerEmail}))
 	if err != nil {
 		return nil, err
 	}
 	status["installed"] = count > 0
+	if !detailed {
+		return status, nil
+	}
+	status["fileServer"], status["fileMode"] = nil, ""
 	if ba := core.AsBaseApp(app); ba != nil {
 		host, err := ba.FileHost()
 		if err != nil {
@@ -48,7 +81,7 @@ func installerHandler(app core.App) http.Handler {
 			json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()})
 		}
 		if r.URL.Path == "/api/installer/status" && r.Method == "GET" {
-			s, e := installerStatus(app)
+			s, e := installerStatus(app, installerAuthorized(r))
 			if e != nil {
 				fail(500, errors.New("database status unavailable"))
 				return
@@ -60,7 +93,11 @@ func installerHandler(app core.App) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		status, err := installerStatus(app)
+		if !installerAuthorized(r) {
+			fail(401, errors.New("invalid or missing installer token"))
+			return
+		}
+		status, err := installerStatus(app, false)
 		if err != nil {
 			fail(500, errors.New("database status unavailable"))
 			return
@@ -211,13 +248,25 @@ func bindInstallerAPI(app core.App, rg *router.RouterGroup[*core.RequestEvent]) 
 	rg.GET("/installer/status", WrapStdHandler(h))
 }
 
-// ServeInstaller runs the API before a database is configured. After completion,
-// the full API and dashboard are available after connecting.
+// ServeInstaller runs the API before a database is configured. It serves the
+// dashboard so the installer page can load, and prints the setup URL with the
+// one-time installer token. After connecting, the full API is available.
 func ServeInstaller(app core.App, addr string) error {
 	installer := installerHandler(app)
+	var dashboard http.Handler
+	if ui.DistDirFS != nil {
+		dashboard = http.StripPrefix("/_/", http.FileServerFS(ui.DistDirFS))
+	}
 	var mux http.Handler
 	var mu sync.Mutex
-	return http.ListenAndServe(addr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := &http.Server{
+		Addr:              addr,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       time.Minute,
+		WriteTimeout:      2 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
+	}
+	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/installer/") {
 			installer.ServeHTTP(w, r)
 			return
@@ -237,9 +286,22 @@ func ServeInstaller(app core.App, addr string) error {
 		handler := mux
 		mu.Unlock()
 		if handler == nil {
+			if dashboard != nil && strings.HasPrefix(r.URL.Path, "/_/") {
+				dashboard.ServeHTTP(w, r)
+				return
+			}
 			http.NotFound(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
-	}))
+	})
+
+	host := addr
+	if strings.HasPrefix(host, ":") || strings.HasPrefix(host, "0.0.0.0:") {
+		host = "127.0.0.1" + host[strings.Index(host, ":"):]
+	}
+	color.Magenta("\n(!) No database is configured. Open the URL below to set up this instance:")
+	color.New(color.Bold).Add(color.FgCyan).Printf("http://%s/_/#/pbinstall/%s\n\n", host, InstallerToken())
+
+	return server.ListenAndServe()
 }

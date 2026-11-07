@@ -90,7 +90,11 @@ func Run(ctx context.Context, cfg Config) error {
 		Addr:              cfg.HTTPAddr,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       2 * time.Minute,
+		// Bounded so a stalled client cannot hold a connection forever;
+		// sized for the default 100 MiB object limit on a slow link.
+		ReadTimeout:  15 * time.Minute,
+		WriteTimeout: 15 * time.Minute,
+		IdleTimeout:  2 * time.Minute,
 	}
 	errCh := make(chan error, 1)
 	go func() {

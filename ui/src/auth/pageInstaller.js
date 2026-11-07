@@ -1,11 +1,12 @@
-import { getTokenPayload, isTokenExpired } from "pocketbase";
+// The route token is the one-time installer token printed by the server.
+// Every installer request sends it in the X-Installer-Token header.
+let installerToken = "";
 
 export function pageInstaller(route) {
-    const token = route.params?.token || "";
-    const tokenPayload = getTokenPayload(token);
+    installerToken = route.params?.token || "";
 
-    if (tokenPayload.type != "auth" || isTokenExpired(token)) {
-        app.toasts.error("The installer token is invalid or has expired.");
+    if (!installerToken) {
+        app.toasts.error("The installer link is missing its token.");
         window.location.hash = "#/";
         return;
     }
@@ -51,6 +52,7 @@ export function pageInstaller(route) {
         try {
             const status = await app.pb.send("/api/installer/status", {
                 method: "GET",
+                headers: { "X-Installer-Token": installerToken },
                 requestKey: "installer_status",
             });
             if (status?.installed) {
@@ -235,6 +237,7 @@ export function pageInstaller(route) {
 async function installerPost(path, body) {
     const result = await app.pb.send(path, {
         method: "POST",
+        headers: { "X-Installer-Token": installerToken },
         body,
         requestKey: "installer_" + path,
     });

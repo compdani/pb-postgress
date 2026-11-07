@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -88,6 +89,14 @@ func (s *Store) Put(collection, recordID, filename string, r io.Reader, protecte
 		return ObjectMeta{}, false, err
 	}
 
+	// Stream the body into a temp file without the store lock, so a slow
+	// upload does not block reads. Only the rename and metadata are locked.
+	tmp, n, sum, sniff, err := writeTemp(filepath.Dir(dest), r, s.maxBytes)
+	if err != nil {
+		return ObjectMeta{}, false, err
+	}
+	defer os.Remove(tmp) // no-op after a successful rename
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -100,11 +109,10 @@ func (s *Store) Put(collection, recordID, filename string, r io.Reader, protecte
 	} else if !os.IsNotExist(statErr) {
 		return ObjectMeta{}, false, statErr
 	}
-
-	n, sum, sniff, err := writeAtomic(dest, r, s.maxBytes)
-	if err != nil {
+	if err := os.Rename(tmp, dest); err != nil {
 		return ObjectMeta{}, false, err
 	}
+	syncDir(filepath.Dir(dest))
 	meta := ObjectMeta{
 		Size:        n,
 		ContentType: contentType(filename, sniff, declaredType),
@@ -149,6 +157,12 @@ func (s *Store) Stat(collection, recordID, filename string) (ObjectMeta, error) 
 
 // Delete removes one object and its metadata. Missing objects are success.
 func (s *Store) Delete(collection, recordID, filename string) error {
+	return s.deleteIfNotNewer(collection, recordID, filename, time.Time{})
+}
+
+// deleteIfNotNewer is Delete, but keeps an object updated after since.
+// A zero since deletes unconditionally.
+func (s *Store) deleteIfNotNewer(collection, recordID, filename string, since time.Time) error {
 	path, err := s.objectPath(collection, recordID, filename)
 	if err != nil {
 		return err
@@ -161,6 +175,18 @@ func (s *Store) Delete(collection, recordID, filename string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if !since.IsZero() {
+		meta, err := s.statLocked(collection, recordID, filename)
+		if err == ErrNotFound {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if meta.Updated.After(since) {
+			return nil
+		}
+	}
 	if err := removeFile(path); err != nil {
 		return err
 	}
@@ -204,9 +230,10 @@ func (s *Store) DeleteRecord(collection, recordID string) error {
 	return nil
 }
 
-// List returns objects whose key has prefix, up to limit. A short result
-// with truncated=true means the caller should narrow the prefix.
-func (s *Store) List(prefix string, limit int) ([]ObjectInfo, bool, error) {
+// List returns objects whose key has prefix and sorts after the after key,
+// in key order, up to limit. truncated=true means more objects follow the
+// last returned key; pass it as after to fetch the next page.
+func (s *Store) List(prefix, after string, limit int) ([]ObjectInfo, bool, error) {
 	prefix, err := cleanPrefix(prefix)
 	if err != nil {
 		return nil, false, err
@@ -215,13 +242,13 @@ func (s *Store) List(prefix string, limit int) ([]ObjectInfo, bool, error) {
 		limit = 1000
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var items []ObjectInfo
-	truncated := false
+	// Walk without the store lock; metadata is read under it per item.
+	var keys [][3]string
 	err = filepath.WalkDir(s.objectsDir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
+			if os.IsNotExist(walkErr) {
+				return nil
+			}
 			return walkErr
 		}
 		if d.IsDir() {
@@ -236,42 +263,51 @@ func (s *Store) List(prefix string, limit int) ([]ObjectInfo, bool, error) {
 			return err
 		}
 		parts := strings.Split(filepath.ToSlash(rel), "/")
-		if len(parts) != 3 {
+		if len(parts) < 3 {
 			return nil
 		}
+		parts = []string{parts[0], parts[1], strings.Join(parts[2:], "/")}
 		key := objectKey(parts[0], parts[1], parts[2])
-		if prefix != "" && !strings.HasPrefix(key, prefix) {
+		if (prefix != "" && !strings.HasPrefix(key, prefix)) || (after != "" && key <= after) {
 			return nil
 		}
+		keys = append(keys, [3]string{parts[0], parts[1], parts[2]})
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return objectKey(keys[i][0], keys[i][1], keys[i][2]) < objectKey(keys[j][0], keys[j][1], keys[j][2])
+	})
+
+	items := []ObjectInfo{}
+	truncated := false
+	for _, k := range keys {
 		if len(items) >= limit {
 			truncated = true
-			return filepath.SkipAll
+			break
 		}
-		meta, err := s.statLocked(parts[0], parts[1], parts[2])
+		s.mu.Lock()
+		meta, err := s.statLocked(k[0], k[1], k[2])
+		s.mu.Unlock()
+		if err == ErrNotFound {
+			continue
+		}
 		if err != nil {
-			if err == ErrNotFound {
-				return nil
-			}
-			return err
+			return nil, false, err
 		}
 		items = append(items, ObjectInfo{
-			Key:         key,
-			Collection:  parts[0],
-			RecordID:    parts[1],
-			Filename:    parts[2],
+			Key:         objectKey(k[0], k[1], k[2]),
+			Collection:  k[0],
+			RecordID:    k[1],
+			Filename:    k[2],
 			Size:        meta.Size,
 			ContentType: meta.ContentType,
 			ETag:        meta.ETag,
 			Protected:   meta.Protected,
 			Updated:     meta.Updated,
 		})
-		return nil
-	})
-	if err != nil {
-		return nil, false, err
-	}
-	if items == nil {
-		items = []ObjectInfo{}
 	}
 	return items, truncated, nil
 }
@@ -285,7 +321,7 @@ func (s *Store) Invalidate(collection, recordID, filename string) error {
 	if err := validSegment(recordID); err != nil {
 		return err
 	}
-	if err := validSegment(filename); err != nil {
+	if _, err := splitName(filename); err != nil {
 		return err
 	}
 	path, err := s.objectPath(collection, recordID, filename)
@@ -326,6 +362,8 @@ func (s *Store) Invalidate(collection, recordID, filename string) error {
 
 // ApplyChange reconciles one _fileChanges row.
 // delete removes the object (or the whole record directory when filename is empty or "*").
+// A file delete is skipped when the object was written after the change was
+// logged, so a replayed or late delete cannot remove a newer upload.
 // upsert invalidates the cached ETag. Unknown ops are ignored.
 func (s *Store) ApplyChange(c Change) error {
 	switch c.Op {
@@ -333,7 +371,7 @@ func (s *Store) ApplyChange(c Change) error {
 		if c.Filename == "" || c.Filename == "*" {
 			return s.DeleteRecord(c.Collection, c.RecordID)
 		}
-		return s.Delete(c.Collection, c.RecordID, c.Filename)
+		return s.deleteIfNotNewer(c.Collection, c.RecordID, c.Filename, c.CreatedAt)
 	case "upsert":
 		if c.Filename == "" || c.Filename == "*" {
 			return s.invalidateRecord(c.Collection, c.RecordID)
@@ -454,18 +492,24 @@ func (s *Store) saveMeta(collection, recordID, filename string, meta ObjectMeta)
 }
 
 func (s *Store) objectPath(collection, recordID, filename string) (string, error) {
-	return s.absUnder(s.objectsDir, collection, recordID, filename)
-}
-
-func (s *Store) metaPath(collection, recordID, filename string) (string, error) {
-	dir, err := s.absUnder(s.metaDir, collection, recordID)
+	parts, err := splitName(filename)
 	if err != nil {
 		return "", err
 	}
-	if err := validSegment(filename); err != nil {
+	return s.absUnder(s.objectsDir, append([]string{collection, recordID}, parts...)...)
+}
+
+func (s *Store) metaPath(collection, recordID, filename string) (string, error) {
+	parts, err := splitName(filename)
+	if err != nil {
 		return "", err
 	}
-	full := filepath.Join(dir, filename+".pbmeta")
+	dirParts := append([]string{collection, recordID}, parts[:len(parts)-1]...)
+	dir, err := s.absUnder(s.metaDir, dirParts...)
+	if err != nil {
+		return "", err
+	}
+	full := filepath.Join(dir, parts[len(parts)-1]+".pbmeta")
 	if err := withinRoot(s.metaDir, full); err != nil {
 		return "", err
 	}
@@ -528,12 +572,27 @@ func writeFileAtomic(path string, data []byte) error {
 
 func writeAtomic(dest string, r io.Reader, maxBytes int64) (int64, string, []byte, error) {
 	dir := filepath.Dir(dest)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	tmpName, n, sum, sniff, err := writeTemp(dir, r, maxBytes)
+	if err != nil {
 		return 0, "", nil, err
+	}
+	if err := os.Rename(tmpName, dest); err != nil {
+		_ = os.Remove(tmpName)
+		return 0, "", nil, err
+	}
+	syncDir(dir)
+	return n, sum, sniff, nil
+}
+
+// writeTemp streams r into a synced temp file in dir and returns its path.
+// The caller renames or removes it.
+func writeTemp(dir string, r io.Reader, maxBytes int64) (string, int64, string, []byte, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", 0, "", nil, err
 	}
 	tmp, err := os.CreateTemp(dir, ".tmp-*")
 	if err != nil {
-		return 0, "", nil, err
+		return "", 0, "", nil, err
 	}
 	tmpName := tmp.Name()
 	committed := false
@@ -552,7 +611,7 @@ func writeAtomic(dest string, r io.Reader, maxBytes int64) (int64, string, []byt
 		nr, er := r.Read(buf)
 		if nr > 0 {
 			if maxBytes > 0 && n+int64(nr) > maxBytes {
-				return 0, "", nil, ErrTooLarge
+				return "", 0, "", nil, ErrTooLarge
 			}
 			if len(sniff) < 512 {
 				take := 512 - len(sniff)
@@ -565,31 +624,27 @@ func writeAtomic(dest string, r io.Reader, maxBytes int64) (int64, string, []byt
 			_, _ = h.Write(buf[:nw])
 			n += int64(nw)
 			if ew != nil {
-				return 0, "", nil, ew
+				return "", 0, "", nil, ew
 			}
 			if nw != nr {
-				return 0, "", nil, io.ErrShortWrite
+				return "", 0, "", nil, io.ErrShortWrite
 			}
 		}
 		if er == io.EOF {
 			break
 		}
 		if er != nil {
-			return 0, "", nil, er
+			return "", 0, "", nil, er
 		}
 	}
 	if err := tmp.Sync(); err != nil {
-		return 0, "", nil, err
+		return "", 0, "", nil, err
 	}
 	if err := tmp.Close(); err != nil {
-		return 0, "", nil, err
-	}
-	if err := os.Rename(tmpName, dest); err != nil {
-		return 0, "", nil, err
+		return "", 0, "", nil, err
 	}
 	committed = true
-	syncDir(dir)
-	return n, hex.EncodeToString(h.Sum(nil)), sniff, nil
+	return tmpName, n, hex.EncodeToString(h.Sum(nil)), sniff, nil
 }
 
 func hashFile(path, filename string, old ObjectMeta) (ObjectMeta, error) {

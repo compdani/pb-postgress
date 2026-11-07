@@ -1,7 +1,6 @@
 package core
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -49,15 +48,21 @@ func (app *BaseApp) FileHost() (*FileHost, error) {
 	if db == nil {
 		return nil, errors.New("database is not initialized")
 	}
-	var host FileHost
-	err := db.Select("id AS instanceId", "url", "mode", "secret", "registered_at").From("_fileHosts").One(&host)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
+	// Load up to two rows so a second registration is an error, not a
+	// silent, order-dependent choice.
+	var hosts []FileHost
+	err := db.Select("id AS instanceId", "url", "mode", "secret", "registered_at").From("_fileHosts").Limit(2).All(&hosts)
 	if err != nil {
 		return nil, err
 	}
-	return &host, nil
+	switch len(hosts) {
+	case 0:
+		return nil, nil
+	case 1:
+		return &hosts[0], nil
+	default:
+		return nil, errors.New("more than one file host is registered in _fileHosts; keep one row")
+	}
 }
 func (app *BaseApp) SetFileHost(host FileHost) error {
 	u, err := url.Parse(host.URL)

@@ -5,18 +5,22 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
 )
 
 // Server is the HTTP API other PocketBase instances use to read and write bytes.
-// Non-protected GET and HEAD are public. Every other call needs
-// Authorization: Bearer <secret>.
+// Every call needs Authorization: Bearer <secret>. GET and HEAD also accept a
+// signed ?token= for one key (see SignToken). PocketBase enforces record and
+// field access rules before it proxies a download, so the bucket never serves
+// objects anonymously.
 type Server struct {
 	store    *Store
 	apiKey   string
 	maxBytes int64
+	pageSize int
 	cors     corsPolicy
 }
 
@@ -25,6 +29,8 @@ type Options struct {
 	APIKey      string
 	MaxBytes    int64
 	CORSOrigins []string
+	// ListPageSize caps one list response. Non-positive means 1000.
+	ListPageSize int
 }
 
 // NewServer serves store. A non-positive MaxBytes uses the store limit.
@@ -40,6 +46,7 @@ func NewServer(store *Store, opts Options) *Server {
 		store:    store,
 		apiKey:   opts.APIKey,
 		maxBytes: maxBytes,
+		pageSize: opts.ListPageSize,
 		cors:     newCORS(opts.CORSOrigins),
 	}
 }
@@ -47,19 +54,21 @@ func NewServer(store *Store, opts Options) *Server {
 // Handler is the bucket HTTP handler.
 //
 //	GET  /healthz
-//	PUT  /files/{collection}/{recordId}/{filename}
-//	GET  /files/{collection}/{recordId}/{filename}
-//	HEAD /files/{collection}/{recordId}/{filename}
-//	DELETE /files/{collection}/{recordId}/{filename}
+//	PUT  /files/{collection}/{recordId}/{filename...}
+//	GET  /files/{collection}/{recordId}/{filename...}
+//	HEAD /files/{collection}/{recordId}/{filename...}
+//	DELETE /files/{collection}/{recordId}/{filename...}
 //	DELETE /files/{collection}/{recordId}/
-//	GET  /files/?prefix=
+//	GET  /files/?prefix=&after=
+//
+// {filename...} may contain nested segments, e.g. thumbs_a.png/100x100_a.png.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /files/{$}", s.list)
 	mux.HandleFunc("GET /files", s.list)
-	mux.HandleFunc("PUT /files/{collection}/{recordId}/{filename}", s.put)
-	mux.HandleFunc("GET /files/{collection}/{recordId}/{filename}", s.download)
+	mux.HandleFunc("PUT /files/{collection}/{recordId}/{filename...}", s.put)
+	mux.HandleFunc("GET /files/{collection}/{recordId}/{filename...}", s.download)
 	mux.HandleFunc("DELETE /files/{rest...}", s.del)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +121,11 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	recordID := r.PathValue("recordId")
 	filename := r.PathValue("filename")
 
+	if !s.allowRead(r, objectKey(collection, recordID, filename)) {
+		writeJSON(w, http.StatusUnauthorized, errBody("unauthorized"))
+		return
+	}
+
 	meta, f, err := s.store.Open(collection, recordID, filename)
 	if err != nil {
 		writeStoreErr(w, err)
@@ -119,17 +133,12 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	if meta.Protected && !s.allowProtected(r, objectKey(collection, recordID, filename)) {
-		writeJSON(w, http.StatusUnauthorized, errBody("unauthorized"))
-		return
-	}
-
 	disposition := "attachment"
 	force, _ := strconv.ParseBool(r.URL.Query().Get("download"))
 	if !force && inlineContent(meta.ContentType) {
 		disposition = "inline"
 	}
-	w.Header().Set("Content-Disposition", disposition+"; filename="+strconv.Quote(safeDisposition(filename)))
+	w.Header().Set("Content-Disposition", disposition+"; filename="+strconv.Quote(safeDisposition(path.Base(filename))))
 	w.Header().Set("Content-Type", meta.ContentType)
 	w.Header().Set("ETag", meta.ETag)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -137,9 +146,9 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	if meta.Protected {
 		w.Header().Set("Cache-Control", "private, no-store")
 	} else {
-		w.Header().Set("Cache-Control", "max-age=2592000, stale-while-revalidate=86400")
+		w.Header().Set("Cache-Control", "private, max-age=2592000, stale-while-revalidate=86400")
 	}
-	http.ServeContent(w, r, filename, meta.Updated, f)
+	http.ServeContent(w, r, path.Base(filename), meta.Updated, f)
 }
 
 func (s *Server) del(w http.ResponseWriter, r *http.Request) {
@@ -152,11 +161,11 @@ func (s *Server) del(w http.ResponseWriter, r *http.Request) {
 	switch len(parts) {
 	case 2:
 		err = s.store.DeleteRecord(parts[0], parts[1])
-	case 3:
-		err = s.store.Delete(parts[0], parts[1], parts[2])
-	default:
+	case 0, 1:
 		writeJSON(w, http.StatusBadRequest, errBody("invalid object key"))
 		return
+	default:
+		err = s.store.Delete(parts[0], parts[1], strings.Join(parts[2:], "/"))
 	}
 	if err != nil {
 		writeStoreErr(w, err)
@@ -171,7 +180,7 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	prefix := r.URL.Query().Get("prefix")
-	items, truncated, err := s.store.List(prefix, 1000)
+	items, truncated, err := s.store.List(prefix, r.URL.Query().Get("after"), s.pageSize)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -187,7 +196,7 @@ func (s *Server) authorized(r *http.Request) bool {
 	return bearerMatch(r.Header.Get("Authorization"), s.apiKey)
 }
 
-func (s *Server) allowProtected(r *http.Request, key string) bool {
+func (s *Server) allowRead(r *http.Request, key string) bool {
 	if s.authorized(r) {
 		return true
 	}

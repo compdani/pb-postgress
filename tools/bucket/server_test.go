@@ -114,6 +114,9 @@ func TestPutGetHeadRangeAndList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	mustStatus(t, res, http.StatusUnauthorized)
+
+	res = authed(t, ts, http.MethodGet, "/files/demo/rec1/note.txt", nil)
 	body := mustStatus(t, res, http.StatusOK)
 	if !bytes.Equal(body, payload) {
 		t.Fatalf("body %q", body)
@@ -122,10 +125,7 @@ func TestPutGetHeadRangeAndList(t *testing.T) {
 		t.Fatalf("headers %+v", res.Header)
 	}
 
-	head, err := ts.Client().Head(ts.URL + "/files/demo/rec1/note.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
+	head := authed(t, ts, http.MethodHead, "/files/demo/rec1/note.txt", nil)
 	if head.StatusCode != http.StatusOK {
 		t.Fatalf("HEAD status %d", head.StatusCode)
 	}
@@ -140,6 +140,7 @@ func TestPutGetHeadRangeAndList(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/files/demo/rec1/note.txt", nil)
 	req.Header.Set("Range", "bytes=0-3")
+	req.Header.Set("Authorization", "Bearer test-secret")
 	res, err = ts.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -154,6 +155,7 @@ func TestPutGetHeadRangeAndList(t *testing.T) {
 
 	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/files/demo/rec1/note.txt", nil)
 	req.Header.Set("Range", "bytes=100-120")
+	req.Header.Set("Authorization", "Bearer test-secret")
 	res, err = ts.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -193,10 +195,7 @@ func TestContentTypeAndProtectedSignedURL(t *testing.T) {
 	js := []byte("console.log(1)")
 	res := putFile(t, ts, "/files/col/rec/app.js", js, nil)
 	mustStatus(t, res, http.StatusCreated)
-	res, err := ts.Client().Get(ts.URL + "/files/col/rec/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
+	res = authed(t, ts, http.MethodGet, "/files/col/rec/app.js", nil)
 	mustStatus(t, res, http.StatusOK)
 	if ct := res.Header.Get("Content-Type"); ct != "text/javascript" {
 		t.Fatalf("content type %q", ct)
@@ -206,7 +205,7 @@ func TestContentTypeAndProtectedSignedURL(t *testing.T) {
 	res = putFile(t, ts, "/files/col/rec/pic.png", png, map[string]string{"X-Protected": "true"})
 	mustStatus(t, res, http.StatusCreated)
 
-	res, err = ts.Client().Get(ts.URL + "/files/col/rec/pic.png")
+	res, err := ts.Client().Get(ts.URL + "/files/col/rec/pic.png")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +339,7 @@ func TestRejectTraversalAndOversize(t *testing.T) {
 	if err := store.Delete("col", "..", "a.txt"); !errors.Is(err, ErrInvalidKey) {
 		t.Fatalf("delete ..: %v", err)
 	}
-	if _, _, err := store.List("../", 10); !errors.Is(err, ErrInvalidKey) {
+	if _, _, err := store.List("../", "", 10); !errors.Is(err, ErrInvalidKey) {
 		t.Fatalf("list traversal: %v", err)
 	}
 
@@ -441,4 +440,21 @@ func TestSymlinkEscape(t *testing.T) {
 	if string(got) != "outside" {
 		t.Fatalf("outside changed to %q", got)
 	}
+}
+
+func authed(t *testing.T, ts *httptest.Server, method, path string, header map[string]string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(method, ts.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-secret")
+	for k, v := range header {
+		req.Header.Set(k, v)
+	}
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
 }
