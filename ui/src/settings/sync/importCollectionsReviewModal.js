@@ -77,7 +77,7 @@ function importCollectionsModal(oldCollections, newCollections, settingsArg) {
                     // add only deleted fields
                     const fields = Array.isArray(old.fields) ? old.fields : [];
                     for (const field of fields) {
-                        if (!imported.fields.find((f) => f.id == field.id)) {
+                        if (!imported.fields?.find((f) => f.id == field.id)) {
                             deletedFieldNames.push(`${old.name}.${field.name} (${field.id})`);
                         }
                     }

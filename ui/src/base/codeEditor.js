@@ -108,6 +108,8 @@ window.app.components.codeEditor = function(propsArg = {}) {
     }
 
     function closeAutocompleteDropdown() {
+        clearTimeout(autocompleteTimeoutId);
+
         if (dropdown) {
             dropdown.remove();
             dropdown = null;
@@ -131,6 +133,8 @@ window.app.components.codeEditor = function(propsArg = {}) {
 
     let valueWatcher;
 
+    let autocompleteTimeoutId;
+
     // note1: use contenteditable so that we can call getBoundingClientRect on the selected text
     // note2: getSelection also doesn't seem to work in Firefox for textarea and inputs
     const editorContent = t.div({
@@ -141,7 +145,7 @@ window.app.components.codeEditor = function(propsArg = {}) {
         autocomplete: "off",
         autocapitalize: "off",
         role: "textbox",
-        className: "editor-content",
+        className: "code-editor-content",
         "html-data-placeholder": () => props.placeholder,
         onmount: (el) => {
             // auto change change textContent only if it props.value was
@@ -173,86 +177,106 @@ window.app.components.codeEditor = function(propsArg = {}) {
             props.onblur?.(props.value);
         },
         oninput: (e) => {
-            closeAutocompleteDropdown();
+            clearTimeout(autocompleteTimeoutId);
 
             updateValue(editorContent.textContent);
 
             if (!props.value?.length) {
                 editorContent.textContent = ""; // ensure that no comments, br, etc. tags are left
+                closeAutocompleteDropdown();
                 return;
             }
 
-            if (!editorContent?.isConnected) {
-                return;
-            }
+            autocompleteTimeoutId = setTimeout(async () => {
+                closeAutocompleteDropdown();
 
-            const pos = getCaretPos(editorContent);
+                if (!editorContent?.isConnected) {
+                    return;
+                }
 
-            const match = getWord(props.value, pos);
+                const pos = getCaretPos(editorContent);
 
-            if (
-                !match.word.length
-                // don't show suggestions in case the cursor is at the
-                // beginning of an already typed word
-                || pos == match.start
-            ) {
-                return;
-            }
+                const match = getWord(props.value, pos);
 
-            let suggestions = [];
-            if (typeof props.autocomplete == "function") {
-                suggestions = props.autocomplete(match.word) || [];
-            } else if (!app.utils.isEmpty(props.autocomplete)) {
-                const wordLowercased = match.word.toLowerCase();
-                suggestions = props.autocomplete.filter((item) => {
-                    if (typeof item == "object") {
-                        item = item?.value;
-                    }
+                if (
+                    !match.word.length
+                    // don't show suggestions in case the cursor is at the
+                    // beginning of an already typed word
+                    || pos == match.start
+                ) {
+                    return;
+                }
 
-                    item = item?.toLowerCase();
+                let suggestions = [];
+                if (typeof props.autocomplete == "function") {
+                    suggestions = (await props.autocomplete(match.prefix || match.word)) || [];
+                } else if (!app.utils.isEmpty(props.autocomplete)) {
+                    const wordLowercased = (match.prefix || match.word).toLowerCase();
+                    suggestions = props.autocomplete.filter((item) => {
+                        if (typeof item == "object") {
+                            item = item?.value;
+                        }
 
-                    return item && item != wordLowercased && item.includes(wordLowercased);
-                });
-            }
+                        item = item?.toLowerCase();
 
-            if (!suggestions?.length) {
-                return;
-            }
+                        return item && item != wordLowercased && item.includes(wordLowercased);
+                    });
+                }
 
-            openAutocompleteDropdown(() => {
-                return suggestions.map((suggestion, i) => {
-                    return t.button({
-                        type: "button",
-                        className: `dropdown-item ${i == 0 ? "active" : ""}`,
-                        textContent: suggestion.label || suggestion.value || suggestion,
-                        onclick: (e) => {
-                            e.preventDefault();
+                if (
+                    !suggestions?.length
+                    // don't show if the only suggestion is exact match
+                    || (
+                        suggestions.length == 1
+                        && (suggestions[0].value || suggestions[0]) == match.word
+                    )
+                ) {
+                    return;
+                }
 
-                            editorContent.focus();
+                openAutocompleteDropdown(() => {
+                    return suggestions.map((suggestion, i) => {
+                        return t.button(
+                            {
+                                type: "button",
+                                className: `dropdown-item ${i == 0 ? "active" : ""}`,
+                                onclick: (e) => {
+                                    e.preventDefault();
 
-                            const word = suggestion.value || suggestion;
+                                    editorContent.focus();
 
-                            // note: replacing the text doesn't preserve the native "undo" history
-                            // (document.execCommand is being deprecated)
-                            editorContent.textContent = editorContent.textContent.substring(0, match.start)
-                                + word
-                                + editorContent.textContent.substring(match.end + 1);
+                                    const word = suggestion.value || suggestion;
 
-                            updateValue(editorContent.textContent);
+                                    // note: replacing the text doesn't preserve the native "undo" history
+                                    // (document.execCommand is being deprecated)
+                                    editorContent.textContent = editorContent.textContent.substring(0, match.start)
+                                        + word
+                                        + editorContent.textContent.substring(match.end + 1);
 
-                            try {
-                                window
-                                    .getSelection()
-                                    .setPosition(editorContent.childNodes[0], match.start + word.length);
-                            } catch (err) {
-                                console.warn("failed to set caret position", err);
-                            }
+                                    updateValue(editorContent.textContent);
 
-                            closeAutocompleteDropdown();
-                        },
+                                    try {
+                                        window
+                                            .getSelection()
+                                            .setPosition(editorContent.childNodes[0], match.start + word.length);
+                                    } catch (err) {
+                                        console.warn("failed to set caret position", err);
+                                    }
+
+                                    closeAutocompleteDropdown();
+                                },
+                            },
+                            (el) => {
+                                if (typeof suggestion?.label == "function") {
+                                    return suggestion.label(el);
+                                }
+
+                                return suggestion?.label || suggestion?.value || suggestion;
+                            },
+                        );
                     });
                 });
-            });
+            }, 50);
         },
         onkeydown: (e) => {
             isCtrlOrCmdKey = e.ctrlKey || e.metaKey;
@@ -304,6 +328,12 @@ window.app.components.codeEditor = function(propsArg = {}) {
             if (isCtrlOrCmdKey && e.key.toLowerCase() == "d") {
                 e.preventDefault();
                 selectWord(editorContent);
+                return;
+            }
+
+            // prevent "Tab trap"
+            if (!props.singleLine && e.key == "Escape" && !dropdown?.isConnected) {
+                editorContent?.blur();
                 return;
             }
 
@@ -398,7 +428,7 @@ window.app.components.codeEditor = function(propsArg = {}) {
     );
 };
 
-const highlightThreshold = 500;
+const highlightThreshold = 850;
 
 function highlight(content, language) {
     content = typeof content == "string" ? content : "";
@@ -438,6 +468,7 @@ function getWord(value, caretPos) {
 
     return {
         word: value.substring(start, end + 1),
+        prefix: value.substring(start, caretPos),
         start: start,
         end: end,
     };

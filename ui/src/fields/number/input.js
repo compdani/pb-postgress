@@ -25,7 +25,23 @@ export function input(props) {
                 min: () => props.field.min,
                 max: () => props.field.max,
                 value: () => props.record[props.field.name] || 0,
-                oninput: (e) => props.record[props.field.name] = Number(e.target.value),
+                oninput: (e) => {
+                    // temp skip invalid numbers with leading 0 while typing to avoid reseting the entire input
+                    // (always normalized in onchange)
+                    if (
+                        e.target.value?.length > 1
+                        && e.target.value[0] == "0"
+                        && e.target.value[1] != "."
+                    ) {
+                        return;
+                    }
+
+                    props.record[props.field.name] = Number(e.target.value);
+                },
+                onchange: (e) => {
+                    props.record[props.field.name] = null; // reset reactivity
+                    props.record[props.field.name] = Number(e.target.value);
+                },
             }),
         ),
         () => {

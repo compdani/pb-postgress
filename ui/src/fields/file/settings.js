@@ -252,7 +252,19 @@ export function settings(props) {
                             placeholder: "~5MB default",
                             name: () => `fields.${props.fieldIndex}.maxSize`,
                             value: () => props.field.maxSize || "",
-                            oninput: (e) => (props.field.maxSize = parseInt(e.target.value, 10)),
+                            oninput: (e) => {
+                                // temp skip invalid numbers with leading 0 while typing to avoid reseting the entire input
+                                // (always normalized in onchange)
+                                if (e.target.value?.length > 1 && e.target.value[0] == "0") {
+                                    return;
+                                }
+
+                                props.field.maxSize = parseInt(e.target.value, 10);
+                            },
+                            onchange: (e) => {
+                                props.field.maxSize = null; // reset reactivity
+                                props.field.maxSize = parseInt(e.target.value, 10);
+                            },
                         }),
                     ),
                     t.div({ className: "field-help" }, "In bytes."),

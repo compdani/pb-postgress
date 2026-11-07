@@ -127,7 +127,7 @@ export function collectionViewQueryTab(upsertData) {
                         ),
                         t.li(
                             null,
-                            "UNION expressions are supported but the entire query must be wrapped in parenthesis.",
+                            "UNION expressions are supported but the entire query must be wrapped in subquery.",
                         ),
                     ),
                 ),
