@@ -93,6 +93,11 @@ window.app.store = store({
                 label: "Files storage",
             },
             {
+                href: "#/settings/instance-collections",
+                icon: "ri-stack-line",
+                label: "Instance collections",
+            },
+            {
                 href: "#/settings/backups",
                 icon: "ri-archive-line",
                 label: "Backups",

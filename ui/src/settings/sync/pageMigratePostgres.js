@@ -99,7 +99,7 @@ export function pageMigratePostgres(route) {
                                 null,
                                 "PostgreSQL is not configured. Set ",
                                 t.code(null, "PB_POSTGRES_URL"),
-                                " to enable migrating collections from SQLite to PostgreSQL.",
+                                " to enable migrating collections to PostgreSQL.",
                             ),
                         ),
                     );
@@ -113,7 +113,7 @@ export function pageMigratePostgres(route) {
                     null,
                     t.p(
                         { className: "txt-hint m-b-base" },
-                        "Move existing SQLite-backed collections to PocketBase-managed PostgreSQL tables. Collection names, schemas, rules, and record IDs are preserved.",
+                        "Move existing collections to PocketBase-managed PostgreSQL tables. Collection names, schemas, rules, and record IDs are preserved.",
                     ),
                     t.div(
                         { className: "field m-b-base" },
@@ -146,7 +146,7 @@ export function pageMigratePostgres(route) {
                                         null,
                                         t.td(
                                             { colspan: 4, className: "txt-hint txt-center" },
-                                            "No SQLite-backed collections available to migrate.",
+                                            "No collections available to migrate.",
                                         ),
                                     );
                                 }
@@ -160,7 +160,7 @@ export function pageMigratePostgres(route) {
                                             t.span({ className: "txt-hint m-l-5" }, collection.id),
                                         ),
                                         t.td(null, app.utils.sentenize(collection.type, false)),
-                                        t.td(null, t.span({ className: "label outline" }, "SQLite")),
+                                        t.td(null, t.span({ className: "label outline" }, "Local")),
                                         t.td(
                                             { className: "txt-right" },
                                             t.button(

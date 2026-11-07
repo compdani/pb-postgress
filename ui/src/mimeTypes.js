@@ -129,7 +129,6 @@ window.app.utils.mimeTypes = [
     { ext: ".lit", mimeType: "application/x-ms-reader" },
     { ext: ".bpg", mimeType: "image/bpg" },
     { ext: ".cbor", mimeType: "application/cbor" },
-    { ext: ".sqlite", mimeType: "application/vnd.sqlite3" },
     { ext: ".dwg", mimeType: "image/vnd.dwg" },
     { ext: ".nes", mimeType: "application/vnd.nintendo.snes.rom" },
     { ext: ".lnk", mimeType: "application/x-ms-shortcut" },

@@ -132,7 +132,7 @@ function postgresMigrateReviewModal(settingsArg) {
                     t.p(
                         null,
                         () =>
-                            `Migrate collection "${collection.name}" from SQLite to a PocketBase-managed PostgreSQL table. Record IDs and collection settings are preserved.`,
+                            `Migrate collection "${collection.name}" to a PocketBase-managed PostgreSQL table. Record IDs and collection settings are preserved.`,
                     ),
                     t.div(
                         { className: "alert warning m-b-base" },
