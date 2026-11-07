@@ -116,6 +116,12 @@ func TestBucketProcessFileLifecycle(t *testing.T) {
 			if err := os.WriteFile(key, content, 0600); err != nil {
 				t.Fatal(err)
 			}
+			// Older than the logged delete by more than the bucket's clock-skew
+			// tolerance, so the feed may remove it.
+			old := time.Now().Add(-time.Minute)
+			if err := os.Chtimes(key, old, old); err != nil {
+				t.Fatal(err)
+			}
 			if _, err := app.DB().Insert("_fileChanges", map[string]any{"op": "delete", "collection": c.Id, "record_id": r.Id, "filename": r.GetString("file"), "created_at": time.Now().UTC()}).Execute(); err != nil {
 				t.Fatal(err)
 			}
@@ -125,9 +131,10 @@ func TestBucketProcessFileLifecycle(t *testing.T) {
 }
 
 // Concurrent bucket registrations leave exactly one _fileHosts row, and a
-// bucket never replaces a full host registered by PocketBase. The concurrent
-// part is a smoke check: these transactions are too short to collide reliably,
-// so the table lock in Register/SetFileHost is what guarantees it.
+// bucket never replaces a full host registered by PocketBase. On MySQL the
+// concurrent part reproduces the empty-table deadlock without the named lock;
+// on PostgreSQL the transactions are too short to collide reliably, so there
+// it is a smoke check and LOCK TABLE is what guarantees it.
 func TestFileHostRegistrationIsSerialized(t *testing.T) {
 	cfg := tests.NewDatabaseConfig(t)
 	app := core.NewBaseApp(cfg)

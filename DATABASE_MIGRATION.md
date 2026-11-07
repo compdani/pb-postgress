@@ -32,9 +32,9 @@ configured database has no superuser yet.
 `_fileHosts(id,url,mode,secret,registered_at)` contains the registered instance
 id, HTTP URL, full/bucket/s3 mode, and shared secret. It holds at most one row;
 more than one is an error. A bucket replaces earlier bucket rows on startup but
-refuses to start while a full or s3 host is registered. Both writers take a
-table lock (PostgreSQL `LOCK TABLE`, MySQL locking read under the default
-REPEATABLE READ) around the check and replace. A bucket host is used
+refuses to start while a full or s3 host is registered. Both writers lock
+the table around the check and replace (PostgreSQL `LOCK TABLE`; MySQL the named lock
+`pb_file_hosts` via `GET_LOCK`). A bucket host is used
 only in fileServer mode; a full host serves the other instances. Secret is
 excluded from API status serialization. Remote object storage uses
 authenticated HTTP PUT/GET/HEAD/DELETE at

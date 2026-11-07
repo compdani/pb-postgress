@@ -161,7 +161,9 @@ func (s *Store) Delete(collection, recordID, filename string) error {
 }
 
 // clockSkew is the tolerance between the bucket's file times and the
-// created_at written by a PocketBase instance on another host.
+// created_at written by a PocketBase instance on another host. A replayed
+// delete removes an object only if it is at least this much older than the
+// logged change.
 const clockSkew = 5 * time.Second
 
 // deleteIfNotNewer is Delete, but keeps an object updated after since.
@@ -187,9 +189,12 @@ func (s *Store) deleteIfNotNewer(collection, recordID, filename string, since ti
 		if err != nil {
 			return err
 		}
-		// The bucket's clock and the database writer's clock can differ;
-		// keep the object only when it is clearly newer than the change.
-		if meta.Updated.After(since.Add(clockSkew)) {
+		// The bucket's clock and the database writer's clock can differ.
+		// Delete only an object clearly older than the change; anything in
+		// the ambiguous window is kept, because deleting a newer upload is
+		// unrecoverable while a leftover file is still removed by
+		// PocketBase's own delete queue.
+		if meta.Updated.After(since.Add(-clockSkew)) {
 			return nil
 		}
 	}

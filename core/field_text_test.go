@@ -78,6 +78,12 @@ func TestTextFieldValidateValue(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Without a max, text is 5000 characters, but VARCHAR(255) on MySQL.
+	defaultMax := 5000
+	if app.SQLDialect() == core.DialectMySQL {
+		defaultMax = 255
+	}
+
 	scenarios := []struct {
 		name        string
 		field       *core.TextField
@@ -309,7 +315,7 @@ func TestTextFieldValidateValue(t *testing.T) {
 			&core.TextField{Name: "test"},
 			func() *core.Record {
 				record := core.NewRecord(collection)
-				record.SetRaw("test", strings.Repeat("a", 5001))
+				record.SetRaw("test", strings.Repeat("a", defaultMax+1))
 				return record
 			},
 			true,
@@ -319,7 +325,7 @@ func TestTextFieldValidateValue(t *testing.T) {
 			&core.TextField{Name: "test"},
 			func() *core.Record {
 				record := core.NewRecord(collection)
-				record.SetRaw("test", strings.Repeat("a", 500))
+				record.SetRaw("test", strings.Repeat("a", defaultMax))
 				return record
 			},
 			false,

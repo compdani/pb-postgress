@@ -158,8 +158,16 @@ func TestApplyDeleteKeepsNewerObject(t *testing.T) {
 	if _, err := store.Stat("col", "rec", "a.txt"); err != nil {
 		t.Fatalf("newer object deleted: %v", err)
 	}
-	// A delete logged after the upload removes it.
-	if err := store.ApplyChange(Change{ID: 2, Op: "delete", Collection: "col", RecordID: "rec", Filename: "a.txt", CreatedAt: time.Now().Add(time.Second)}); err != nil {
+	// A delete logged one second before the upload (inside the clock-skew
+	// window) must not remove it either.
+	if err := store.ApplyChange(Change{ID: 2, Op: "delete", Collection: "col", RecordID: "rec", Filename: "a.txt", CreatedAt: time.Now().Add(-time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Stat("col", "rec", "a.txt"); err != nil {
+		t.Fatalf("object inside the skew window deleted: %v", err)
+	}
+	// A delete logged clearly after the upload removes it.
+	if err := store.ApplyChange(Change{ID: 3, Op: "delete", Collection: "col", RecordID: "rec", Filename: "a.txt", CreatedAt: time.Now().Add(time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Stat("col", "rec", "a.txt"); !errors.Is(err, ErrNotFound) {

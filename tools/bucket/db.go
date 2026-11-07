@@ -8,6 +8,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/fileschema"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -142,13 +143,13 @@ func (d *DB) Register(ctx context.Context, h Host) error {
 
 	// Serialize with other registrations and with PocketBase's SetFileHost,
 	// which takes the same lock, so the check and the replace are atomic.
-	lock := fmt.Sprintf(`LOCK TABLE %s IN EXCLUSIVE MODE`, d.hostsTable)
+	release := func() {}
 	if d.driver == "mysql" {
-		// A locking read takes next-key locks over the whole index (including
-		// the empty-table gap) under MySQL's default REPEATABLE READ.
-		lock = fmt.Sprintf(`SELECT id FROM %s FOR UPDATE`, d.hostsTable)
-	}
-	if _, err := tx.ExecContext(ctx, lock); err != nil {
+		if release, err = lockFileHostsMySQL(ctx, tx); err != nil {
+			return err
+		}
+		defer release() // error paths; runs before the deferred Rollback
+	} else if _, err := tx.ExecContext(ctx, fmt.Sprintf(`LOCK TABLE %s IN EXCLUSIVE MODE`, d.hostsTable)); err != nil {
 		return err
 	}
 
@@ -168,6 +169,9 @@ func (d *DB) Register(ctx context.Context, h Host) error {
 	if _, err := tx.ExecContext(ctx, q, h.ID, h.URL, h.Mode, h.Secret, h.RegisteredAt); err != nil {
 		return err
 	}
+	// Release on the still-open transaction; the next writer then blocks on
+	// the inserted row until this commit.
+	release()
 	return tx.Commit()
 }
 
@@ -397,4 +401,29 @@ func quoteIdent(driver, name string) string {
 		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 	}
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
+// FileHostsLockName is the MySQL named lock that serializes writers of
+// _fileHosts (the bucket's Register and PocketBase's SetFileHost).
+const FileHostsLockName = "pb_file_hosts"
+
+// lockFileHostsMySQL takes the named lock on the transaction's connection.
+// A row lock cannot do this: on an empty table MySQL's gap locks are shared,
+// so two first registrations deadlock instead of waiting. The lock belongs to
+// the connection, so release must run while the transaction is still open
+// (before Commit or Rollback), or the pooled connection keeps it.
+func lockFileHostsMySQL(ctx context.Context, tx *sql.Tx) (func(), error) {
+	var got sql.NullInt64
+	if err := tx.QueryRowContext(ctx, "SELECT GET_LOCK(?, 30)", FileHostsLockName).Scan(&got); err != nil {
+		return nil, err
+	}
+	if !got.Valid || got.Int64 != 1 {
+		return nil, errors.New("timed out waiting for the _fileHosts lock")
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			_, _ = tx.ExecContext(context.Background(), "SELECT RELEASE_LOCK(?)", FileHostsLockName)
+		})
+	}, nil
 }

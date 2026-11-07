@@ -109,10 +109,16 @@ export function pageInstaller(route) {
         data.formError = "";
         data.isConnecting = true;
         try {
-            await installerPost("/api/installer/connect", {
+            const result = await installerPost("/api/installer/connect", {
                 driver: data.driver,
                 dsn: data.dsn,
             });
+            if (result?.installed) {
+                // Another instance already set this database up; the server
+                // is restarting into the full API.
+                await reloadIntoLogin();
+                return;
+            }
             data.step = 2;
         } catch (err) {
             data.formError = apiErrorMessage(err, "Database connection failed.");
@@ -184,13 +190,7 @@ export function pageInstaller(route) {
                 fileServerUrl: fileServerUrl,
                 s3: s3Payload(),
             });
-            try {
-                await app.pb.collection("_superusers").authWithPassword(data.email.trim(), data.password);
-                window.location.hash = "#/";
-            } catch (err) {
-                app.toasts.error(apiErrorMessage(err, "Superuser was created, but login failed."));
-                window.location.hash = "#/login";
-            }
+            await reloadIntoLogin();
         } catch (err) {
             data.formError = apiErrorMessage(err, "Could not finish setup.");
         }
@@ -232,6 +232,22 @@ export function pageInstaller(route) {
             return fileStep(data, testS3, complete);
         },
     );
+}
+
+// After setup the server swaps its installer listener for the full API
+// (which may move to HTTPS when serving a domain). Wait until it answers, then
+// do a full page load of the login page so the browser follows any redirect
+// to the new origin. The query string forces a reload rather than a hash change.
+async function reloadIntoLogin() {
+    for (let attempt = 0; attempt < 40; attempt++) {
+        try {
+            await app.pb.health.check({ requestKey: null });
+            break;
+        } catch (_) {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+    }
+    window.location.replace(window.location.pathname + "?setup=done#/login");
 }
 
 async function installerPost(path, body) {

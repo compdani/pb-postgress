@@ -136,8 +136,12 @@ func installerHandler(app core.App, onComplete func()) http.Handler {
 					return
 				}
 				// Joining a database that another instance already set up.
-				if s, err := installerStatus(app, false); err == nil && s["installed"] == true && onComplete != nil {
-					defer onComplete()
+				if s, err := installerStatus(app, false); err == nil && s["installed"] == true {
+					if onComplete != nil {
+						defer onComplete()
+					}
+					json.NewEncoder(w).Encode(map[string]any{"ok": true, "installed": true})
+					return
 				}
 			}
 			json.NewEncoder(w).Encode(map[string]any{"ok": true})
