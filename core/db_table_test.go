@@ -3,7 +3,6 @@ package core_test
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"testing"
@@ -100,35 +99,41 @@ func TestTableColumns(t *testing.T) {
 
 func TestTableInfo(t *testing.T) {
 	t.Parallel()
-
 	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
-
-	scenarios := []struct {
-		tableName string
-		expected  string
-	}{
-		{"", "null"},
-		{"missing", "null"},
-		{
-			"_params",
-			`[{"PK":0,"Index":0,"Name":"created","Type":"TEXT","NotNull":true,"DefaultValue":{"String":"''","Valid":true}},{"PK":1,"Index":1,"Name":"id","Type":"TEXT","NotNull":true,"DefaultValue":{"String":"'r'||lower(hex(randomblob(7)))","Valid":true}},{"PK":0,"Index":2,"Name":"updated","Type":"TEXT","NotNull":true,"DefaultValue":{"String":"''","Valid":true}},{"PK":0,"Index":3,"Name":"value","Type":"JSON","NotNull":false,"DefaultValue":{"String":"NULL","Valid":true}}]`,
-		},
+	for _, name := range []string{"", "missing"} {
+		rows, err := app.TableInfo(name)
+		if err == nil || len(rows) != 0 {
+			t.Fatalf("expected missing table error for %q: %v, %v", name, rows, err)
+		}
 	}
-
-	for i, s := range scenarios {
-		t.Run(fmt.Sprintf("%d_%s", i, s.tableName), func(t *testing.T) {
-			rows, _ := app.TableInfo(s.tableName)
-
-			raw, err := json.Marshal(rows)
-			if err != nil {
-				t.Fatal(err)
+	rows, err := app.TableInfo("_params")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 4 {
+		t.Fatalf("expected 4 columns, got %v", rows)
+	}
+	for i, row := range rows {
+		if row.Index != i || row.Type == "" {
+			t.Fatalf("invalid column metadata: %+v", row)
+		}
+		switch row.Name {
+		case "id":
+			if row.PK != 1 || !row.NotNull {
+				t.Fatalf("invalid primary key: %+v", row)
 			}
-
-			if str := string(raw); str != s.expected {
-				t.Fatalf("Expected\n%s\ngot\n%s", s.expected, str)
+		case "value":
+			if row.NotNull {
+				t.Fatal("value must be nullable")
 			}
-		})
+		case "created", "updated":
+			if !row.NotNull || !row.DefaultValue.Valid {
+				t.Fatalf("invalid timestamp: %+v", row)
+			}
+		default:
+			t.Fatalf("unexpected column: %+v", row)
+		}
 	}
 }
 

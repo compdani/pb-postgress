@@ -166,6 +166,7 @@ type App interface {
 	//
 	// For more finer control over the used connections pools you can
 	// call directly ConcurrentDB() or NonconcurrentDB().
+	SQLDialect() SQLDialect
 	DB() dbx.Builder
 
 	// ConcurrentDB returns the concurrent app data.db builder instance.

@@ -190,7 +190,7 @@ func TestNotifyWatcher_CollectionsUpdate(t *testing.T) {
 		t.Fatalf("Expected 1 concurrent query, got %d (%v)", len(concurrentQueries), concurrentQueries)
 	}
 
-	expectedQuery := "SELECT {{_collections}}.* FROM `_collections` ORDER BY `rowid` ASC"
+	expectedQuery := "SELECT {{_collections}}.* FROM \"_collections\" ORDER BY \"created\" ASC, \"id\" ASC"
 	if concurrentQueries[0] != expectedQuery {
 		t.Fatalf("Expected query\n%s\ngot\n%s", expectedQuery, concurrentQueries[0])
 	}

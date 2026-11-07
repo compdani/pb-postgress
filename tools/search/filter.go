@@ -219,6 +219,8 @@ func buildResolversExpr(
 		return nil, fmt.Errorf("unknown expression operator %q", op)
 	}
 
+	expr = typedComparison{expr, left, right}
+
 	// multi-match expressions
 	if !isAnyMatchOp(op) {
 		if left.MultiMatchSubQuery != nil && right.MultiMatchSubQuery != nil {
@@ -357,14 +359,7 @@ func (e equalExpression) Build(db *dbx.DB, params dbx.Params) string {
 	if db.DriverName() != "pgx" && db.DriverName() != "postgres" {
 		return sql
 	}
-	if !strings.Contains(sql, "[[") {
-		for name, value := range params {
-			switch value.(type) {
-			case float64, int, int64:
-				sql = strings.ReplaceAll(sql, "{:"+name+"}", "CAST({:"+name+"} AS DOUBLE PRECISION)")
-			}
-		}
-	}
+
 	// Preserve SQL null predicates while translating null-safe value comparisons.
 	sql = strings.ReplaceAll(sql, " IS NOT NULL", " __PB_NOT_NULL__")
 	sql = strings.ReplaceAll(sql, " IS NULL", " __PB_NULL__")
@@ -709,7 +704,7 @@ func (e *manyVsManyExpr) Build(db *dbx.DB, params dbx.Params) string {
 	}
 
 	return fmt.Sprintf(
-		"NOT EXISTS (SELECT 1 FROM (%s) {{%s}} LEFT JOIN (%s) {{%s}} WHERE %s)",
+		"NOT EXISTS (SELECT 1 FROM (%s) {{%s}} LEFT JOIN (%s) {{%s}} ON TRUE WHERE %s)",
 		e.left.MultiMatchSubQuery.Build(db, params),
 		lAlias,
 		e.right.MultiMatchSubQuery.Build(db, params),
@@ -775,4 +770,46 @@ func (e *manyVsOneExpr) Build(db *dbx.DB, params dbx.Params) string {
 		alias,
 		whereExpr.Build(db, params),
 	)
+}
+
+// PostgreSQL does not infer numeric values from text-producing JSON operators
+// or untyped parameters. Keep numeric filter comparisons numeric.
+type typedComparison struct {
+	dbx.Expression
+	left, right *ResolverResult
+}
+
+func (e typedComparison) Build(db *dbx.DB, params dbx.Params) string {
+	sql := e.Expression.Build(db, params)
+	if db.DriverName() != "pgx" && db.DriverName() != "postgres" {
+		return sql
+	}
+	numeric := func(r *ResolverResult) bool {
+		for _, v := range r.Params {
+			switch v.(type) {
+			case int, int64, float64:
+				return true
+			}
+		}
+		return false
+	}
+	for _, r := range []*ResolverResult{e.left, e.right} {
+		if numeric(r) && (len(e.left.Params) > 0 && len(e.right.Params) > 0 || strings.Contains(sql, "#>>") || e.left.Identifier == "''" || e.right.Identifier == "''") {
+			for key, value := range r.Params {
+				switch value.(type) {
+				case int, int64, float64:
+					placeholder := "{:" + key + "}"
+					sql = strings.ReplaceAll(sql, placeholder, "CAST("+placeholder+" AS DOUBLE PRECISION)")
+					sql = strings.ReplaceAll(sql, "CAST("+placeholder+" AS DOUBLE PRECISION) IS DISTINCT FROM ''", "CAST(CAST("+placeholder+" AS DOUBLE PRECISION) AS TEXT) IS DISTINCT FROM ''")
+				}
+			}
+		}
+	}
+	if numeric(e.left) && (strings.Contains(e.right.Identifier, "#>>") || len(e.right.Params) > 0) {
+		sql = strings.ReplaceAll(sql, e.right.Identifier, "CAST("+e.right.Identifier+" AS NUMERIC)")
+	}
+	if numeric(e.right) && (strings.Contains(e.left.Identifier, "#>>") || len(e.left.Params) > 0) {
+		sql = strings.ReplaceAll(sql, e.left.Identifier, "CAST("+e.left.Identifier+" AS NUMERIC)")
+	}
+	return sql
 }

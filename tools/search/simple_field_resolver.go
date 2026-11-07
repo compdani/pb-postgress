@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"github.com/pocketbase/pocketbase/tools/inflector"
 	"github.com/pocketbase/pocketbase/tools/list"
 )
@@ -74,6 +75,8 @@ func NewSimpleFieldResolver(allowedFields ...string) *SimpleFieldResolver {
 // If `allowedFields` are empty no fields filtering is applied.
 type SimpleFieldResolver struct {
 	allowedFields []string
+	// JSONExtract optionally overrides the default PostgreSQL JSON extraction.
+	JSONExtract func(column, path string) string
 }
 
 // UpdateQuery implements `search.UpdateQuery` interface.
@@ -113,12 +116,9 @@ func (r *SimpleFieldResolver) Resolve(field string) (*ResolverResult, error) {
 		}
 	}
 
-	return &ResolverResult{
-		NullFallback: NullFallbackDisabled,
-		Identifier: fmt.Sprintf(
-			"JSON_EXTRACT([[%s]], '%s')",
-			inflector.Columnify(parts[0]),
-			jsonPath.String(),
-		),
-	}, nil
+	extract := r.JSONExtract
+	if extract == nil {
+		extract = dbutils.JSONExtractPostgres
+	}
+	return &ResolverResult{NullFallback: NullFallbackDisabled, Identifier: extract(inflector.Columnify(parts[0]), strings.TrimPrefix(strings.TrimPrefix(jsonPath.String(), "$"), "."))}, nil
 }

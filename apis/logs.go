@@ -5,6 +5,7 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"github.com/pocketbase/pocketbase/tools/router"
 	"github.com/pocketbase/pocketbase/tools/search"
 )
@@ -29,6 +30,9 @@ var logFilterFields = []string{
 
 func logsList(e *core.RequestEvent) error {
 	fieldResolver := search.NewSimpleFieldResolver(logFilterFields...)
+	if e.App.SQLDialect() == core.DialectMySQL {
+		fieldResolver.JSONExtract = dbutils.JSONExtractMySQL
+	}
 
 	result, err := search.NewProvider(fieldResolver).
 		Query(e.App.AuxModelQuery(&core.Log{})).
@@ -43,6 +47,9 @@ func logsList(e *core.RequestEvent) error {
 
 func logsStats(e *core.RequestEvent) error {
 	fieldResolver := search.NewSimpleFieldResolver(logFilterFields...)
+	if e.App.SQLDialect() == core.DialectMySQL {
+		fieldResolver.JSONExtract = dbutils.JSONExtractMySQL
+	}
 
 	filter := e.Request.URL.Query().Get(search.FilterQueryParam)
 

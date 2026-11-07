@@ -21,10 +21,11 @@ import (
 // NB! Be aware that this method is vulnerable to SQL injection and the
 // "dangerousViewName" argument must come only from trusted input!
 func (app *BaseApp) DeleteView(dangerousViewName string) error {
-	_, err := app.DB().NewQuery(fmt.Sprintf(
-		"DROP VIEW IF EXISTS {{%s}}",
-		dangerousViewName,
-	)).Execute()
+	sql := fmt.Sprintf("DROP VIEW IF EXISTS {{%s}}", dangerousViewName)
+	if app.SQLDialect() == DialectPostgres {
+		sql += " CASCADE"
+	}
+	_, err := app.DB().NewQuery(sql).Execute()
 
 	return err
 }
@@ -33,10 +34,31 @@ func (app *BaseApp) DeleteView(dangerousViewName string) error {
 //
 // NB! Be aware that this method is vulnerable to SQL injection and
 // its arguments must come only from trusted input!
-func (app *BaseApp) SaveView(dangerousViewName string, dangerousSelectQuery string) error {
+func (app *BaseApp) SaveView(dangerousViewName string, dangerousSelectQuery string) (err error) {
+	// PostgreSQL errors abort the transaction, including when callers discard a
+	// failed introspection. Isolate the DDL so its failure is recoverable.
+	if _, nested := app.DB().(*dbx.Tx); nested && app.SQLDialect() == DialectPostgres {
+		name := "pb_view_" + security.RandomString(10)
+		if _, err = app.DB().NewQuery("SAVEPOINT " + name).Execute(); err != nil {
+			return err
+		}
+		defer func() {
+			if err != nil {
+				_, rollbackErr := app.DB().NewQuery("ROLLBACK TO SAVEPOINT " + name).Execute()
+				err = errors.Join(err, rollbackErr)
+			}
+			_, releaseErr := app.DB().NewQuery("RELEASE SAVEPOINT " + name).Execute()
+			err = errors.Join(err, releaseErr)
+		}()
+	}
+
 	return app.RunInTransaction(func(txApp App) error {
+		restore, err := detachDependentViews(txApp, dangerousViewName)
+		if err != nil {
+			return err
+		}
 		// delete old view (if exists)
-		err := txApp.DeleteView(dangerousViewName)
+		err = txApp.DeleteView(dangerousViewName)
 		if err != nil {
 			return err
 		}
@@ -66,7 +88,7 @@ func (app *BaseApp) SaveView(dangerousViewName string, dangerousSelectQuery stri
 			return err
 		}
 
-		return nil
+		return restore()
 	})
 }
 
@@ -348,6 +370,9 @@ func parseQueryToFields(app App, selectQuery string) (map[string]*queryField, er
 			return nil, errors.New("wildcard columns (*) are not supported - manually type the collection field names you want the view query to have")
 		}
 
+		if col.alias == col.original && strings.ContainsAny(col.alias, "()") {
+			return nil, fmt.Errorf("expression requires an explicit alias: %s", col.original)
+		}
 		colLower := strings.ToLower(col.original)
 
 		// pk (always assume text field for now)

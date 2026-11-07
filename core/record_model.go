@@ -1433,6 +1433,9 @@ func onRecordValidate(e *RecordEvent) error {
 }
 
 func onRecordSaveExecute(e *RecordEvent) error {
+	if e.Record.Collection().IsView() {
+		return errors.New("view records cannot be saved")
+	}
 	if e.Record.Collection().IsAuth() {
 		if !e.Record.IsNew() {
 			lastSavedRecord, err := e.App.FindRecordById(e.Record.Collection(), e.Record.Id)

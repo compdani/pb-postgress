@@ -12,8 +12,12 @@ import (
 )
 
 func (app *BaseApp) FileMode() (string, error) {
+	db := app.DB()
+	if db == nil {
+		return "", errors.New("database is not initialized")
+	}
 	var mode string
-	err := app.DB().Select("mode").From("_fileConfig").Where(dbx.HashExp{"id": "current"}).Row(&mode)
+	err := db.Select("mode").From("_fileConfig").Where(dbx.HashExp{"id": "current"}).Row(&mode)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}

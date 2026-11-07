@@ -90,7 +90,6 @@ func (app *BaseApp) registerNotifyWatcherHooks() {
 			if err := os.WriteFile(settingsFile, nil, 0644); err != nil {
 				e.App.Logger().Warn("Failed to write watcher file", "error", err, "file", settingsFile)
 			}
-			_ = os.Remove(settingsFile)
 		}
 
 		return nil
@@ -117,7 +116,6 @@ func (app *BaseApp) registerNotifyWatcherHooks() {
 			if err := os.WriteFile(collectionsFile, nil, 0644); err != nil {
 				e.App.Logger().Warn("Failed to write watcher file", "error", err, "file", collectionsFile)
 			}
-			_ = os.Remove(collectionsFile)
 		}
 
 		return nil
@@ -178,7 +176,7 @@ func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath strin
 				}
 
 				// modified from within the current app instance or cleanup event
-				if strings.HasSuffix(event.Name, instanceId) || event.Has(fsnotify.Remove) || !app.IsBootstrapped() {
+				if strings.HasSuffix(event.Name, instanceId) || !app.IsBootstrapped() {
 					continue
 				}
 

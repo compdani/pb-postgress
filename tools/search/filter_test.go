@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"github.com/pocketbase/pocketbase/tools/search"
 )
 
@@ -100,7 +101,7 @@ func TestFilterDataBuildExpr(t *testing.T) {
 			"nested json no coalesce",
 			"test5.a = test5.b || test5.c != test5.d",
 			false,
-			"(JSON_EXTRACT([[test5]], '$.a') IS JSON_EXTRACT([[test5]], '$.b') OR JSON_EXTRACT([[test5]], '$.c') IS NOT JSON_EXTRACT([[test5]], '$.d'))",
+			"(" + dbutils.JSONExtractPostgres("test5", "a") + " IS " + dbutils.JSONExtractPostgres("test5", "b") + " OR " + dbutils.JSONExtractPostgres("test5", "c") + " IS NOT " + dbutils.JSONExtractPostgres("test5", "d") + ")",
 		},
 		{
 			"macros",

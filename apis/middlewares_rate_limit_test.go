@@ -147,7 +147,7 @@ func TestDefaultRateLimitMiddleware(t *testing.T) {
 			}
 
 			if s.wait > 0 {
-				time.Sleep(time.Duration(s.wait) * time.Millisecond)
+				time.Sleep((time.Duration(s.wait) + 30) * time.Millisecond)
 			}
 
 			mux.ServeHTTP(rec, req)

@@ -56,15 +56,16 @@ DB with different scopes. Remote HTTP and S3 probes have httptest coverage.
 
 This change is incomplete and should not be treated as production ready:
 
-* The old SQLite fixture harness and many SQLite SQL expectation tests still
-  need replacement. `go test ./...` fails; these failures are not suppressed.
-* MySQL has unit coverage but has not been verified against a live server.
+* The fixture harness runs against disposable server databases. The full
+  PostgreSQL suite and the no-DSN suite pass; see DATABASE_TEST_RESULTS.md for
+  exact counts and the remaining opt-in integration skips.
+* MySQL 8 has been verified against a live server in the expanded subset.
   Arbitrary partial indexes are rejected; the built-in optional email unique
   index is translated to a NULLIF functional index (MySQL 8 required).
   MySQL DDL implicitly commits and cannot provide PostgreSQL's transactional
   schema migration guarantees. Indexing unrestricted TEXT fields needs review.
-* Collection hooks and custom collection cron jobs are not comprehensively
-  scoped. Cross-scope cascades still use core's application-level integrity
+* Collection hooks and collection-tagged cron jobs enforce instance scope.
+  Untagged custom jobs remain global. Cross-scope cascades use application-level integrity
   implementation; database foreign keys/triggers have not been implemented.
   Scope is therefore not yet a complete isolation/security boundary.
 * Legacy sidecar PostgreSQL introspection/import APIs remain in source, with
@@ -117,3 +118,33 @@ source must not be interpreted as supported sidecar operation.
 MySQL live testing fixed TEXT defaults in bootstrap DDL, optional-index creation,
 JSON-array uniqueness in the fixture, time scanning, and null-safe comparisons.
 Encrypted settings are stored in a text column, since ciphertext is not JSON.
+
+## Runtime compatibility follow-up (2026-11-07)
+
+Generic log filters and request-array filters now use PostgreSQL/MySQL JSON
+helpers. PostgreSQL relation and multi-match joins include explicit conditions;
+numeric JSON comparisons and virtual create-rule rows use explicit SQL types.
+Case-insensitive identity lookups use the same LOWER expression as their unique
+index. Case-insensitive optional-email MySQL indexes and lookups use
+NULLIF(LOWER(email), '').
+New MySQL text columns use binary collation so case-sensitive unique indexes
+retain their configured meaning. Existing-schema collation upgrades still need
+an explicit migration.
+
+PostgreSQL view replacement and record-table changes detach/recreate dependent
+views transactionally. Incompatible replacements roll back. View introspection
+uses information_schema, and nested view DDL failures use savepoints so callers
+can discard an error without poisoning the parent transaction. Collection API
+updates bind fresh metadata rather than mutating the shared collection cache.
+View records remain read-only even when PostgreSQL considers a view updatable.
+
+CreateBackup and RestoreBackup return ErrServerDatabaseBackupUnsupported for
+both drivers. Authorized API requests report an explicit unsupported error;
+restore no longer returns success before a background failure. Listing,
+uploading, downloading and deleting archive files remain supported filesystem
+operations. Native server dumps and uploaded-file backups are managed externally.
+
+The SQL API executes multiple statements individually in a transaction and
+returns the final statement's result. PostgreSQL DDL rollback is verified;
+MySQL's implicit DDL commits remain an engine limitation. Notify files remain
+present until cleanup so macOS cannot coalesce a create/delete pair away.

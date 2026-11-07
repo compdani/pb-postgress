@@ -45,8 +45,12 @@ func (app *BaseApp) InstanceID() (string, error) {
 }
 
 func (app *BaseApp) FileHost() (*FileHost, error) {
+	db := app.DB()
+	if db == nil {
+		return nil, errors.New("database is not initialized")
+	}
 	var host FileHost
-	err := app.DB().Select("id AS instanceId", "url", "mode", "secret", "registered_at").From("_fileHosts").One(&host)
+	err := db.Select("id AS instanceId", "url", "mode", "secret", "registered_at").From("_fileHosts").One(&host)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

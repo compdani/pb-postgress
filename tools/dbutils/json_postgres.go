@@ -12,7 +12,7 @@ func postgresJSONArray(column string) string {
 	return "CASE WHEN " + c + " IS NULL OR " + c + "::text = '' THEN '[]'::jsonb WHEN jsonb_typeof(" + value + ") = 'array' THEN " + value + " ELSE jsonb_build_array(" + c + ") END"
 }
 func JSONEachPostgres(column string) string {
-	return "jsonb_array_elements_text(" + postgresJSONArray(column) + ")"
+	return "LATERAL (SELECT jsonb_array_elements_text(" + postgresJSONArray(column) + ") AS value)"
 }
 func JSONArrayLengthPostgres(column string) string {
 	return "jsonb_array_length(" + postgresJSONArray(column) + ")"

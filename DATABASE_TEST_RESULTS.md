@@ -1,114 +1,87 @@
 # Server database verification — 2026-11-07
 
-This implementation is **incomplete**. The full Postgres suite still fails.
-Counts below are top-level Go tests; subtests are excluded to avoid counting
-both a parent and its children as independent tests.
-
-`go build ./...` passes. `go.mod` and `go.sum` contain no modernc dependencies.
-The branch `t3/bucket-installer-db-flow` was merged at commit `0bcb62dd`.
-No changes were made directly in its source worktree, and no branch was pushed.
-The merge includes that branch's existing UI changes; no manual UI edits were made.
-
-The disposable Postgres cluster used Homebrew Postgres on 127.0.0.1:55439.
-MySQL ran in a `mysql:8` container (server reports 8.4.13) on port 55339.
-Each test app allocated/dropped a separate database.
-
-## Verified behavior
-
-- No DSN: database-dependent test apps skip with a setup message. Nil/idempotent
-  cleanup is safe; setup errors fail at the helper instead of returning a nil app
-  to callers that historically ignored the error.
-- Postgres and MySQL: actual cmd/bucket child process uploads, record deletion,
-  and feed-driven pruning pass, with both core-first and bucket-first table
-  creation. Shared timestamp values are scanned successfully.
-- Postgres and MySQL: hidden collection metadata updates and rename attempts
-  are rejected before collection hooks; cross-scope cascade and unset pass.
-- Postgres: collection-tagged JS cron jobs stop running after a scope change.
-- MySQL: integration/file feed, record query/lookup, field validation and scope
-  tests pass in the representative subset.
-- tools/search passes against real Postgres, including date modifiers and
-  geographic distance execution.
-
-## Remaining work
-
-- Complete runtime compatibility and legacy expectation updates in core/apis;
-  the detailed failing test inventory follows below.
-- Views need further dependency handling and introspection adaptation. Some
-  tests still query historical SQLite catalog names.
-- JSON paths in the generic log filter resolver still emit JSON_EXTRACT.
-- Case-insensitive email/auth lookup still contains a legacy NOCASE query path.
-- SQL API tests and archive backup tests need server-database expectations.
-- Scope enforcement remains application-level. Untagged custom jobs are global;
-  direct SQL is not protected by relation foreign keys/triggers.
-- Remaining sidecar API sources are compatibility-only, as explained in
-  DATABASE_MIGRATION.md. Their full removal requires coordinating App/JS/UI clients.
-
-## Results
+The full suite passes against real PostgreSQL. The no-DSN suite and expanded
+MySQL subset also pass. Counts below are top-level Go tests; subtests are
+excluded so parent tests and children are not counted as independent tests.
 
 | Run | Pass | Fail | Skip |
 | --- | ---: | ---: | ---: |
-| No DSN, full suite | 651 | 0 | 314 |
-| Postgres, full suite | 921 | 40 | 4 |
-| MySQL, representative subset | 11 | 0 | 0 |
+| PostgreSQL, full suite | 964 | 0 | 4 |
+| No DSN, full suite | 652 | 0 | 316 |
+| MySQL, expanded subset | 21 | 0 | 0 |
 
-Including parent tests and all subtests, the raw event counts are:
+Raw test events, including parents and subtests:
 
-- No DSN, full suite: 2193 pass, 0 fail, 1256 skip.
-- Postgres, full suite: 4956 pass, 188 fail, 4 skip.
-- MySQL, representative subset: 92 pass, 0 fail, 0 skip.
+- PostgreSQL: 5164 pass, 0 fail, 4 skip.
+- No DSN: 2196 pass, 0 fail, 1259 skip.
+- MySQL: 183 pass, 0 fail, 0 skip.
 
-Commands used (local disposable credentials omitted):
+`go build ./...` and `git diff --check` pass. No changes were made to `ui/`
+or `tools/bucket/`. The existing merged changes in those directories were
+left untouched. Work was committed on `t3/deprecate-sqlite-add-mysql`; no push.
+
+## Environment and commands
+
+PostgreSQL 14 used the disposable local cluster on 127.0.0.1:55439. MySQL 8
+used a disposable container on 127.0.0.1:55339. The test harness creates and
+drops a separate database for each test app. The DSN user needs permission to
+create/drop databases. No production databases were used.
 
 ```sh
 go build ./...
-go test -json -p 3 ./...
+env -u PB_TEST_DB_DSN -u PB_TEST_DB_DRIVER go test -json -p 3 ./...
 PB_TEST_DB_DSN=... go test -json -p 3 -parallel 4 ./...
-PB_TEST_DB_DRIVER=mysql PB_TEST_DB_DSN=... go test -json ./core \
-  -run '^(TestServerDatabaseFileChanges|TestBucketProcessFileLifecycle|TestScopeHiddenCollectionHooksAndCascades|TestFindCollectionByNameOrId|TestTextFieldValidateValue|TestRecordQueryWithDifferentCollectionValues|TestRecordQueryOne|TestRecordQueryAll|TestFindRecordById|TestFindRecordsByIds|TestFindAllRecords)$' -count=1
+PB_TEST_DB_DRIVER=mysql PB_TEST_DB_DSN=... go test -json -parallel 4 ./core ./apis \
+  -run '^(TestServerDatabaseFileChanges|TestBucketProcessFileLifecycle|TestScopeHiddenCollectionHooksAndCascades|TestFindCollectionByNameOrId|TestTextFieldValidateValue|TestRecordQueryWithDifferentCollectionValues|TestRecordQueryOne|TestRecordQueryAll|TestFindRecordById|TestFindRecordsByIds|TestFindAllRecords|TestDeleteView|TestSaveView|TestFindAuthRecordByEmail|TestLogsList|TestLogsStats|TestRecordAuthWithPassword|TestRecordAuthWithOAuth2|TestServerDatabaseArchiveUnsupported|TestRecordFilterRequestEachExecution)$' \
+  -count=1
 ```
 
-## Failing Postgres top-level tests
+Final JSON logs are retained locally in `/tmp/pb-migration-test/`:
 
-- `apis: TestDefaultRateLimitMiddleware`
-- `apis: TestLogsStats`
-- `apis: TestLogsList`
-- `apis: TestCronsList`
-- `core: TestRecordFieldResolverResolveCollectionFields`
-- `apis: TestCollectionCreate`
-- `apis: TestCollectionUpdate`
-- `core: TestDryRunView`
-- `core: TestCreateViewFieldsWithNumberOnlyInt`
-- `core: TestRecordDelete`
-- `core: TestCreateViewFields`
-- `core: TestSaveView`
-- `core: TestCreateViewFieldsWithDiscardedNestedTransaction`
-- `core: TestDeleteView`
-- `apis: TestBackupsRestore`
-- `apis: TestBackupsDelete`
-- `core: TestModelQuery`
-- `core: TestRecordSave`
-- `core: TestDeleteTable`
-- `core: TestTableInfo`
-- `core: TestSingleVsMultipleValuesNormalization`
-- `core: TestCollectionQuery`
-- `apis: TestBackupsList`
-- `apis: TestBackupsCreate`
-- `apis: TestBackupsDownload`
-- `apis: TestSQLRun`
-- `core: TestCollectionSaveViewWrapping`
-- `core: TestCollectionSaveIndirectViewsUpdate`
-- `core: TestCollectionDelete`
-- `core: TestNotifyWatcher_CollectionsUpdate`
-- `core: TestNotifyWatcher_SettingsUpdate`
-- `core: TestCanAccessRecord`
-- `core: TestRecordFieldResolverUpdateQuery`
-- `apis: TestRecordCrudCreate`
-- `core: TestFindAuthRecordByEmail`
-- `apis: TestRecordCrudList`
-- `core: TestExpandRecordsQuerySkipDuplicatedIds`
-- `core: TestCollectionValidate`
-- `apis: TestRecordAuthWithPassword`
-- `apis: TestRecordAuthWithOAuth2`
+- `implementation-postgres-final.json`
+- `implementation-no-dsn-final.json`
+- `implementation-mysql-final-report.json`
 
-Full JSON logs are retained locally under `/tmp/pb-migration-test/` as
-`postgres-verified.json`, `noenv-verified.json`, and `mysql-verified.json`.
+## Verified runtime fixes
+
+- Log filters and request-array filters use dialect JSON helpers. Numeric
+  PostgreSQL JSON comparisons, typed create-rule rows, and relation/multi-match
+  joins execute on the server.
+- Auth email/password/OAuth lookups use dialect-correct, index-compatible
+  expressions. Case-sensitive MySQL fields use binary collation; case-insensitive
+  indexes and lookups agree on LOWER and optional-email NULLIF expressions.
+- PostgreSQL view introspection, transactional dependency preservation and
+  rollback, discarded nested DDL errors, and numeric/text id wrapping pass.
+  The dedicated dependency test verifies incompatible replacement leaves the
+  original dependent view executable.
+- Collection create/update validation and schema synchronization pass. API
+  request binding no longer mutates shared cached metadata before schema sync.
+  Indexes are dropped from actual table metadata; conflicting names are checked
+  before writes. Record deletion/cascades and read-only view record saves pass.
+- Archive create/restore explicitly return ErrServerDatabaseBackupUnsupported.
+  API restore reports this synchronously. Tests cover the core error for both
+  drivers, the authorized API error, authentication, active-file protection,
+  archive list/download/delete, and missing files. Use native server dump tools
+  and back up uploaded files separately.
+- Multiple SQL API statements execute individually in a transaction; rollback
+  and final-statement results pass on PostgreSQL. Notify files persist until
+  cleanup so macOS observes writes. Background file cleanup returns an error
+  when the database has closed rather than panicking.
+- Legacy SQLite SQL/catalog expectations now verify PostgreSQL SQL or resulting
+  schema/behavior. No failing tests were disabled to obtain these results.
+
+## Remaining failures and skips
+
+No failing tests remain in the three reported runs. PostgreSQL's four skips
+are existing opt-in integration tests with separate environment configuration:
+
+- `core.TestMigrateCollectionToPostgresIntegration`
+- `core.TestMigrateCollectionToPostgresDryRunIntegration`
+- `tools/bucket.TestPostgresFileFeed`
+- `tools/bucket.TestMySQLFileFeed`
+
+No-DSN database tests intentionally skip with a setup message. The MySQL run
+is an expanded subset, not the full suite. MySQL DDL implicit commits,
+existing-schema collation upgrades, complete removal of legacy sidecar APIs,
+and database-enforced scope isolation remain outside this verification;
+see DATABASE_MIGRATION.md.

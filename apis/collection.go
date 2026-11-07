@@ -138,6 +138,13 @@ func collectionUpdate(e *core.RequestEvent) error {
 		return e.NotFoundError("", err)
 	}
 
+	// Request binding must not mutate the shared collection cache: schema sync
+	// needs its original fields, indexes and table name.
+	collection, err = e.App.FindCollectionByNameOrId(collection.Id)
+	if err != nil {
+		return err
+	}
+
 	originalExternal := *collection
 
 	if err := e.BindBody(collection); err != nil {

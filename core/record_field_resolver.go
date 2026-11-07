@@ -434,7 +434,7 @@ func (r *RecordFieldResolver) resolveStaticRequestField(path ...string) (*search
 	if modifier == lowerModifier {
 		return &search.ResolverResult{
 			Identifier: "LOWER({:" + placeholder + "})",
-			Params:     dbx.Params{placeholder: resultVal},
+			Params:     dbx.Params{placeholder: cast.ToString(resultVal)},
 		}, nil
 	}
 
@@ -460,6 +460,9 @@ func (r *RecordFieldResolver) loadCollection(collectionNameOrId string) (*Collec
 }
 
 func (r *RecordFieldResolver) registerJoin(tableName string, tableAlias string, on dbx.Expression) error {
+	if on == nil {
+		on = dbx.NewExp("TRUE")
+	}
 	newJoin := &search.Join{
 		TableName:  tableName,
 		TableAlias: tableAlias,
@@ -650,4 +653,11 @@ func splitModifier(combined string) (string, string, error) {
 	}
 
 	return "", "", fmt.Errorf("unknown modifier in %q", combined)
+}
+
+func (r *RecordFieldResolver) jsonEachParameter(name string) string {
+	if r.dialect == DialectMySQL {
+		return "JSON_TABLE(CAST({:" + name + "} AS JSON), '$[*]' COLUMNS(value VARCHAR(4096) PATH '$'))"
+	}
+	return "LATERAL (SELECT jsonb_array_elements_text(CAST({:" + name + "} AS jsonb)) AS value)"
 }

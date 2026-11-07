@@ -14,7 +14,7 @@ func fieldColumnType(app App, typ string) string {
 	if ba == nil || ba.SQLDialect() == DialectPostgres {
 		return strings.ReplaceAll(typ, "JSON", "JSONB")
 	}
-	typ = strings.ReplaceAll(typ, "TEXT DEFAULT", "VARCHAR(255) DEFAULT")
+	typ = strings.ReplaceAll(typ, "TEXT DEFAULT", "VARCHAR(255) COLLATE utf8mb4_bin DEFAULT")
 	typ = strings.ReplaceAll(typ, "JSON DEFAULT '[]'", "JSON DEFAULT ('[]')")
 	typ = strings.ReplaceAll(typ, "JSON DEFAULT '{}'", "JSON DEFAULT ('{}')")
 	return typ
@@ -64,9 +64,13 @@ func indexCreateSQL(app App, idx dbutils.Index) (string, error) {
 	if d == DialectMySQL && idx.Where != "" {
 		if len(idx.Columns) == 1 && idx.Unique {
 			col := strings.Trim(idx.Columns[0].Name, "`\"")
+			columnExpr := d.Quote(col)
+			if strings.EqualFold(idx.Columns[0].Collate, "nocase") {
+				columnExpr = "LOWER(" + columnExpr + ")"
+			}
 			normalized := strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(idx.Where), "`", ""), "\"", "")
 			if normalized == col+" != ''" {
-				return "CREATE UNIQUE INDEX " + d.Quote(idx.IndexName) + " ON " + d.Quote(idx.TableName) + " ((NULLIF(" + d.Quote(col) + ", '')))", nil
+				return "CREATE UNIQUE INDEX " + d.Quote(idx.IndexName) + " ON " + d.Quote(idx.TableName) + " ((NULLIF(" + columnExpr + ", '')))", nil
 			}
 			if normalized == col+" != '[]'" {
 				return "CREATE UNIQUE INDEX " + d.Quote(idx.IndexName) + " ON " + d.Quote(idx.TableName) + " ((NULLIF(CAST(" + d.Quote(col) + " AS CHAR(255)), '[]')))", nil
@@ -78,6 +82,9 @@ func indexCreateSQL(app App, idx dbutils.Index) (string, error) {
 		if strings.EqualFold(col.Collate, "nocase") {
 			idx.Columns[i].Collate = ""
 			idx.Columns[i].Name = "LOWER(" + d.Quote(strings.Trim(col.Name, "`\"")) + ")"
+			if d == DialectMySQL {
+				idx.Columns[i].Name = "(" + idx.Columns[i].Name + ")"
+			}
 		}
 	}
 	idx.Optional = false

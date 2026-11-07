@@ -78,6 +78,11 @@ func (app *BaseApp) SyncRecordTableSchema(newCollection *Collection, oldCollecti
 			}
 		}
 
+		restore, err := detachDependentViews(txApp, newTableName)
+		if err != nil {
+			return err
+		}
+
 		// check for deleted columns
 		for _, oldField := range oldFields {
 			if f := newFields.GetById(oldField.GetId()); f != nil {
@@ -133,10 +138,12 @@ func (app *BaseApp) SyncRecordTableSchema(newCollection *Collection, oldCollecti
 			return err
 		}
 		if needIndexesUpdate {
-			return createCollectionIndexes(txApp, newCollection)
+			if err := createCollectionIndexes(txApp, newCollection); err != nil {
+				return err
+			}
 		}
 
-		return nil
+		return restore()
 	})
 	if txErr != nil {
 		return txErr
@@ -151,17 +158,12 @@ func dropCollectionIndexes(app App, collection *Collection) error {
 	}
 
 	return app.RunInTransaction(func(txApp App) error {
-		for _, raw := range collection.Indexes {
-			parsed := dbutils.ParseIndex(raw)
-
-			// note: don't check IsValid because the index table name may not be populated
-			// (https://github.com/pocketbase/pocketbase/issues/7689)
-			if parsed.IndexName == "" {
-				return fmt.Errorf("failed to dop index - missing index name: %s", raw)
-			}
-
-			_, err := txApp.DB().NewQuery(indexDropSQL(txApp, collection.Name, parsed.IndexName)).Execute()
-			if err != nil {
+		indexes, err := txApp.TableIndexes(collection.Name)
+		if err != nil {
+			return err
+		}
+		for name := range indexes {
+			if _, err := txApp.DB().NewQuery(indexDropSQL(txApp, collection.Name, name)).Execute(); err != nil {
 				return err
 			}
 		}

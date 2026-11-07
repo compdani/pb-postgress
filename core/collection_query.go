@@ -263,7 +263,7 @@ func normalizeViewQueryId(app App, query string) (string, error) {
 	}
 
 	for _, row := range info {
-		if strings.EqualFold(row.Name, FieldNameId) && strings.EqualFold(row.Type, "TEXT") {
+		if strings.EqualFold(row.Name, FieldNameId) && (strings.EqualFold(row.Type, "TEXT") || strings.EqualFold(row.Type, "character varying") || strings.EqualFold(row.Type, "varchar")) {
 			return query, nil // no wrapping needed
 		}
 	}

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"github.com/pocketbase/dbx"
 	"regexp"
 	"strconv"
 	"strings"
@@ -546,6 +547,15 @@ func (cv *collectionValidator) checkIndexes(value any) error {
 					"validation_invalid_index_expression",
 					"Invalid CREATE INDEX expression.",
 				),
+			}
+		}
+
+		// PostgreSQL index names are schema-wide. MySQL names are per table.
+		if cv.app.SQLDialect() == DialectPostgres {
+			var table string
+			err := cv.app.DB().NewQuery("SELECT tablename FROM pg_indexes WHERE schemaname=current_schema() AND lower(indexname)=lower({:name})").Bind(dbx.Params{"name": parsed.IndexName}).Row(&table)
+			if err == nil && table != cv.original.Name {
+				return validation.Errors{strconv.Itoa(i): validation.NewError("validation_existing_index_name", "The index name already exists.")}
 			}
 		}
 

@@ -10,16 +10,18 @@ import (
 	"time"
 )
 
+var ErrServerDatabaseBackupUnsupported = errors.New("server database archive backup and restore are unsupported; use pg_dump/pg_restore or mysqldump/mysql and back up uploaded files separately")
+
 const StoreKeyActiveBackup = "@activeBackup"
 
 // CreateBackup requires a native server database backup tool.
 func (app *BaseApp) CreateBackup(ctx context.Context, name string) error {
-	return errors.New("server database backups require pg_dump or mysqldump; back up pb_data/storage separately")
+	return ErrServerDatabaseBackupUnsupported
 }
 
 // RestoreBackup requires a native server database restore tool.
 func (app *BaseApp) RestoreBackup(ctx context.Context, name string) error {
-	return errors.New("server database restore requires pg_restore/psql or mysql; restore pb_data/storage separately")
+	return ErrServerDatabaseBackupUnsupported
 }
 
 func (app *BaseApp) registerAutobackupHooks() {

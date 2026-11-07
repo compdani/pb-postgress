@@ -1357,7 +1357,7 @@ func (app *BaseApp) registerBaseHooks() {
 				return errors.New("collection is outside this instance scope")
 			}
 			if !c.IsNew() {
-				old, err := e.App.FindCollectionByNameOrId(c.Id)
+				old, err := e.App.FindCollectionByNameOrId(cast.ToString(c.LastSavedPK()))
 				if err != nil {
 					return err
 				}

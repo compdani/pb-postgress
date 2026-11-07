@@ -11,6 +11,7 @@ import (
 	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
+	"github.com/pocketbase/pocketbase/tools/tokenizer"
 )
 
 const (
@@ -94,6 +95,26 @@ func executeQuery(app core.App, query string, maxRows int) (*runSQLResult, error
 		return nil, errors.New("empty query")
 	}
 
+	tk := tokenizer.NewFromString(query)
+	tk.Separators(';')
+	statements, err := tk.ScanAll()
+	if err != nil {
+		return nil, err
+	}
+	if len(statements) > 1 {
+		var result *runSQLResult
+		err := app.RunInTransaction(func(txApp core.App) error {
+			for _, statement := range statements {
+				var err error
+				result, err = executeQuery(txApp, statement, maxRows)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		return result, err
+	}
 	var isPossibleWriteQuery bool
 
 	// loosely check the query type

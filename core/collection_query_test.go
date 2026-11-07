@@ -23,7 +23,7 @@ func TestCollectionQuery(t *testing.T) {
 	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
-	expected := "SELECT {{_collections}}.* FROM `_collections`"
+	expected := "SELECT {{_collections}}.* FROM \"_collections\""
 
 	sql := app.CollectionQuery().Build().SQL()
 	if sql != expected {

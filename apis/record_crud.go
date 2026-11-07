@@ -291,7 +291,22 @@ func recordCreate(responseWriteAfterTx bool, optFinalizer func(data any) error) 
 				k = inflector.Columnify(k) // columnify is just as extra measure in case of custom fields
 				param = "__pb_create__" + k
 				dummyParams[param] = v
-				selects = append(selects, "{:"+param+"} AS [["+k+"]]")
+				valueExpr := "{:" + param + "}"
+				if e.App.SQLDialect() == core.DialectPostgres {
+					typ := "TEXT"
+					if f := collection.Fields.GetByName(k); f != nil {
+						switch f.Type() {
+						case core.FieldTypeNumber:
+							typ = "DOUBLE PRECISION"
+						case core.FieldTypeBool:
+							typ = "BOOLEAN"
+						case core.FieldTypeJSON:
+							typ = "JSONB"
+						}
+					}
+					valueExpr = "CAST(" + valueExpr + " AS " + typ + ")"
+				}
+				selects = append(selects, valueExpr+" AS [["+k+"]]")
 			}
 
 			// shallow clone the current collection

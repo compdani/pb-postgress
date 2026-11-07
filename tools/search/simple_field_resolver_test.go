@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"github.com/pocketbase/pocketbase/tools/search"
 )
 
@@ -59,7 +60,7 @@ func TestSimpleFieldResolverResolve(t *testing.T) {
 		{"test_regex", true, ""},
 		{"test_regex1", false, "[[test_regex1]]"},
 		{"Test columnify!", false, "[[Testcolumnify]]"},
-		{"data.test", false, "JSON_EXTRACT([[data]], '$.test')"},
+		{"data.test", false, dbutils.JSONExtractPostgres("data", "test")},
 	}
 
 	for i, s := range scenarios {
