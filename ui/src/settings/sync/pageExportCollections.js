@@ -78,18 +78,6 @@ export function pageExportCollections(route) {
         }
     }
 
-    function toggleSelectCollection(collection) {
-        const bulkSelected = JSON.parse(JSON.stringify(data.bulkSelected));
-        if (!data.bulkSelected[collection.id]) {
-            bulkSelected[collection.id] = collection;
-        } else {
-            delete bulkSelected[collection.id];
-        }
-
-        // reassign to trigger the getter's Object.keys
-        data.bulkSelected = bulkSelected;
-    }
-
     return t.div(
         {
             pbEvent: "pageExportCollections",
@@ -150,11 +138,45 @@ export function pageExportCollections(route) {
                                                     id: checkboxId,
                                                     type: "checkbox",
                                                     checked: () => !!data.bulkSelected[collection.id],
-                                                    onchange: () => {
-                                                        toggleSelectCollection(collection);
+                                                    onchange: (e) => {
+                                                        let bulkSelected = Object.assign({}, data.bulkSelected);
+
+                                                        // range select
+                                                        if (e.target.__shiftKey) {
+                                                            e.target.__shiftKey = false;
+
+                                                            app.utils.bulkSelectRange(
+                                                                data.collections,
+                                                                bulkSelected,
+                                                                collection,
+                                                                e.target.checked,
+                                                            );
+                                                        }
+
+                                                        // toggle current collection
+                                                        if (e.target.checked) {
+                                                            bulkSelected[collection.id] = collection;
+                                                        } else {
+                                                            delete bulkSelected[collection.id];
+                                                        }
+
+                                                        // reassign to trigger the getter's Object.keys
+                                                        data.bulkSelected = bulkSelected;
                                                     },
                                                 }),
-                                                t.label({ htmlFor: checkboxId }, collection.name),
+                                                t.label({
+                                                    htmlFor: checkboxId,
+                                                    textContent: () => collection.name,
+                                                    // workaround https://github.com/pocketbase/pocketbase/issues/7771
+                                                    onclick: (e) => {
+                                                        e.preventDefault();
+                                                        const input = document.getElementById(e.target.htmlFor);
+                                                        if (input) {
+                                                            input.__shiftKey = e.shiftKey;
+                                                            input.click();
+                                                        }
+                                                    },
+                                                }),
                                             ),
                                         );
                                     });

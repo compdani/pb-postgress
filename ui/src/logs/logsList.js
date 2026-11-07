@@ -19,9 +19,12 @@ export function logsList(logsSettings) {
         },
         get paddedDefaultLogLevels() {
             const result = [];
-            for (let level in app.utils.logLevels) {
+
+            const sorted = Object.keys(app.utils.logLevels).sort();
+            for (const level of sorted) {
                 result.push(("" + level).padStart(2, " ") + ": " + app.utils.logLevels[level].label);
             }
+
             return result;
         },
     });
@@ -89,8 +92,10 @@ export function logsList(logsSettings) {
             }
 
             logsSettings.isListLoading = false;
+            logsSettings.hasListItems = data.logs.length > 0;
 
             if (!logsSettings.isFirstLoadReady) {
+                await new Promise((r) => setTimeout(r, 0));
                 logsSettings.isFirstLoadReady = true;
             }
         } catch (err) {
@@ -131,11 +136,16 @@ export function logsList(logsSettings) {
             if (log.data.referer && !log.data.referer.includes(window.location.host)) {
                 keys.push({ key: "referer" });
             }
-        } else {
-            // extract the first 6 keys (excluding the error and details)
+        } else if (keys.length < 6) {
+            // extract the first 6 keys (excluding the error, details and system truncate keys)
             const allKeys = Object.keys(log.data);
             for (const key of allKeys) {
-                if (key != "error" && key != "details" && keys.length < 6) {
+                if (
+                    keys.length < 6
+                    && key != "error"
+                    && key != "details"
+                    && key != "__pb_truncated__"
+                ) {
                     keys.push({ key });
                 }
             }
@@ -360,9 +370,21 @@ export function logsList(logsSettings) {
                                                 type: "checkbox",
                                                 checked: () => !!data.bulkSelected[log.id],
                                                 onchange: (e) => {
-                                                    const bulkSelected = JSON.parse(
-                                                        JSON.stringify(data.bulkSelected),
-                                                    );
+                                                    let bulkSelected = Object.assign({}, data.bulkSelected);
+
+                                                    // range select
+                                                    if (e.target.__shiftKey) {
+                                                        e.target.__shiftKey = false;
+
+                                                        app.utils.bulkSelectRange(
+                                                            data.logs,
+                                                            bulkSelected,
+                                                            log,
+                                                            e.target.checked,
+                                                        );
+                                                    }
+
+                                                    // toggle current log
                                                     if (e.target.checked) {
                                                         bulkSelected[log.id] = log;
                                                     } else {
@@ -373,7 +395,18 @@ export function logsList(logsSettings) {
                                                     data.bulkSelected = bulkSelected;
                                                 },
                                             }),
-                                            t.label({ htmlFor: "cb_" + log.id }),
+                                            t.label({
+                                                htmlFor: "cb_" + log.id,
+                                                // workaround https://github.com/pocketbase/pocketbase/issues/7771
+                                                onclick: (e) => {
+                                                    e.preventDefault();
+                                                    const input = document.getElementById(e.target.htmlFor);
+                                                    if (input) {
+                                                        input.__shiftKey = e.shiftKey;
+                                                        input.click();
+                                                    }
+                                                },
+                                            }),
                                         ),
                                     ),
                                     t.td({ className: "col-field-name-level" }, logLevel(log)),
