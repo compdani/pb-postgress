@@ -464,6 +464,10 @@ go test ./...
 
 Check also the [Testing guide](http://pocketbase.io/docs/testing) to learn how to write your own custom application tests.
 
+## File bucket
+
+`cmd/bucket` stores uploaded files on disk for one shared Postgres or MySQL database. Other instances send bytes with `PUT /files/{collection}/{recordId}/{filename}` and a bearer token. The bucket registers itself in `_fileHosts` (`mode=bucket`) and prunes or refreshes files from the `_fileChanges` log. It does not serve S3, and it does not open SQLite. See [tools/bucket/README.md](tools/bucket/README.md).
+
 ## Security
 
 If you discover a security vulnerability within PocketBase, please send an e-mail to **support at pocketbase.io**.
@@ -490,3 +494,5 @@ Later we can always refer to it and/or take pieces of your implementation when t
 > Due to recent LLM spam, PRs are temporary disabled and only existing collaborators can open a PR.
 > If you stumble on a problem that you want to fix, please consider instead opening an issue or discussion with link to your fork _(if not obvious - LLM contributions are not welcome)_.
 > This status may change in the future in case GitHub finally decide to do something about the constant spam, or when I find time to move the project somewhere else.
+
+Database transition: this fork now configures PostgreSQL or MySQL through `PB_DB_DRIVER` / `PB_DB_DSN` (or `--dbDriver` / `--dbDSN`). See [server database transition and outstanding work](DATABASE_MIGRATION.md).

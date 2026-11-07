@@ -83,7 +83,7 @@ func (api *fileApi) fileToken(e *core.RequestEvent) error {
 }
 
 func (api *fileApi) download(e *core.RequestEvent) error {
-	collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+	collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 	if err != nil {
 		return e.NotFoundError("", nil)
 	}

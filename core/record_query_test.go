@@ -18,7 +18,7 @@ import (
 func TestRecordQueryWithDifferentCollectionValues(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCollectionByNameOrId("demo1")
@@ -60,7 +60,7 @@ func TestRecordQueryWithDifferentCollectionValues(t *testing.T) {
 func TestRecordQueryOne(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -123,7 +123,7 @@ func TestRecordQueryOne(t *testing.T) {
 func TestRecordQueryAll(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	type customStructs struct {
@@ -219,7 +219,7 @@ func TestRecordQueryAll(t *testing.T) {
 func TestFindRecordById(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -306,7 +306,7 @@ func TestFindRecordById(t *testing.T) {
 func TestFindRecordsByIds(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -428,7 +428,7 @@ func TestFindRecordsByIds(t *testing.T) {
 func TestFindAllRecords(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -501,7 +501,7 @@ func TestFindAllRecords(t *testing.T) {
 func TestFindFirstRecordByData(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -574,7 +574,7 @@ func TestFindFirstRecordByData(t *testing.T) {
 func TestFindRecordsByFilter(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -732,7 +732,7 @@ func TestFindRecordsByFilter(t *testing.T) {
 func TestFindFirstRecordByFilter(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -816,7 +816,7 @@ func TestFindFirstRecordByFilter(t *testing.T) {
 func TestCountRecords(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -897,7 +897,7 @@ func TestCountRecords(t *testing.T) {
 func TestFindAuthRecordByToken(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -992,7 +992,7 @@ func TestFindAuthRecordByEmail(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(fmt.Sprintf("%s_%s", s.collectionIdOrName, s.email), func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			collection, _ := app.FindCollectionByNameOrId(s.collectionIdOrName)
@@ -1035,7 +1035,7 @@ func TestFindAuthRecordByEmail(t *testing.T) {
 func TestCanAccessRecord(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	superuser, err := app.FindAuthRecordByEmail(core.CollectionNameSuperusers, "test@example.com")

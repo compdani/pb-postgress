@@ -58,6 +58,8 @@ type DBConnectFunc func(dbPath string) (*dbx.DB, error)
 
 // BaseAppConfig defines a BaseApp configuration option
 type BaseAppConfig struct {
+	DBDriver         string
+	DBDSN            string
 	DBConnect        DBConnectFunc
 	DataDir          string
 	EncryptionEnv    string
@@ -88,7 +90,6 @@ type BaseApp struct {
 	postgresConcurrentDB    dbx.Builder
 	postgresNonconcurrentDB dbx.Builder
 	postgresConfig          PostgresConfig
-	postgresTxInfo          *TxAppInfo
 
 	// app event hooks
 	onBootstrap      *hook.Hook[*BootstrapEvent]
@@ -212,9 +213,7 @@ func NewBaseApp(config BaseAppConfig) *BaseApp {
 	}
 
 	// apply config defaults
-	if app.config.DBConnect == nil {
-		app.config.DBConnect = DefaultDBConnect
-	}
+
 	if app.config.DataMaxOpenConns <= 0 {
 		app.config.DataMaxOpenConns = DefaultDataMaxOpenConns
 	}
@@ -418,10 +417,6 @@ func (app *BaseApp) Bootstrap() error {
 			return err
 		}
 
-		if err := app.initPostgresDB(); err != nil {
-			return err
-		}
-
 		if err := app.initLogger(); err != nil {
 			return err
 		}
@@ -430,24 +425,11 @@ func (app *BaseApp) Bootstrap() error {
 			return err
 		}
 
-		if app.HasPostgres() {
-			if err := app.InitPostgresMetadata(); err != nil {
-				return err
-			}
-
-			if err := app.SyncCollectionsFromPostgres(); err != nil {
-				return err
-			}
-		}
-
-		if err := app.ReloadCachedCollections(); err != nil {
+		if err := app.initInstance(); err != nil {
 			return err
 		}
-
-		if app.HasPostgres() {
-			if err := app.InitPostgresSatelliteTables(); err != nil {
-				return err
-			}
+		if err := app.ReloadCachedCollections(); err != nil {
+			return err
 		}
 
 		if err := app.ReloadSettings(); err != nil {
@@ -496,8 +478,7 @@ func (app *BaseApp) ClearBootstrap() error {
 		dbs := []*dbx.Builder{
 			&app.concurrentDB,
 			&app.nonconcurrentDB,
-			&app.auxConcurrentDB,
-			&app.auxNonconcurrentDB,
+
 			&app.postgresConcurrentDB,
 			&app.postgresNonconcurrentDB,
 		}
@@ -514,6 +495,8 @@ func (app *BaseApp) ClearBootstrap() error {
 			*db = nil
 		}
 
+		app.auxConcurrentDB = nil
+		app.auxNonconcurrentDB = nil
 		if len(errs) > 0 {
 			return errors.Join(errs...)
 		}
@@ -524,7 +507,7 @@ func (app *BaseApp) ClearBootstrap() error {
 
 // DB returns the default app data.db builder instance.
 //
-// To minimize SQLITE_BUSY errors, it automatically routes the
+// It automatically routes the
 // SELECT queries to the underlying concurrent db pool and everything
 // else to the nonconcurrent one.
 //
@@ -561,7 +544,7 @@ func (app *BaseApp) ConcurrentDB() dbx.Builder {
 // meaning that it can process only 1 db operation at a time (other queries queue up).
 //
 // This method is used mainly internally and in the tests to execute write
-// (save/delete) db operations as it helps with minimizing the SQLITE_BUSY errors.
+// (save/delete) db operations to coordinate writes within a transaction.
 //
 // Most users should use simply DB() as it will automatically
 // route the query execution to ConcurrentDB() or NonconcurrentDB().
@@ -573,7 +556,7 @@ func (app *BaseApp) NonconcurrentDB() dbx.Builder {
 
 // AuxDB returns the app auxiliary.db builder instance.
 //
-// To minimize SQLITE_BUSY errors, it automatically routes the
+// It automatically routes the
 // SELECT queries to the underlying concurrent db pool and everything
 // else to the nonconcurrent one.
 //
@@ -610,7 +593,7 @@ func (app *BaseApp) AuxConcurrentDB() dbx.Builder {
 // meaning that it can process only 1 db operation at a time (other queries queue up).
 //
 // This method is used mainly internally and in the tests to execute write
-// (save/delete) db operations as it helps with minimizing the SQLITE_BUSY errors.
+// (save/delete) db operations to coordinate writes within a transaction.
 //
 // Most users should use simply AuxDB() as it will automatically
 // route the query execution to AuxConcurrentDB() or AuxNonconcurrentDB().
@@ -765,6 +748,29 @@ func (app *BaseApp) NewFilesystem() (*filesystem.System, error) {
 // NB! Make sure to call Close() on the returned result
 // after you are done working with it.
 func (app *BaseApp) NewFilesystemForCollection(c *Collection) (*filesystem.System, error) {
+	if app.IsBootstrapped() && app.HasTable("_fileHosts") {
+		mode, err := app.FileMode()
+		if err != nil {
+			return nil, err
+		}
+		if mode == "s3" {
+			return app.newS3Filesystem()
+		}
+		host, err := app.FileHost()
+		if err != nil {
+			return nil, err
+		}
+		if host != nil {
+			id, err := app.InstanceID()
+			if err != nil {
+				return nil, err
+			}
+			if id != host.InstanceID {
+				return filesystem.NewRemote(host.URL, host.Secret)
+			}
+		}
+	}
+
 	useS3 := false
 	if c != nil {
 		useS3 = c.UsesS3Files(app)
@@ -1243,9 +1249,16 @@ func (app *BaseApp) OnBatchRequest() *hook.Hook[*BatchRequestEvent] {
 // -------------------------------------------------------------------
 
 func (app *BaseApp) initDataDB() error {
-	dbPath := filepath.Join(app.DataDir(), "data.db")
+	if err := app.loadDatabaseConfig(); err != nil {
+		return err
+	}
+	dbPath := app.config.DBDSN
+	connect := app.config.DBConnect
+	if connect == nil {
+		connect = func(dsn string) (*dbx.DB, error) { return ConnectDatabase(app.config.DBDriver, dsn) }
+	}
 
-	concurrentDB, err := app.config.DBConnect(dbPath)
+	concurrentDB, err := connect(dbPath)
 	if err != nil {
 		return err
 	}
@@ -1253,7 +1266,7 @@ func (app *BaseApp) initDataDB() error {
 	concurrentDB.DB().SetMaxIdleConns(app.config.DataMaxIdleConns)
 	concurrentDB.DB().SetConnMaxIdleTime(3 * time.Minute)
 
-	nonconcurrentDB, err := app.config.DBConnect(dbPath)
+	nonconcurrentDB, err := connect(dbPath)
 	if err != nil {
 		return err
 	}
@@ -1303,29 +1316,8 @@ func normalizeSQLLog(sql string) string {
 }
 
 func (app *BaseApp) initAuxDB() error {
-	// note: renamed to "auxiliary" because "aux" is a reserved Windows filename
-	// (see https://github.com/pocketbase/pocketbase/issues/5607)
-	dbPath := filepath.Join(app.DataDir(), "auxiliary.db")
-
-	concurrentDB, err := app.config.DBConnect(dbPath)
-	if err != nil {
-		return err
-	}
-	concurrentDB.DB().SetMaxOpenConns(app.config.AuxMaxOpenConns)
-	concurrentDB.DB().SetMaxIdleConns(app.config.AuxMaxIdleConns)
-	concurrentDB.DB().SetConnMaxIdleTime(3 * time.Minute)
-
-	nonconcurrentDB, err := app.config.DBConnect(dbPath)
-	if err != nil {
-		return err
-	}
-	nonconcurrentDB.DB().SetMaxOpenConns(1)
-	nonconcurrentDB.DB().SetMaxIdleConns(1)
-	nonconcurrentDB.DB().SetConnMaxIdleTime(3 * time.Minute)
-
-	app.auxConcurrentDB = concurrentDB
-	app.auxNonconcurrentDB = nonconcurrentDB
-
+	app.auxConcurrentDB = app.concurrentDB
+	app.auxNonconcurrentDB = app.nonconcurrentDB
 	return nil
 }
 
@@ -1357,6 +1349,55 @@ func supportFiles(m Model) bool {
 }
 
 func (app *BaseApp) registerBaseHooks() {
+	// Reject hidden metadata writes before collection-specific hooks can run.
+	guardCollection := func(e *ModelEvent) error {
+		if c, ok := e.Model.(*Collection); ok {
+			ba := asBaseApp(e.App)
+			if !ba.CollectionVisible(c) {
+				return errors.New("collection is outside this instance scope")
+			}
+			if !c.IsNew() {
+				old, err := e.App.FindCollectionByNameOrId(cast.ToString(c.LastSavedPK()))
+				if err != nil {
+					return err
+				}
+				if !ba.CollectionVisible(old) {
+					return errors.New("collection is outside this instance scope")
+				}
+			}
+		}
+		return e.Next()
+	}
+	app.OnModelValidate().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
+	app.OnModelCreate().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
+	app.OnModelUpdate().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
+	app.OnModelDelete().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
+
+	app.OnModelUpdate().BindFunc(func(e *ModelEvent) error {
+		if settings, ok := e.Model.(*Settings); ok && app.IsBootstrapped() && app.HasTable("_fileConfig") {
+			mode, err := app.FileMode()
+			if err != nil {
+				return err
+			}
+			if mode != "" && ((mode == "s3") != settings.S3.Enabled) {
+				return errors.New("file mode cannot be switched without a file migration")
+			}
+			if mode == "s3" && settings.S3.NormalizedScope() != "all" {
+				return errors.New("S3 mode requires all collections")
+			}
+		}
+		return e.Next()
+	})
+
+	app.OnServe().BindFunc(func(e *ServeEvent) error {
+		app.Cron().Add("__pbRemoteFileDeletes__", "* * * * *", func() {
+			if err := app.RetryFileDeletes(); err != nil {
+				app.Logger().Error("File deletion retry failed", "error", err)
+			}
+		})
+		return e.Next()
+	})
+
 	deletePrefix := func(collection *Collection, prefix string) error {
 		fs, err := app.NewFilesystemForCollection(collection)
 		if err != nil {
@@ -1448,23 +1489,6 @@ func (app *BaseApp) registerBaseHooks() {
 			return e.Next()
 		},
 		Priority: 999,
-	})
-
-	app.Cron().Add("__pbDBOptimize__", "0 0 * * *", func() {
-		_, execErr := app.NonconcurrentDB().NewQuery("PRAGMA wal_checkpoint(TRUNCATE)").Execute()
-		if execErr != nil {
-			app.Logger().Warn("Failed to run periodic PRAGMA wal_checkpoint for the main DB", slog.String("error", execErr.Error()))
-		}
-
-		_, execErr = app.AuxNonconcurrentDB().NewQuery("PRAGMA wal_checkpoint(TRUNCATE)").Execute()
-		if execErr != nil {
-			app.Logger().Warn("Failed to run periodic PRAGMA wal_checkpoint for the auxiliary DB", slog.String("error", execErr.Error()))
-		}
-
-		_, execErr = app.NonconcurrentDB().NewQuery("PRAGMA optimize").Execute()
-		if execErr != nil {
-			app.Logger().Warn("Failed to run periodic PRAGMA optimize", slog.String("error", execErr.Error()))
-		}
 	})
 
 	app.registerSettingsHooks()

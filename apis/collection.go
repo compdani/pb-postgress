@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/pocketbase/dbx"
 	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/auth"
@@ -37,9 +38,25 @@ func collectionsList(e *core.RequestEvent) error {
 	)
 
 	collections := []*core.Collection{}
+	query := e.App.CollectionQuery()
+	if ba := core.AsBaseApp(e.App); ba != nil {
+		all, err := e.App.FindAllCollections()
+		if err != nil {
+			return err
+		}
+		hidden := []any{}
+		for _, c := range all {
+			if !ba.CollectionVisible(c) {
+				hidden = append(hidden, c.Id)
+			}
+		}
+		if len(hidden) > 0 {
+			query.AndWhere(dbx.NotIn("id", hidden...))
+		}
+	}
 
 	result, err := search.NewProvider(fieldResolver).
-		Query(e.App.CollectionQuery()).
+		Query(query).
 		ParseAndExec(e.Request.URL.Query().Encode(), &collections)
 
 	if err != nil {
@@ -59,7 +76,7 @@ func collectionsList(e *core.RequestEvent) error {
 }
 
 func collectionView(e *core.RequestEvent) error {
-	collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+	collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 	if err != nil || collection == nil {
 		return e.NotFoundError("", err)
 	}
@@ -116,9 +133,16 @@ func collectionCreate(e *core.RequestEvent) error {
 }
 
 func collectionUpdate(e *core.RequestEvent) error {
-	collection, err := e.App.FindCollectionByNameOrId(e.Request.PathValue("collection"))
+	collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 	if err != nil || collection == nil {
 		return e.NotFoundError("", err)
+	}
+
+	// Request binding must not mutate the shared collection cache: schema sync
+	// needs its original fields, indexes and table name.
+	collection, err = e.App.FindCollectionByNameOrId(collection.Id)
+	if err != nil {
+		return err
 	}
 
 	originalExternal := *collection
@@ -152,7 +176,7 @@ func collectionUpdate(e *core.RequestEvent) error {
 }
 
 func collectionDelete(e *core.RequestEvent) error {
-	collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+	collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 	if err != nil || collection == nil {
 		return e.NotFoundError("", err)
 	}
@@ -185,7 +209,7 @@ func collectionDelete(e *core.RequestEvent) error {
 }
 
 func collectionTruncate(e *core.RequestEvent) error {
-	collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+	collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 	if err != nil || collection == nil {
 		return e.NotFoundError("", err)
 	}

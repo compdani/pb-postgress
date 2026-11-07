@@ -103,10 +103,18 @@ func hooksBinds(app core.App, loader *goja.Runtime, executors *vmsPool) {
 }
 
 func cronBinds(app core.App, loader *goja.Runtime, executors *vmsPool) {
-	cronAdd := func(jobId, cronExpr, handler string) {
+	cronAdd := func(jobId, cronExpr, handler string, collections ...string) {
 		pr := goja.MustCompile(defaultScriptPath, "{("+handler+").apply(undefined)}", true)
 
 		err := app.Cron().Add(jobId, cronExpr, func() {
+			// Optional collection names scope a job; evaluate at execution so a scope
+			// change also applies to jobs registered before the change.
+			for _, name := range collections {
+				c, err := app.FindCachedCollectionByNameOrId(name)
+				if err != nil || !core.AsBaseApp(app).CollectionVisible(c) {
+					return
+				}
+			}
 			err := executors.run(func(executor *goja.Runtime) error {
 				_, err := executor.RunProgram(pr)
 				return err

@@ -19,7 +19,7 @@ func TestAutodateFieldBaseMethods(t *testing.T) {
 }
 
 func TestAutodateFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.AutodateField{}
@@ -32,7 +32,7 @@ func TestAutodateFieldColumnType(t *testing.T) {
 }
 
 func TestAutodateFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.AutodateField{}
@@ -68,7 +68,7 @@ func TestAutodateFieldPrepareValue(t *testing.T) {
 }
 
 func TestAutodateFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -127,7 +127,7 @@ func TestAutodateFieldValidateSettings(t *testing.T) {
 	testDefaultFieldIdValidation(t, core.FieldTypeAutodate)
 	testDefaultFieldNameValidation(t, core.FieldTypeAutodate)
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	superusers, err := app.FindCollectionByNameOrId(core.CollectionNameSuperusers)
@@ -236,7 +236,7 @@ func cutMilliseconds(datetime string) string {
 }
 
 func TestAutodateFieldIntercept(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	initialDate, err := types.ParseDateTime("2024-01-02 03:04:05.789Z")
@@ -351,7 +351,7 @@ func TestAutodateFieldIntercept(t *testing.T) {
 }
 
 func TestAutodateRecordResave(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCollectionByNameOrId("demo2")

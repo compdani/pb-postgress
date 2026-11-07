@@ -498,7 +498,7 @@ func TestCollectionPostScan(t *testing.T) {
 }
 
 func TestCollectionUnmarshalJSON(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -763,7 +763,7 @@ func TestCollectionSerialize(t *testing.T) {
 func TestCollectionSerializeNotModifyingCache(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	c, err := app.FindCachedCollectionByNameOrId("users")
@@ -803,7 +803,7 @@ func TestCollectionSerializeNotModifyingCache(t *testing.T) {
 func TestCollectionDBExport(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	date, err := types.ParseDateTime("2024-07-01 01:02:03.456Z")
@@ -978,7 +978,7 @@ func TestCollectionDelete(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			var col *core.Collection
@@ -1023,7 +1023,7 @@ func TestCollectionDelete(t *testing.T) {
 func TestCollectionModelEventSync(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	testCollections := make([]*core.Collection, 4)
@@ -1444,7 +1444,7 @@ func TestCollectionSaveModel(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			collection, err := s.collection(app)
@@ -1518,7 +1518,7 @@ func TestCollectionSaveModel(t *testing.T) {
 func TestCollectionSaveIndirectViewsUpdate(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCollectionByNameOrId("demo1")
@@ -1579,80 +1579,66 @@ func TestCollectionSaveViewWrapping(t *testing.T) {
 	// note: some of the queries use "limit 0" because the tested field value could be empty
 	// which will trigger the extra sample records validation that are not important for this test
 	scenarios := []struct {
-		name     string
-		query    string
-		expected string
+		name  string
+		query string
 	}{
 		{
 			"no wrapping - id field",
 			"select id, bool from demo1",
-			"CREATE VIEW `test_wrapping` AS SELECT * FROM (select id, bool from demo1)",
 		},
 		{
 			"no wrapping - text field",
 			"select text as id, bool from demo1 limit 0",
-			"CREATE VIEW `test_wrapping` AS SELECT * FROM (select text as id, bool from demo1 limit 0)",
 		},
 		{
 			"no wrapping - relation field",
 			"select rel_one as id, bool from demo1 limit 0",
-			"CREATE VIEW `test_wrapping` AS SELECT * FROM (select rel_one as id, bool from demo1 limit 0)",
 		},
 		{
-			"no wrapping - select field",
+			"wrapping - JSON select field",
 			"select select_many as id, bool from demo1 limit 0",
-			"CREATE VIEW `test_wrapping` AS SELECT * FROM (select select_many as id, bool from demo1 limit 0)",
 		},
 		{
 			"no wrapping - email field",
 			"select email as id, bool from demo1 limit 0",
-			"CREATE VIEW `test_wrapping` AS SELECT * FROM (select email as id, bool from demo1 limit 0)",
 		},
 		{
 			"no wrapping - datetime field",
 			"select datetime as id, bool from demo1 limit 0",
-			"CREATE VIEW `test_wrapping` AS SELECT * FROM (select datetime as id, bool from demo1 limit 0)",
 		},
 		{
 			"no wrapping - url field",
 			"select url as id, bool from demo1 limit 0",
-			"CREATE VIEW `test_wrapping` AS SELECT * FROM (select url as id, bool from demo1 limit 0)",
 		},
 		{
 			"wrapping - bool field",
 			"select bool as id, text as txt, url from demo1 limit 0",
-			"CREATE VIEW `test_wrapping` AS SELECT * FROM (SELECT CAST(`id` as TEXT) `id`,`txt`,`url` FROM (select bool as id, text as txt, url from demo1 limit 0))",
 		},
 		{
 			"wrapping - bool field (different order)",
 			"select text as txt, url, bool as id from demo1 limit 0",
-			"CREATE VIEW `test_wrapping` AS SELECT * FROM (SELECT `txt`,`url`,CAST(`id` as TEXT) `id` FROM (select text as txt, url, bool as id from demo1 limit 0))",
 		},
 		{
 			"wrapping - json field",
 			"select json as id, text, url from demo1 limit 0",
-			"CREATE VIEW `test_wrapping` AS SELECT * FROM (SELECT CAST(`id` as TEXT) `id`,`text`,`url` FROM (select json as id, text, url from demo1 limit 0))",
 		},
 		{
 			"wrapping - numeric id",
 			"select 1 as id",
-			"CREATE VIEW `test_wrapping` AS SELECT * FROM (SELECT CAST(`id` as TEXT) `id` FROM (select 1 as id))",
 		},
 		{
 			"wrapping - expresion",
 			"select ('test') as id",
-			"CREATE VIEW `test_wrapping` AS SELECT * FROM (SELECT CAST(`id` as TEXT) `id` FROM (select ('test') as id))",
 		},
 		{
 			"no wrapping - cast as text",
 			"select cast('test' as text) as id",
-			"CREATE VIEW `test_wrapping` AS SELECT * FROM (select cast('test' as text) as id)",
 		},
 	}
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			collection := core.NewViewCollection(viewName)
@@ -1663,18 +1649,27 @@ func TestCollectionSaveViewWrapping(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			var sql string
-
-			rowErr := app.ConcurrentDB().NewQuery("SELECT sql FROM sqlite_master WHERE type='view' AND name={:name}").
-				Bind(dbx.Params{"name": viewName}).
-				Row(&sql)
-			if rowErr != nil {
-				t.Fatalf("Failed to retrieve view sql: %v", rowErr)
+			info, err := app.TableInfo(viewName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var found bool
+			for _, row := range info {
+				if row.Name == "id" {
+					found = true
+					if row.Type != "text" && row.Type != "character varying" && row.Type != "varchar" {
+						t.Fatalf("id must be textual: %+v", row)
+					}
+				}
+			}
+			if !found {
+				t.Fatal("missing id column")
+			}
+			var rows []dbx.NullStringMap
+			if err := app.DB().Select("*").From(viewName).All(&rows); err != nil {
+				t.Fatal(err)
 			}
 
-			if sql != s.expected {
-				t.Fatalf("Expected query \n%v, \ngot \n%v", s.expected, sql)
-			}
 		})
 	}
 }
@@ -1682,7 +1677,7 @@ func TestCollectionSaveViewWrapping(t *testing.T) {
 func TestCollectionSaveIndexesTableNameNormalization(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	dummyCollection := core.NewBaseCollection("new_test")

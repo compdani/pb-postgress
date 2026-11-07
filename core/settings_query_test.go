@@ -11,7 +11,7 @@ import (
 )
 
 func TestReloadSettings(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	// cleanup all stored settings
@@ -77,7 +77,7 @@ func TestReloadSettings(t *testing.T) {
 }
 
 func TestReloadSettingsWithEncryption(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	os.Setenv("pb_test_env", strings.Repeat("a", 32))

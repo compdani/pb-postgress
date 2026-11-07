@@ -175,7 +175,7 @@ func (scenario *ApiScenario) test(t testing.TB) {
 		}
 	} else {
 		var testAppErr error
-		testApp, testAppErr = NewTestApp()
+		testApp, testAppErr = NewTestApp(t)
 		if testAppErr != nil {
 			t.Fatalf("Failed to initialize the test app instance: %v", testAppErr)
 		}

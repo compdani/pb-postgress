@@ -11,6 +11,7 @@ import (
 	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
+	"github.com/pocketbase/pocketbase/tools/tokenizer"
 )
 
 const (
@@ -25,6 +26,15 @@ func bindSQLApi(app core.App, rg *router.RouterGroup[*core.RequestEvent]) {
 }
 
 func runSQL(e *core.RequestEvent) error {
+	if ba := core.AsBaseApp(e.App); ba != nil {
+		scope, err := ba.InstanceScope()
+		if err != nil {
+			return err
+		}
+		if scope.Mode != "all" {
+			return e.ForbiddenError("Raw SQL is unavailable for scoped instances", nil)
+		}
+	}
 	// extra precaution in case manually invoked from somewhere else
 	if !e.HasSuperuserAuth() {
 		return e.ForbiddenError("", nil)
@@ -85,6 +95,26 @@ func executeQuery(app core.App, query string, maxRows int) (*runSQLResult, error
 		return nil, errors.New("empty query")
 	}
 
+	tk := tokenizer.NewFromString(query)
+	tk.Separators(';')
+	statements, err := tk.ScanAll()
+	if err != nil {
+		return nil, err
+	}
+	if len(statements) > 1 {
+		var result *runSQLResult
+		err := app.RunInTransaction(func(txApp core.App) error {
+			for _, statement := range statements {
+				var err error
+				result, err = executeQuery(txApp, statement, maxRows)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		return result, err
+	}
 	var isPossibleWriteQuery bool
 
 	// loosely check the query type

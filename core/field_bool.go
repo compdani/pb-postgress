@@ -97,7 +97,7 @@ func (f *BoolField) SetHidden(hidden bool) {
 
 // ColumnType implements [Field.ColumnType] interface method.
 func (f *BoolField) ColumnType(app App) string {
-	return "BOOLEAN DEFAULT FALSE NOT NULL"
+	return fieldColumnType(app, "BOOLEAN DEFAULT FALSE NOT NULL")
 }
 
 // PrepareValue implements [Field.PrepareValue] interface method.

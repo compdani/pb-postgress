@@ -31,19 +31,7 @@ func (app *BaseApp) PostgresNonconcurrentDB() dbx.Builder {
 
 // IsPostgresBacked reports whether collection record data is stored in PostgreSQL.
 func (app *BaseApp) IsPostgresBacked(c *Collection) bool {
-	if app == nil || c == nil || !app.HasPostgres() {
-		return false
-	}
-
-	if c.UsesPostgresRecords() {
-		return true
-	}
-
-	if c.IsExternal() {
-		return true
-	}
-
-	return isPostgresSatelliteCollection(c.Name)
+	return false // all records use the instance database
 }
 
 // ManagesPostgresRecordSchema reports whether PocketBase should create/sync the physical Postgres table.

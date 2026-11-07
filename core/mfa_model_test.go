@@ -13,7 +13,7 @@ import (
 func TestNewMFA(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	mfa := core.NewMFA(app)
@@ -40,7 +40,7 @@ func TestMFAProxyRecord(t *testing.T) {
 func TestMFARecordRef(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	mfa := core.NewMFA(app)
@@ -64,7 +64,7 @@ func TestMFARecordRef(t *testing.T) {
 func TestMFACollectionRef(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	mfa := core.NewMFA(app)
@@ -88,7 +88,7 @@ func TestMFACollectionRef(t *testing.T) {
 func TestMFAMethod(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	mfa := core.NewMFA(app)
@@ -112,7 +112,7 @@ func TestMFAMethod(t *testing.T) {
 func TestMFACreated(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	mfa := core.NewMFA(app)
@@ -132,7 +132,7 @@ func TestMFACreated(t *testing.T) {
 func TestMFAUpdated(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	mfa := core.NewMFA(app)
@@ -152,7 +152,7 @@ func TestMFAUpdated(t *testing.T) {
 func TestMFAHasExpired(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	now := types.NowDateTime()
@@ -184,7 +184,7 @@ func TestMFAHasExpired(t *testing.T) {
 func TestMFAPreValidate(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	mfasCol, err := app.FindCollectionByNameOrId(core.CollectionNameMFAs)
@@ -233,7 +233,7 @@ func TestMFAPreValidate(t *testing.T) {
 func TestMFAValidateHook(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	user, err := app.FindAuthRecordByEmail("users", "test@example.com")
@@ -304,7 +304,7 @@ func TestMFAValidateHook(t *testing.T) {
 func TestMFAClearOnPasswordChange(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	user1, err := app.FindAuthRecordByEmail("users", "test@example.com")

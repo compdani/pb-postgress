@@ -12,7 +12,7 @@ import (
 func TestNewExternalAuth(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	ea := core.NewExternalAuth(app)
@@ -39,7 +39,7 @@ func TestExternalAuthProxyRecord(t *testing.T) {
 func TestExternalAuthRecordRef(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	ea := core.NewExternalAuth(app)
@@ -63,7 +63,7 @@ func TestExternalAuthRecordRef(t *testing.T) {
 func TestExternalAuthCollectionRef(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	ea := core.NewExternalAuth(app)
@@ -87,7 +87,7 @@ func TestExternalAuthCollectionRef(t *testing.T) {
 func TestExternalAuthProvider(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	ea := core.NewExternalAuth(app)
@@ -111,7 +111,7 @@ func TestExternalAuthProvider(t *testing.T) {
 func TestExternalAuthProviderId(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	ea := core.NewExternalAuth(app)
@@ -135,7 +135,7 @@ func TestExternalAuthProviderId(t *testing.T) {
 func TestExternalAuthCreated(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	ea := core.NewExternalAuth(app)
@@ -155,7 +155,7 @@ func TestExternalAuthCreated(t *testing.T) {
 func TestExternalAuthUpdated(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	ea := core.NewExternalAuth(app)
@@ -175,7 +175,7 @@ func TestExternalAuthUpdated(t *testing.T) {
 func TestExternalAuthPreValidate(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	externalAuthsCol, err := app.FindCollectionByNameOrId(core.CollectionNameExternalAuths)
@@ -226,7 +226,7 @@ func TestExternalAuthPreValidate(t *testing.T) {
 func TestExternalAuthValidateHook(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	user, err := app.FindAuthRecordByEmail("users", "test@example.com")
@@ -312,7 +312,7 @@ func TestExternalAuthValidateHook(t *testing.T) {
 func TestExternalAuthClearOnVerfiedUpgrade(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	t.Run("unverified->no changes", func(t *testing.T) {

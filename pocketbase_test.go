@@ -1,6 +1,7 @@
 package pocketbase
 
 import (
+	"github.com/pocketbase/pocketbase/tests"
 	"os"
 	"path/filepath"
 	"testing"
@@ -143,8 +144,12 @@ func TestSkipBootstrap(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// already bootstrapped
-	app0 := NewWithConfig(Config{DefaultDataDir: tempDir})
-	app0.Bootstrap()
+	dbCfg := tests.NewDatabaseConfig(t)
+	app0 := NewWithConfig(Config{DefaultDataDir: tempDir, DBDriver: dbCfg.DBDriver, DBDSN: dbCfg.DBDSN})
+	if err := app0.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	defer app0.ClearBootstrap()
 	if v := app0.skipBootstrap(); !v {
 		t.Fatal("[bootstrapped] Expected true, got false")
 	}

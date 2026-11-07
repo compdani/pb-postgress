@@ -123,7 +123,7 @@ func TestRecordPassword(t *testing.T) {
 func TestRecordSetRandomPassword(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	oldTokenKey := "old_tokenKey"

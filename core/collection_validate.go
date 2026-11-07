@@ -3,11 +3,11 @@ package core
 import (
 	"context"
 	"fmt"
+	"github.com/pocketbase/dbx"
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/pocketbase/dbx"
 	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/core/validators"
 	"github.com/pocketbase/pocketbase/tools/dbutils"
@@ -550,6 +550,15 @@ func (cv *collectionValidator) checkIndexes(value any) error {
 			}
 		}
 
+		// PostgreSQL index names are schema-wide. MySQL names are per table.
+		if cv.app.SQLDialect() == DialectPostgres {
+			var table string
+			err := cv.app.DB().NewQuery("SELECT tablename FROM pg_indexes WHERE schemaname=current_schema() AND lower(indexname)=lower({:name})").Bind(dbx.Params{"name": parsed.IndexName}).Row(&table)
+			if err == nil && table != cv.original.Name {
+				return validation.Errors{strconv.Itoa(i): validation.NewError("validation_existing_index_name", "The index name already exists.")}
+			}
+		}
+
 		if _, isDuplicated := duplicatedNames[strings.ToLower(parsed.IndexName)]; isDuplicated {
 			return validation.Errors{
 				strconv.Itoa(i): validation.NewError(
@@ -559,25 +568,6 @@ func (cv *collectionValidator) checkIndexes(value any) error {
 			}
 		}
 		duplicatedNames[strings.ToLower(parsed.IndexName)] = struct{}{}
-
-		// ensure that the index name is not used in another collection
-		var usedTblName string
-		_ = cv.app.ConcurrentDB().Select("tbl_name").
-			From("sqlite_master").
-			AndWhere(dbx.HashExp{"type": "index"}).
-			AndWhere(dbx.NewExp("LOWER([[tbl_name]])!=LOWER({:oldName})", dbx.Params{"oldName": cv.original.Name})).
-			AndWhere(dbx.NewExp("LOWER([[tbl_name]])!=LOWER({:newName})", dbx.Params{"newName": cv.new.Name})).
-			AndWhere(dbx.NewExp("LOWER([[name]])=LOWER({:indexName})", dbx.Params{"indexName": parsed.IndexName})).
-			Limit(1).
-			Row(&usedTblName)
-		if usedTblName != "" {
-			return validation.Errors{
-				strconv.Itoa(i): validation.NewError(
-					"validation_existing_index_name",
-					"The index name is already used in {{.usedTableName}} collection.",
-				).SetParams(map[string]any{"usedTableName": usedTblName}),
-			}
-		}
 
 		// reset non-important identifiers
 		parsed.SchemaName = "validator"

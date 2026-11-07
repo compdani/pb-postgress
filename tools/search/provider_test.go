@@ -6,15 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/pocketbase/pocketbase/tests/testdb"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/tools/list"
-	_ "modernc.org/sqlite"
 )
 
 func TestNewProvider(t *testing.T) {
@@ -270,7 +271,7 @@ func TestProviderExecEmptyQuery(t *testing.T) {
 }
 
 func TestProviderExecNonEmptyQuery(t *testing.T) {
-	testDB, err := createTestDB()
+	testDB, err := createTestDB(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,6 +463,10 @@ func TestProviderExecNonEmptyQuery(t *testing.T) {
 				t.Fatalf("Expected %d queries, got %d: \n%v", len(s.expectQueries), len(testDB.CalledQueries), testDB.CalledQueries)
 			}
 
+			for i, expected := range s.expectQueries {
+				s.expectQueries[i] = strings.ReplaceAll(expected, "`", `"`)
+				s.expectQueries[i] = strings.ReplaceAll(s.expectQueries[i], " IS NOT ''", " IS DISTINCT FROM ''")
+			}
 			for _, q := range testDB.CalledQueries {
 				if !list.ExistInSliceWithRegex(q, s.expectQueries) {
 					t.Fatalf("Didn't expect query \n%v \nin \n%v", q, s.expectQueries)
@@ -472,7 +477,7 @@ func TestProviderExecNonEmptyQuery(t *testing.T) {
 }
 
 func TestProviderFilterAndSortLimits(t *testing.T) {
-	testDB, err := createTestDB()
+	testDB, err := createTestDB(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -496,7 +501,7 @@ func TestProviderFilterAndSortLimits(t *testing.T) {
 			"<= max filter length",
 			[]FilterData{
 				"1=2",
-				FilterData("1='" + strings.Repeat("a", MaxFilterLength-4) + "'"),
+				FilterData("''='" + strings.Repeat("a", MaxFilterLength-5) + "'"),
 			},
 			[]SortField{},
 			1,
@@ -600,14 +605,14 @@ func TestProviderFilterAndSortLimits(t *testing.T) {
 
 			hasErr := err != nil
 			if hasErr != s.expectError {
-				t.Fatalf("Expected hasErr %v, got %v", s.expectError, hasErr)
+				t.Fatalf("Expected hasErr %v, got %v: %v", s.expectError, hasErr, err)
 			}
 		})
 	}
 }
 
 func TestProviderParseAndExec(t *testing.T) {
-	testDB, err := createTestDB()
+	testDB, err := createTestDB(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -747,15 +752,18 @@ type testDB struct {
 }
 
 // NB! Don't forget to call `db.Close()` at the end of the test.
-func createTestDB() (*testDB, error) {
-	// using a shared cache to allow multiple connections access to
-	// the same in memory database https://www.sqlite.org/inmemorydb.html
-	sqlDB, err := sql.Open("sqlite", "file::memory:?cache=shared")
+func createTestDB(t testing.TB) (*testDB, error) {
+	driver, dsn := testdb.New(t)
+	sqlDriver := driver
+	if driver == "postgres" {
+		sqlDriver = "pgx"
+	}
+	sqlDB, err := sql.Open(sqlDriver, dsn)
 	if err != nil {
 		return nil, err
 	}
-
-	db := testDB{DB: dbx.NewFromDB(sqlDB, "sqlite")}
+	t.Cleanup(func() { sqlDB.Close() })
+	db := testDB{DB: dbx.NewFromDB(sqlDB, sqlDriver)}
 	db.CreateTable("test", map[string]string{
 		"id":                                    "int default 0",
 		"test1":                                 "int default 0",

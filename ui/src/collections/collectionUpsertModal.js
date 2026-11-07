@@ -726,12 +726,12 @@ function collectionUpsertModal(rawCollection, modalSettings) {
                                     t.input({
                                         type: "text",
                                         disabled: true,
-                                        value: "SQLite",
+                                        value: "Local database",
                                     }),
                                 ),
                                 t.p(
                                     { className: "txt-hint m-t-xs" },
-                                    "This collection stores records in SQLite. Migrate to PostgreSQL to move record data while keeping the same collection name, schema, and record IDs.",
+                                    "This collection stores records in the instance database. Migrate to PostgreSQL to move record data while keeping the same collection name, schema, and record IDs.",
                                 ),
                                 t.div(
                                     { className: "flex m-t-sm" },

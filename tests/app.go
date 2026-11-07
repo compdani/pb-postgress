@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
@@ -19,7 +20,9 @@ import (
 type TestApp struct {
 	*core.BaseApp
 
-	mux sync.Mutex
+	mux         sync.Mutex
+	cleanupDB   func()
+	cleanupOnce sync.Once
 
 	// EventCalls defines a map to inspect which app events
 	// (and how many times) were triggered.
@@ -33,20 +36,30 @@ type TestApp struct {
 //
 // After this call, the app instance shouldn't be used anymore.
 func (t *TestApp) Cleanup() {
-	event := new(core.TerminateEvent)
-	event.App = t
-
-	t.OnTerminate().Trigger(event, func(e *core.TerminateEvent) error {
-		t.ClearBootstrap()
-		t.TestMailer.Reset()
-		t.ResetEventCalls()
-
-		return e.Next()
-	})
-
-	if t.DataDir() != "" {
-		os.RemoveAll(t.DataDir())
+	if t == nil || t.BaseApp == nil {
+		return
 	}
+	t.cleanupOnce.Do(func() {
+		defer func() {
+			if t.cleanupDB != nil {
+				t.cleanupDB()
+			}
+		}()
+		event := new(core.TerminateEvent)
+		event.App = t
+
+		t.OnTerminate().Trigger(event, func(e *core.TerminateEvent) error {
+			t.ClearBootstrap()
+			t.TestMailer.Reset()
+			t.ResetEventCalls()
+
+			return e.Next()
+		})
+
+		if t.DataDir() != "" {
+			os.RemoveAll(t.DataDir())
+		}
+	})
 }
 
 // ResetEventCalls resets the EventCalls counter.
@@ -71,13 +84,13 @@ func (t *TestApp) registerEventCall(name string) {
 // NewTestApp creates and initializes a test application instance.
 //
 // It is the caller's responsibility to call app.Cleanup() when the app is no longer needed.
-func NewTestApp(optTestDataDir ...string) (*TestApp, error) {
+func NewTestApp(tb testing.TB, optTestDataDir ...string) (*TestApp, error) {
 	var testDataDir string
 	if len(optTestDataDir) > 0 {
 		testDataDir = optTestDataDir[0]
 	}
 
-	return NewTestAppWithConfig(core.BaseAppConfig{
+	return NewTestAppWithConfig(tb, core.BaseAppConfig{
 		DataDir:       testDataDir,
 		EncryptionEnv: "pb_test_env",
 	})
@@ -91,7 +104,11 @@ func NewTestApp(optTestDataDir ...string) (*TestApp, error) {
 // config.DataDir is cloned for each new test application instance.
 //
 // It is the caller's responsibility to call app.Cleanup() when the app is no longer needed.
-func NewTestAppWithConfig(config core.BaseAppConfig) (*TestApp, error) {
+func NewTestAppWithConfig(tb testing.TB, config core.BaseAppConfig) (*TestApp, error) {
+	tb.Helper()
+	if os.Getenv("PB_TEST_DB_DSN") == "" {
+		tb.Skip("database test requires PB_TEST_DB_DSN (a disposable Postgres or MySQL server)")
+	}
 	if config.DataDir == "" {
 		// fallback to the default test data directory
 		_, currentFile, _, _ := runtime.Caller(0)
@@ -100,29 +117,54 @@ func NewTestAppWithConfig(config core.BaseAppConfig) (*TestApp, error) {
 
 	tempDir, err := TempDirClone(config.DataDir)
 	if err != nil {
+		tb.Fatal(err)
 		return nil, err
 	}
 
 	// replace with the clone
 	config.DataDir = tempDir
 
+	dsn, driver, cleanupDB, err := newTestDatabase(tb)
+	if err != nil {
+		os.RemoveAll(tempDir)
+		tb.Fatal(err)
+		return nil, err
+	}
+	config.DBDSN, config.DBDriver = dsn, driver
 	app := core.NewBaseApp(config)
+	ready := false
+	defer func() {
+		if !ready {
+			app.ClearBootstrap()
+			cleanupDB()
+			os.RemoveAll(tempDir)
+		}
+	}()
 
 	// load data dir and db connections
 	if err := app.Bootstrap(); err != nil {
+		tb.Fatal(err)
 		return nil, err
 	}
 
 	// ensure that the Dao and DB configurations are properly loaded
 	if _, err := app.DB().NewQuery("Select 1").Execute(); err != nil {
+		tb.Fatal(err)
 		return nil, err
 	}
 	if _, err := app.AuxDB().NewQuery("Select 1").Execute(); err != nil {
+		tb.Fatal(err)
 		return nil, err
 	}
 
 	// apply any missing migrations
 	if err := app.RunAllMigrations(); err != nil {
+		tb.Fatal(err)
+		return nil, err
+	}
+
+	if err := seedFixtures(app); err != nil {
+		tb.Fatal(err)
 		return nil, err
 	}
 
@@ -132,6 +174,7 @@ func NewTestAppWithConfig(config core.BaseAppConfig) (*TestApp, error) {
 
 	t := &TestApp{
 		BaseApp:    app,
+		cleanupDB:  cleanupDB,
 		EventCalls: make(map[string]int),
 		TestMailer: &TestMailer{},
 	}
@@ -813,6 +856,8 @@ func NewTestAppWithConfig(config core.BaseAppConfig) (*TestApp, error) {
 		Priority: -99999,
 	})
 
+	ready = true
+	tb.Cleanup(t.Cleanup)
 	return t, nil
 }
 

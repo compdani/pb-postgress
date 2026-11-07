@@ -13,7 +13,7 @@ import (
 func TestNewAuthOrigin(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	origin := core.NewAuthOrigin(app)
@@ -40,7 +40,7 @@ func TestAuthOriginProxyRecord(t *testing.T) {
 func TestAuthOriginRecordRef(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	origin := core.NewAuthOrigin(app)
@@ -64,7 +64,7 @@ func TestAuthOriginRecordRef(t *testing.T) {
 func TestAuthOriginCollectionRef(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	origin := core.NewAuthOrigin(app)
@@ -88,7 +88,7 @@ func TestAuthOriginCollectionRef(t *testing.T) {
 func TestAuthOriginFingerprint(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	origin := core.NewAuthOrigin(app)
@@ -112,7 +112,7 @@ func TestAuthOriginFingerprint(t *testing.T) {
 func TestAuthOriginCreated(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	origin := core.NewAuthOrigin(app)
@@ -132,7 +132,7 @@ func TestAuthOriginCreated(t *testing.T) {
 func TestAuthOriginUpdated(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	origin := core.NewAuthOrigin(app)
@@ -152,7 +152,7 @@ func TestAuthOriginUpdated(t *testing.T) {
 func TestAuthOriginPreValidate(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	originsCol, err := app.FindCollectionByNameOrId(core.CollectionNameAuthOrigins)
@@ -201,7 +201,7 @@ func TestAuthOriginPreValidate(t *testing.T) {
 func TestAuthOriginValidateHook(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	user, err := app.FindAuthRecordByEmail("users", "test@example.com")
@@ -272,7 +272,7 @@ func TestAuthOriginValidateHook(t *testing.T) {
 func TestAuthOriginPasswordChangeDeletion(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	// no auth origin associated with it
@@ -302,7 +302,7 @@ func TestAuthOriginPasswordChangeDeletion(t *testing.T) {
 
 	for i, s := range scenarios {
 		t.Run(fmt.Sprintf("%d_%s_%s", i, s.record.Collection().Name, s.record.Id), func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			deletedIds := []string{}

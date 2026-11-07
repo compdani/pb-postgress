@@ -3,26 +3,11 @@ package core
 import (
 	"database/sql"
 	"fmt"
-
 	"github.com/pocketbase/dbx"
 )
 
-// TableColumns returns all column names of a single table by its name.
-func (app *BaseApp) TableColumns(tableName string) ([]string, error) {
-	columns := []string{}
-
-	err := app.ConcurrentDB().NewQuery("SELECT name FROM PRAGMA_TABLE_INFO({:tableName})").
-		Bind(dbx.Params{"tableName": tableName}).
-		Column(&columns)
-
-	return columns, err
-}
-
 type TableInfoRow struct {
-	// the `db:"pk"` tag has special semantic so we cannot rename
-	// the original field without specifying a custom mapper
-	PK int
-
+	PK           int
 	Index        int            `db:"cid"`
 	Name         string         `db:"name"`
 	Type         string         `db:"type"`
@@ -30,108 +15,72 @@ type TableInfoRow struct {
 	DefaultValue sql.NullString `db:"dflt_value"`
 }
 
-// TableInfo returns the "table_info" pragma result for the specified table.
-func (app *BaseApp) TableInfo(tableName string) ([]*TableInfoRow, error) {
-	info := []*TableInfoRow{}
-
-	err := app.ConcurrentDB().NewQuery("SELECT * FROM PRAGMA_TABLE_INFO({:tableName})").
-		Bind(dbx.Params{"tableName": tableName}).
-		All(&info)
-	if err != nil {
-		return nil, err
+func (app *BaseApp) schemaExpr() string {
+	if app.SQLDialect() == DialectMySQL {
+		return "DATABASE()"
 	}
-
-	// mattn/go-sqlite3 doesn't throw an error on invalid or missing table
-	// so we additionally have to check whether the loaded info result is nonempty
-	if len(info) == 0 {
-		return nil, fmt.Errorf("empty table info probably due to invalid or missing table %s", tableName)
-	}
-
-	return info, nil
+	return "current_schema()"
 }
-
-// TableIndexes returns a name grouped map with all non empty index of the specified table.
-//
-// Note: This method doesn't return an error on nonexisting table.
-func (app *BaseApp) TableIndexes(tableName string) (map[string]string, error) {
-	indexes := []struct {
-		Name string
-		Sql  string
-	}{}
-
-	err := app.ConcurrentDB().Select("name", "sql").
-		From("sqlite_master").
-		AndWhere(dbx.NewExp("sql is not null")).
-		AndWhere(dbx.HashExp{
-			"type":     "index",
-			"tbl_name": tableName,
-		}).
-		All(&indexes)
+func (app *BaseApp) TableColumns(name string) ([]string, error) {
+	rows, err := app.TableInfo(name)
 	if err != nil {
 		return nil, err
 	}
-
-	result := make(map[string]string, len(indexes))
-
-	for _, idx := range indexes {
-		result[idx.Name] = idx.Sql
+	result := make([]string, len(rows))
+	for i, r := range rows {
+		result[i] = r.Name
 	}
-
 	return result, nil
 }
-
-// DeleteTable drops the specified table.
-//
-// This method is a no-op if a table with the provided name doesn't exist.
-//
-// NB! Be aware that this method is vulnerable to SQL injection and the
-// "dangerousTableName" argument must come only from trusted input!
-func (app *BaseApp) DeleteTable(dangerousTableName string) error {
-	_, err := app.NonconcurrentDB().NewQuery(fmt.Sprintf(
-		"DROP TABLE IF EXISTS {{%s}}",
-		dangerousTableName,
-	)).Execute()
-
+func (app *BaseApp) TableInfo(name string) ([]*TableInfoRow, error) {
+	var rows []*TableInfoRow
+	query := `SELECT ordinal_position - 1 AS cid, column_name AS name, data_type AS type, (is_nullable = 'NO') AS "notnull", column_default AS dflt_value, CASE WHEN EXISTS (SELECT 1 FROM information_schema.key_column_usage k JOIN information_schema.table_constraints t ON t.constraint_name=k.constraint_name AND t.constraint_schema=k.constraint_schema WHERE t.constraint_type='PRIMARY KEY' AND k.table_schema=columns.table_schema AND k.table_name=columns.table_name AND k.column_name=columns.column_name) THEN 1 ELSE 0 END AS pk FROM information_schema.columns WHERE table_schema = ` + app.schemaExpr() + ` AND table_name = {:name} ORDER BY ordinal_position`
+	if app.SQLDialect() == DialectMySQL {
+		query = `SELECT ordinal_position - 1 AS cid, column_name AS name, data_type AS type, (is_nullable = 'NO') AS ` + "`notnull`" + `, column_default AS dflt_value, (column_key = 'PRI') AS pk FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = {:name} ORDER BY ordinal_position`
+	}
+	err := app.ConcurrentDB().NewQuery(query).Bind(dbx.Params{"name": name}).All(&rows)
+	if err == nil && len(rows) == 0 {
+		err = fmt.Errorf("table %q not found", name)
+	}
+	return rows, err
+}
+func (app *BaseApp) TableIndexes(name string) (map[string]string, error) {
+	rows := []struct {
+		Name string
+		SQL  string
+	}{}
+	query := `SELECT indexname AS name, indexdef AS sql FROM pg_indexes WHERE schemaname = current_schema() AND tablename = {:name} AND indexname NOT IN (SELECT conname FROM pg_constraint WHERE contype = 'p' AND conrelid = to_regclass({:name}))`
+	if app.SQLDialect() == DialectMySQL {
+		query = "SELECT index_name AS name, concat('CREATE ', IF(min(non_unique)=0, 'UNIQUE ', ''), 'INDEX `', index_name, '` ON `', table_name, '` (', group_concat(COALESCE(concat('`',column_name,'`'), concat('(',expression,')')) ORDER BY seq_in_index), ')') AS `sql` FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = {:name} AND index_name <> 'PRIMARY' GROUP BY index_name,table_name"
+	}
+	err := app.ConcurrentDB().NewQuery(query).Bind(dbx.Params{"name": name}).All(&rows)
+	result := map[string]string{}
+	for _, r := range rows {
+		result[r.Name] = r.SQL
+	}
+	return result, err
+}
+func (app *BaseApp) DeleteTable(name string) error {
+	sql := "DROP TABLE IF EXISTS " + app.SQLDialect().Quote(name)
+	if app.SQLDialect() == DialectPostgres {
+		sql += " CASCADE"
+	}
+	_, err := app.DB().NewQuery(sql).Execute()
 	return err
 }
-
-// HasTable checks if a table (or view) with the provided name exists (case insensitive).
-// in the data.db.
-func (app *BaseApp) HasTable(tableName string) bool {
-	return app.hasTable(app.ConcurrentDB(), tableName)
+func (app *BaseApp) HasTable(name string) bool    { return app.hasTable(app.ConcurrentDB(), name) }
+func (app *BaseApp) AuxHasTable(name string) bool { return app.hasTable(app.AuxConcurrentDB(), name) }
+func (app *BaseApp) hasTable(db dbx.Builder, name string) bool {
+	var count int
+	err := db.NewQuery("SELECT count(*) FROM information_schema.tables WHERE table_schema = " + app.schemaExpr() + " AND lower(table_name) = lower({:name})").Bind(dbx.Params{"name": name}).Row(&count)
+	return err == nil && count > 0
 }
-
-// AuxHasTable checks if a table (or view) with the provided name exists (case insensitive)
-// in the auixiliary.db.
-func (app *BaseApp) AuxHasTable(tableName string) bool {
-	return app.hasTable(app.AuxConcurrentDB(), tableName)
-}
-
-func (app *BaseApp) hasTable(db dbx.Builder, tableName string) bool {
-	var exists int
-
-	err := db.Select("(1)").
-		From("sqlite_schema").
-		AndWhere(dbx.HashExp{"type": []any{"table", "view"}}).
-		AndWhere(dbx.NewExp("LOWER([[name]])=LOWER({:tableName})", dbx.Params{"tableName": tableName})).
-		Limit(1).
-		Row(&exists)
-
-	return err == nil && exists > 0
-}
-
-// Vacuum executes VACUUM on the data.db in order to reclaim unused data db disk space.
-func (app *BaseApp) Vacuum() error {
-	return app.vacuum(app.NonconcurrentDB())
-}
-
-// AuxVacuum executes VACUUM on the auxiliary.db in order to reclaim unused auxiliary db disk space.
-func (app *BaseApp) AuxVacuum() error {
-	return app.vacuum(app.AuxNonconcurrentDB())
-}
-
+func (app *BaseApp) Vacuum() error    { return app.vacuum(app.NonconcurrentDB()) }
+func (app *BaseApp) AuxVacuum() error { return app.vacuum(app.AuxNonconcurrentDB()) }
 func (app *BaseApp) vacuum(db dbx.Builder) error {
+	if app.SQLDialect() == DialectMySQL {
+		return fmt.Errorf("use OPTIMIZE TABLE for individual MySQL tables")
+	}
 	_, err := db.NewQuery("VACUUM").Execute()
-
 	return err
 }

@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"path"
-	"strings"
 	"syscall"
 	"time"
 
@@ -237,13 +236,7 @@ func oldCanAssignUsername(txApp core.App, collection *core.Collection, username 
 		// but normalize as an extra precaution in case of a custom validator
 		colName := inflector.Columnify(field.GetName())
 
-		var expr dbx.Expression
-		if strings.EqualFold(index.Columns[0].Collate, "nocase") {
-			// case-insensitive search
-			expr = dbx.NewExp("[["+colName+"]] = {:username} COLLATE NOCASE", dbx.Params{"username": username})
-		} else {
-			expr = dbx.HashExp{colName: username}
-		}
+		expr := core.AuthIdentityExpression(txApp, index, colName, "username", username)
 
 		var exists int
 		_ = txApp.RecordQuery(collection).Select("(1)").AndWhere(expr).Limit(1).Row(&exists)

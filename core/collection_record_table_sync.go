@@ -2,11 +2,9 @@ package core
 
 import (
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 
-	"github.com/pocketbase/dbx"
 	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"github.com/pocketbase/pocketbase/tools/security"
@@ -19,15 +17,11 @@ import (
 //
 // This method is automatically invoked as part of a collection create/update/delete operation.
 func (app *BaseApp) SyncRecordTableSchema(newCollection *Collection, oldCollection *Collection) error {
+	if !app.CollectionVisible(newCollection) {
+		return nil
+	}
 	if newCollection.IsView() {
 		return nil // nothing to sync since views don't have records table
-	}
-
-	if app.IsPostgresBacked(newCollection) {
-		if app.ManagesPostgresRecordSchema(newCollection) {
-			return app.SyncPostgresRecordTableSchema(newCollection, oldCollection)
-		}
-		return nil
 	}
 
 	txErr := app.RunInTransaction(func(txApp App) error {
@@ -84,6 +78,11 @@ func (app *BaseApp) SyncRecordTableSchema(newCollection *Collection, oldCollecti
 			}
 		}
 
+		restore, err := detachDependentViews(txApp, newTableName)
+		if err != nil {
+			return err
+		}
+
 		// check for deleted columns
 		for _, oldField := range oldFields {
 			if f := newFields.GetById(oldField.GetId()); f != nil {
@@ -138,170 +137,19 @@ func (app *BaseApp) SyncRecordTableSchema(newCollection *Collection, oldCollecti
 		if err := normalizeSingleVsMultipleFieldChanges(txApp, newCollection, oldCollection); err != nil {
 			return err
 		}
-
 		if needIndexesUpdate {
-			return createCollectionIndexes(txApp, newCollection)
+			if err := createCollectionIndexes(txApp, newCollection); err != nil {
+				return err
+			}
 		}
 
-		return nil
+		return restore()
 	})
 	if txErr != nil {
 		return txErr
 	}
 
-	// run optimize per the SQLite recommendations
-	// (https://www.sqlite.org/pragma.html#pragma_optimize)
-	_, optimizeErr := app.NonconcurrentDB().NewQuery("PRAGMA optimize").Execute()
-	if optimizeErr != nil {
-		app.Logger().Warn("Failed to run PRAGMA optimize after record table sync", slog.String("error", optimizeErr.Error()))
-	}
-
 	return nil
-}
-
-func normalizeSingleVsMultipleFieldChanges(app App, newCollection *Collection, oldCollection *Collection) error {
-	if newCollection.IsView() || oldCollection == nil {
-		return nil // view or not an update
-	}
-
-	return app.RunInTransaction(func(txApp App) error {
-		for _, newField := range newCollection.Fields {
-			// allow to continue even if there is no old field for the cases
-			// when a new field is added and there are already inserted data
-			var isOldMultiple bool
-			if oldField := oldCollection.Fields.GetById(newField.GetId()); oldField != nil {
-				if mv, ok := oldField.(MultiValuer); ok {
-					isOldMultiple = mv.IsMultiple()
-				}
-			}
-
-			var isNewMultiple bool
-			if mv, ok := newField.(MultiValuer); ok {
-				isNewMultiple = mv.IsMultiple()
-			}
-
-			if isOldMultiple == isNewMultiple {
-				continue // no change
-			}
-
-			// -------------------------------------------------------
-			// update the field column definition
-			// -------------------------------------------------------
-
-			// temporary drop all views to prevent reference errors during the columns renaming
-			// (this is used as an "alternative" to the writable_schema PRAGMA)
-			views := []struct {
-				Name string `db:"name"`
-				SQL  string `db:"sql"`
-			}{}
-			err := txApp.DB().Select("name", "sql").
-				From("sqlite_master").
-				AndWhere(dbx.NewExp("sql is not null")).
-				AndWhere(dbx.HashExp{"type": "view"}).
-				All(&views)
-			if err != nil {
-				return err
-			}
-			for _, view := range views {
-				err = txApp.DeleteView(view.Name)
-				if err != nil {
-					return err
-				}
-			}
-
-			originalName := newField.GetName()
-			oldTempName := "_" + newField.GetName() + security.PseudorandomString(5)
-
-			// rename temporary the original column to something else to allow inserting a new one in its place
-			_, err = txApp.DB().RenameColumn(newCollection.Name, originalName, oldTempName).Execute()
-			if err != nil {
-				return err
-			}
-
-			// reinsert the field column with the new type
-			_, err = txApp.DB().AddColumn(newCollection.Name, originalName, newField.ColumnType(txApp)).Execute()
-			if err != nil {
-				return err
-			}
-
-			var copyQuery *dbx.Query
-
-			if !isOldMultiple && isNewMultiple {
-				// single -> multiple (convert to array)
-				copyQuery = txApp.DB().NewQuery(fmt.Sprintf(
-					`UPDATE {{%s}} set [[%s]] = (
-							CASE
-								WHEN COALESCE([[%s]], '') = ''
-								THEN '[]'
-								ELSE (
-									CASE
-										WHEN json_valid([[%s]]) AND json_type([[%s]]) == 'array'
-										THEN [[%s]]
-										ELSE json_array([[%s]])
-									END
-								)
-							END
-						)`,
-					newCollection.Name,
-					originalName,
-					oldTempName,
-					oldTempName,
-					oldTempName,
-					oldTempName,
-					oldTempName,
-				))
-			} else {
-				// multiple -> single (keep only the last element)
-				//
-				// note: for file fields the actual file objects are not
-				// deleted allowing additional custom handling via migration
-				copyQuery = txApp.DB().NewQuery(fmt.Sprintf(
-					`UPDATE {{%s}} set [[%s]] = (
-						CASE
-							WHEN COALESCE([[%s]], '[]') = '[]'
-							THEN ''
-							ELSE (
-								CASE
-									WHEN json_valid([[%s]]) AND json_type([[%s]]) == 'array'
-									THEN COALESCE(json_extract([[%s]], '$[#-1]'), '')
-									ELSE [[%s]]
-								END
-							)
-						END
-					)`,
-					newCollection.Name,
-					originalName,
-					oldTempName,
-					oldTempName,
-					oldTempName,
-					oldTempName,
-					oldTempName,
-				))
-			}
-
-			// copy the normalized values
-			_, err = copyQuery.Execute()
-			if err != nil {
-				return err
-			}
-
-			// drop the original column
-			_, err = txApp.DB().DropColumn(newCollection.Name, oldTempName).Execute()
-			if err != nil {
-				return err
-			}
-
-			// restore views
-			for _, view := range views {
-				_, err = txApp.DB().NewQuery(view.SQL).Execute()
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		return nil
-	})
 }
 
 func dropCollectionIndexes(app App, collection *Collection) error {
@@ -310,17 +158,12 @@ func dropCollectionIndexes(app App, collection *Collection) error {
 	}
 
 	return app.RunInTransaction(func(txApp App) error {
-		for _, raw := range collection.Indexes {
-			parsed := dbutils.ParseIndex(raw)
-
-			// note: don't check IsValid because the index table name may not be populated
-			// (https://github.com/pocketbase/pocketbase/issues/7689)
-			if parsed.IndexName == "" {
-				return fmt.Errorf("failed to dop index - missing index name: %s", raw)
-			}
-
-			_, err := txApp.DB().NewQuery(fmt.Sprintf("DROP INDEX IF EXISTS [[%s]]", parsed.IndexName)).Execute()
-			if err != nil {
+		indexes, err := txApp.TableIndexes(collection.Name)
+		if err != nil {
+			return err
+		}
+		for name := range indexes {
+			if _, err := txApp.DB().NewQuery(indexDropSQL(txApp, collection.Name, name)).Execute(); err != nil {
 				return err
 			}
 		}
@@ -355,7 +198,11 @@ func createCollectionIndexes(app App, collection *Collection) error {
 				continue
 			}
 
-			if _, err := txApp.DB().NewQuery(parsed.Build()).Execute(); err != nil {
+			sql, buildErr := indexCreateSQL(txApp, parsed)
+			if buildErr != nil {
+				return buildErr
+			}
+			if _, err := txApp.DB().NewQuery(sql).Execute(); err != nil {
 				errs[strconv.Itoa(i)] = validation.NewError(
 					"validation_invalid_index_expression",
 					fmt.Sprintf("Failed to create index %s - %v.", parsed.IndexName, err.Error()),

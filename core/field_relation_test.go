@@ -16,7 +16,7 @@ func TestRelationFieldBaseMethods(t *testing.T) {
 }
 
 func TestRelationFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -37,7 +37,7 @@ func TestRelationFieldColumnType(t *testing.T) {
 		{
 			"multiple",
 			&core.RelationField{MaxSelect: 2},
-			"JSON DEFAULT '[]' NOT NULL",
+			"JSONB DEFAULT '[]' NOT NULL",
 		},
 	}
 
@@ -83,7 +83,7 @@ func TestRelationFieldIsMultiple(t *testing.T) {
 }
 
 func TestRelationFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	record := core.NewRecord(core.NewBaseCollection("test"))
@@ -132,7 +132,7 @@ func TestRelationFieldPrepareValue(t *testing.T) {
 }
 
 func TestRelationFieldDriverValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -194,7 +194,7 @@ func TestRelationFieldDriverValue(t *testing.T) {
 }
 
 func TestRelationFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	demo1, err := app.FindCollectionByNameOrId("demo1")
@@ -350,7 +350,7 @@ func TestRelationFieldValidateSettings(t *testing.T) {
 	testDefaultFieldNameValidation(t, core.FieldTypeRelation)
 	testDefaultFieldHelpValidation[core.RelationField](t)
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	demo1, err := app.FindCollectionByNameOrId("demo1")

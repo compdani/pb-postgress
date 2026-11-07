@@ -107,7 +107,7 @@ func (f *DateField) SetHidden(hidden bool) {
 
 // ColumnType implements [Field.ColumnType] interface method.
 func (f *DateField) ColumnType(app App) string {
-	return "TEXT DEFAULT '' NOT NULL"
+	return fieldColumnType(app, "TEXT DEFAULT '' NOT NULL")
 }
 
 // PrepareValue implements [Field.PrepareValue] interface method.

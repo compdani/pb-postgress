@@ -32,7 +32,7 @@ func TestGenerateDefaultRandomId(t *testing.T) {
 func TestModelQuery(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	modelsQuery := app.ModelQuery(&core.Collection{})
@@ -46,7 +46,7 @@ func TestModelQuery(t *testing.T) {
 		t.Fatalf("AuxModelQuery() is not using app.AuxConcurrentDB()")
 	}
 
-	expectedSQL := "SELECT {{_collections}}.* FROM `_collections`"
+	expectedSQL := "SELECT {{_collections}}.* FROM \"_collections\""
 	for i, q := range []*dbx.SelectQuery{modelsQuery, logsModelQuery} {
 		sql := q.Build().SQL()
 		if sql != expectedSQL {
@@ -58,7 +58,7 @@ func TestModelQuery(t *testing.T) {
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	u := &mockSuperusers{}
@@ -78,7 +78,7 @@ func TestValidate(t *testing.T) {
 func TestValidateWithContext(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	u := &mockSuperusers{}

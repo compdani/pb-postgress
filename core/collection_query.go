@@ -38,7 +38,7 @@ func (app *BaseApp) FindAllCollections(collectionTypes ...string) ([]*Collection
 		q.AndWhere(dbx.In("type", list.ToInterfaceSlice(types)...))
 	}
 
-	err := q.OrderBy("rowid ASC").All(&collections)
+	err := q.OrderBy("created ASC", "id ASC").All(&collections)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +263,7 @@ func normalizeViewQueryId(app App, query string) (string, error) {
 	}
 
 	for _, row := range info {
-		if strings.EqualFold(row.Name, FieldNameId) && strings.EqualFold(row.Type, "TEXT") {
+		if strings.EqualFold(row.Name, FieldNameId) && (strings.EqualFold(row.Type, "TEXT") || strings.EqualFold(row.Type, "character varying") || strings.EqualFold(row.Type, "varchar")) {
 			return query, nil // no wrapping needed
 		}
 	}
@@ -283,7 +283,7 @@ func normalizeViewQueryId(app App, query string) (string, error) {
 		}
 	}
 
-	query = fmt.Sprintf("SELECT %s FROM (%s)", strings.Join(columns, ","), query)
+	query = fmt.Sprintf("SELECT %s FROM (%s) AS __pb_source", strings.Join(columns, ","), query)
 
 	return query, nil
 }

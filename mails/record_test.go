@@ -12,7 +12,7 @@ import (
 func TestSendRecordAuthAlert(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	info := "<p>test_info</p>"
@@ -48,7 +48,7 @@ func TestSendRecordAuthAlert(t *testing.T) {
 func TestSendRecordPasswordReset(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	user, _ := testApp.FindFirstRecordByData("users", "email", "test@example.com")
@@ -79,7 +79,7 @@ func TestSendRecordPasswordReset(t *testing.T) {
 func TestSendRecordVerification(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	user, _ := testApp.FindFirstRecordByData("users", "email", "test@example.com")
@@ -110,7 +110,7 @@ func TestSendRecordVerification(t *testing.T) {
 func TestSendRecordChangeEmail(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	user, _ := testApp.FindFirstRecordByData("users", "email", "test@example.com")
@@ -141,7 +141,7 @@ func TestSendRecordChangeEmail(t *testing.T) {
 func TestSendRecordOTP(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	user, _ := testApp.FindFirstRecordByData("users", "email", "test@example.com")

@@ -13,7 +13,7 @@ import (
 func TestHooksAppReset(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	createVM := func() *goja.Runtime {
@@ -73,7 +73,7 @@ func TestHooksAppReset(t *testing.T) {
 func TestRouterHandlerAppReset(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	createVM := func() *goja.Runtime {
@@ -153,7 +153,7 @@ func TestRouterHandlerAppReset(t *testing.T) {
 func TestRouterMiddlewareFuncAppReset(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	createVM := func() *goja.Runtime {
@@ -234,7 +234,7 @@ func TestRouterMiddlewareFuncAppReset(t *testing.T) {
 func TestRouterMiddlewareClassAppReset(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	createVM := func() *goja.Runtime {

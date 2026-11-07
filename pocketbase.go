@@ -12,7 +12,6 @@ import (
 
 	"github.com/pocketbase/pocketbase/cmd"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/hook"
 	"github.com/pocketbase/pocketbase/tools/list"
 	"github.com/pocketbase/pocketbase/tools/osutils"
 	"github.com/pocketbase/pocketbase/tools/routine"
@@ -45,6 +44,8 @@ type PocketBase struct {
 
 // Config is the PocketBase initialization config struct.
 type Config struct {
+	DBDriver string
+	DBDSN    string
 	// hide the default console server info on app startup
 	HideStartBanner bool
 
@@ -136,28 +137,12 @@ func NewWithConfig(config Config) *PocketBase {
 		AuxMaxOpenConns:  config.AuxMaxOpenConns,
 		AuxMaxIdleConns:  config.AuxMaxIdleConns,
 		DBConnect:        config.DBConnect,
+		DBDriver:         config.DBDriver,
+		DBDSN:            config.DBDSN,
 	})
 
 	// hide the default help command (allow only `--help` flag)
 	pb.RootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
-
-	// https://github.com/pocketbase/pocketbase/issues/6136
-	pb.OnBootstrap().Bind(&hook.Handler[*core.BootstrapEvent]{
-		Id: ModerncDepsCheckHookId,
-		Func: func(be *core.BootstrapEvent) error {
-			if err := be.Next(); err != nil {
-				return err
-			}
-
-			// run separately to avoid blocking
-			app := be.App
-			routine.FireAndForget(func() {
-				checkModerncDeps(app)
-			})
-
-			return nil
-		},
-	})
 
 	return pb
 }
@@ -187,7 +172,7 @@ func (pb *PocketBase) Start() error {
 // system commands!
 func (pb *PocketBase) Execute() error {
 	if !pb.skipBootstrap() {
-		if err := pb.Bootstrap(); err != nil {
+		if err := pb.Bootstrap(); err != nil && !errors.Is(err, core.ErrDatabaseUnconfigured) {
 			return err
 		}
 	}
@@ -225,6 +210,8 @@ func (pb *PocketBase) Execute() error {
 // eagerParseFlags parses the global app flags before calling pb.RootCmd.Execute().
 // so we can have all PocketBase flags ready for use on initialization.
 func (pb *PocketBase) eagerParseFlags(config *Config) error {
+	pb.RootCmd.PersistentFlags().StringVar(&config.DBDriver, "dbDriver", config.DBDriver, "database driver (postgres or mysql; PB_DB_DRIVER)")
+	pb.RootCmd.PersistentFlags().StringVar(&config.DBDSN, "dbDSN", config.DBDSN, "database connection string (PB_DB_DSN)")
 	pb.RootCmd.PersistentFlags().StringVar(
 		&pb.dataDirFlag,
 		"dir",

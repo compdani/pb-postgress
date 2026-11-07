@@ -350,6 +350,10 @@ func newCollectionEventFromModelEvent(me *ModelEvent) (*CollectionEvent, bool) {
 		return nil, false
 	}
 
+	if ba := asBaseApp(me.App); ba != nil && !ba.CollectionVisible(record) {
+		return nil, false
+	}
+
 	ce := new(CollectionEvent)
 	ce.App = me.App
 	ce.Context = me.Context

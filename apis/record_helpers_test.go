@@ -21,7 +21,7 @@ func TestEnrichRecords(t *testing.T) {
 
 	// mock test data
 	// ---
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	freshRecords := func(records []*core.Record) []*core.Record {
@@ -219,7 +219,7 @@ func TestEnrichRecords(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			app.OnRecordEnrich().BindFunc(func(e *core.RecordEnrichEvent) error {
@@ -264,7 +264,7 @@ func TestEnrichRecords(t *testing.T) {
 }
 
 func TestRecordAuthResponseAuthRuleCheck(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	event := new(core.RequestEvent)
@@ -386,7 +386,7 @@ func TestRecordAuthResponseAuthAlertCheck(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			event := new(core.RequestEvent)
@@ -465,7 +465,7 @@ func TestRecordAuthResponseAuthAlertCheck(t *testing.T) {
 }
 
 func TestRecordAuthResponseMFACheck(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	user, err := app.FindAuthRecordByEmail("users", "test@example.com")
@@ -761,7 +761,7 @@ func TestRecordAuthResponseMFACheck(t *testing.T) {
 }
 
 func TestRecordAuthResponseSuperuserIPsWhitelistCheck(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	superuser, err := app.FindAuthRecordByEmail(core.CollectionNameSuperusers, "test@example.com")

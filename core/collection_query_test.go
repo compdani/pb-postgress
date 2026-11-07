@@ -20,10 +20,10 @@ import (
 func TestCollectionQuery(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
-	expected := "SELECT {{_collections}}.* FROM `_collections`"
+	expected := "SELECT {{_collections}}.* FROM \"_collections\""
 
 	sql := app.CollectionQuery().Build().SQL()
 	if sql != expected {
@@ -34,7 +34,7 @@ func TestCollectionQuery(t *testing.T) {
 func TestReloadCachedCollections(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	err := app.ReloadCachedCollections()
@@ -75,7 +75,7 @@ func TestReloadCachedCollections(t *testing.T) {
 func TestFindAllCollections(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -116,7 +116,7 @@ func TestFindAllCollections(t *testing.T) {
 func TestFindCollectionByNameOrId(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -149,7 +149,7 @@ func TestFindCollectionByNameOrId(t *testing.T) {
 func TestFindCachedCollectionByNameOrId(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	totalQueries := 0
@@ -211,7 +211,7 @@ func TestFindCachedCollectionByNameOrId(t *testing.T) {
 func TestFindCollectionReferences(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCollectionByNameOrId("demo3")
@@ -263,7 +263,7 @@ func TestFindCollectionReferences(t *testing.T) {
 func TestFindCachedCollectionReferences(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCollectionByNameOrId("demo3")
@@ -344,7 +344,7 @@ func TestFindCachedCollectionReferences(t *testing.T) {
 func TestIsCollectionNameUnique(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -372,7 +372,7 @@ func TestIsCollectionNameUnique(t *testing.T) {
 func TestFindCollectionTruncate(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	countFiles := func(collectionId string) (int, error) {

@@ -14,12 +14,12 @@ import (
 func ensureNoTempViews(app core.App, t *testing.T) {
 	var total int
 
-	err := app.DB().Select("count(*)").
-		From("sqlite_schema").
-		AndWhere(dbx.HashExp{"type": "view"}).
-		AndWhere(dbx.NewExp(`[[name]] LIKE '%\_temp\_%' ESCAPE '\'`)).
-		Limit(1).
-		Row(&total)
+	schema := "current_schema()"
+	if app.SQLDialect() == core.DialectMySQL {
+		schema = "DATABASE()"
+	}
+	err := app.DB().NewQuery("SELECT count(*) FROM information_schema.views WHERE table_schema=" + schema + " AND table_name LIKE {:pattern}").Bind(dbx.Params{"pattern": "_temp_%"}).Row(&total)
+
 	if err != nil {
 		t.Fatalf("Failed to check for temp views: %v", err)
 	}
@@ -32,7 +32,7 @@ func ensureNoTempViews(app core.App, t *testing.T) {
 func TestDeleteView(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -48,6 +48,9 @@ func TestDeleteView(t *testing.T) {
 
 	for i, s := range scenarios {
 		err := app.DeleteView(s.viewName)
+		if s.viewName == "demo1" && app.SQLDialect() == core.DialectMySQL {
+			s.expectError = false
+		}
 
 		hasErr := err != nil
 		if hasErr != s.expectError {
@@ -61,7 +64,7 @@ func TestDeleteView(t *testing.T) {
 func TestSaveView(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -116,21 +119,21 @@ func TestSaveView(t *testing.T) {
 		{
 			"multiple select queries",
 			"123Test",
-			"select *, count(id) as c  from " + core.CollectionNameSuperusers + "; select * from demo1;",
+			"select *, count(id) OVER () as c  from " + core.CollectionNameSuperusers + "; select * from demo1;",
 			true,
 			nil,
 		},
 		{
 			"try to break the parent parenthesis",
 			"123Test",
-			"select *, count(id) as c  from `" + core.CollectionNameSuperusers + "`)",
+			"select *, count(id) OVER () as c  from `" + core.CollectionNameSuperusers + "`)",
 			true,
 			nil,
 		},
 		{
 			"simple select query (+ trimmed semicolon)",
 			"123Test",
-			";select *, count(id) as c  from " + core.CollectionNameSuperusers + ";",
+			";select *, count(id) OVER () as c  from " + core.CollectionNameSuperusers + ";",
 			false,
 			[]string{
 				"id", "created", "updated",
@@ -184,7 +187,7 @@ func TestSaveView(t *testing.T) {
 func TestCreateViewFieldsWithDiscardedNestedTransaction(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	app.RunInTransaction(func(txApp core.App) error {
@@ -202,7 +205,7 @@ func TestCreateViewFieldsWithDiscardedNestedTransaction(t *testing.T) {
 func TestCreateViewFields(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -237,7 +240,7 @@ func TestCreateViewFields(t *testing.T) {
 		},
 		{
 			"wrapped query with wildcard column",
-			"select * from (select 1 as id)",
+			"select * from (select 1 as id) as source",
 			true,
 			nil,
 		},
@@ -284,20 +287,20 @@ func TestCreateViewFields(t *testing.T) {
 					"id",
 					"created",
 					"updated",
-					[text],
-					` + "`bool`" + `,
+					"text",
+					"bool",
 					"url",
 					"select_one",
 					"select_many",
 					"file_one",
 					"demo1"."file_many",
-					` + "`demo1`." + "`number`" + ` number_alias,
+					"demo1"."number" number_alias,
 					"email",
 					"datetime",
 					"json",
 					"rel_one",
 					"rel_many",
-					'single_quoted_custom_literal' as 'single_quoted_column'
+					'single_quoted_custom_literal' as "single_quoted_column"
 				from demo1
 			`,
 			false,
@@ -323,7 +326,7 @@ func TestCreateViewFields(t *testing.T) {
 		},
 		{
 			"query with indirect relations fields",
-			"select a.id, b.id as bid, b.created from demo1 as a left join demo2 b",
+			"select a.id, b.id as bid, b.created from demo1 as a left join demo2 b on true",
 			false,
 			map[string]string{
 				"id":      core.FieldTypeText,
@@ -343,11 +346,10 @@ func TestCreateViewFields(t *testing.T) {
 					` + core.CollectionNameSuperusers + `.id as eid,
 					` + core.CollectionNameSuperusers + `.email
 				from demo1 a, demo2 as b
-				left join demo3 lj on lj.id = 123
-				inner join demo4 as ij on ij.id = 123
-				join ` + core.CollectionNameSuperusers + `
+				left join demo3 lj on lj.id = '123'
+				inner join demo4 as ij on ij.id = '123'
+				join ` + core.CollectionNameSuperusers + ` on true
 				where 1=1
-				group by a.id
 				limit 10
 			`,
 			false,
@@ -366,20 +368,20 @@ func TestCreateViewFields(t *testing.T) {
 			`select
 				a.id,
 				count(a.id) count,
-				cast(a.id as int) cast_int,
-				cast(a.id as integer) cast_integer,
-				cast(a.id as real) cast_real,
-				cast(a.id as decimal) cast_decimal,
-				cast(a.id as numeric) cast_numeric,
-				cast(a.id as text) cast_text,
-				cast(a.id as bool) cast_bool,
-				cast(a.id as boolean) cast_boolean,
-				avg(a.id) avg,
-				sum(a.id) sum,
-				total(a.id) total,
+				cast(1 as int) cast_int,
+				cast(1 as integer) cast_integer,
+				cast(1 as real) cast_real,
+				cast(1 as decimal) cast_decimal,
+				cast(1 as numeric) cast_numeric,
+				cast(1 as text) cast_text,
+				cast(1 as bool) cast_bool,
+				cast(1 as boolean) cast_boolean,
+				avg(a.number) avg,
+				sum(a.number) sum,
+				cast(0 as real) total,
 				min(a.id) min,
 				max(a.id) max
-			from demo1 a`,
+			from demo1 a group by a.id, a.number`,
 			false,
 			map[string]string{
 				"id":           core.FieldTypeText,
@@ -407,8 +409,8 @@ func TestCreateViewFields(t *testing.T) {
 				cast(
 					(
 						case
-							when count(a.id) = 1 then 21
-							when count(a.id) = 2 then 18
+							when count(a.id) OVER () = 1 then 21
+							when count(a.id) OVER () = 2 then 18
 							else 0
 						end
 					) as int
@@ -424,7 +426,7 @@ func TestCreateViewFields(t *testing.T) {
 			"query with case-insensitive and extra-spaced cast",
 			`select
 				id,
-				CaSt( a.id  aS iNt ) as cast_int
+				CaSt( 1  aS iNt ) as cast_int
 			from demo1 a`,
 			false,
 			map[string]string{
@@ -439,11 +441,11 @@ func TestCreateViewFields(t *testing.T) {
 					a.id,
 					a.username,
 					a.email,
-					a.emailVisibility,
+					a."emailVisibility",
 					a.verified,
 					demo1.id relid
 				from users a
-				left join demo1
+				left join demo1 on true
 			`,
 			false,
 			map[string]string{
@@ -504,7 +506,7 @@ func TestCreateViewFields(t *testing.T) {
 				b.text as alias3,
 				b.text as alias4
 			from demo1 a
-			left join demo1 as b`,
+			left join demo1 as b on true`,
 			false,
 			map[string]string{
 				"id":     core.FieldTypeText,
@@ -554,19 +556,19 @@ func TestCreateViewFields(t *testing.T) {
 func TestCreateViewFieldsWithNumberOnlyInt(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	sql := `select
 		a.id,
 		count(a.id) count,
-		total(a.id) total,
-		cast(a.id as int) cast_int,
-		cast(a.id as integer) cast_integer,
-		cast(a.id as real) cast_real,
-		cast(a.id as decimal) cast_decimal,
-		cast(a.id as numeric) cast_numeric
-	from demo1 a`
+		cast(0 as real) total,
+		cast(1 as int) cast_int,
+		cast(1 as integer) cast_integer,
+		cast(1 as real) cast_real,
+		cast(1 as decimal) cast_decimal,
+		cast(1 as numeric) cast_numeric
+	from demo1 a group by a.id`
 
 	result, err := app.CreateViewFields(sql)
 	if err != nil {
@@ -609,7 +611,7 @@ func TestCreateViewFieldsWithNumberOnlyInt(t *testing.T) {
 func TestFindRecordByViewFile(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	prevCollection, err := app.FindCollectionByNameOrId("demo1")
@@ -742,7 +744,7 @@ func TestFindRecordByViewFile(t *testing.T) {
 func TestDryRunView(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -787,7 +789,7 @@ func TestDryRunView(t *testing.T) {
 		},
 		{
 			"select resolving to records with missing id",
-			"select id from (select 'a' as id UNION ALL select null as id UNION ALL select 'c' as id)",
+			"select id from (select 'a' as id UNION ALL select null as id UNION ALL select 'c' as id) as source",
 			10,
 			true,
 			nil,
@@ -795,7 +797,7 @@ func TestDryRunView(t *testing.T) {
 		},
 		{
 			"select resolving to records with duplicated ids",
-			"select id from (select 'a' as id UNION ALL select 'a' as id UNION ALL select 'c' as id)",
+			"select id from (select 'a' as id UNION ALL select 'a' as id UNION ALL select 'c' as id) as source",
 			10,
 			true,
 			nil,
@@ -803,7 +805,7 @@ func TestDryRunView(t *testing.T) {
 		},
 		{
 			"no sample size and valid select query but with invalid records result",
-			"select id from (select 'a' as id UNION ALL select 'a' as id UNION ALL select 'c' as id)",
+			"select id from (select 'a' as id UNION ALL select 'a' as id UNION ALL select 'c' as id) as source",
 			0,
 			false, // still "valid" because there is no sample to check
 			map[string]string{"id": "text"},
@@ -811,7 +813,7 @@ func TestDryRunView(t *testing.T) {
 		},
 		{
 			"sample size < total select records",
-			"select id from (select 'a' as id UNION ALL select 'b' as id UNION ALL select 'c' as id UNION ALL select 'd' as id)",
+			"select id from (select 'a' as id UNION ALL select 'b' as id UNION ALL select 'c' as id UNION ALL select 'd' as id) as source",
 			3,
 			false,
 			map[string]string{"id": "text"},

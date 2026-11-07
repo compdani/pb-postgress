@@ -8,8 +8,8 @@ import (
 	"github.com/pocketbase/pocketbase/tests"
 )
 
-func TestRunSatelliteCascadePassthrough(t *testing.T) {
-	testApp, err := tests.NewTestApp()
+func TestRunSatelliteCascadeUsesInstanceTransaction(t *testing.T) {
+	testApp, err := tests.NewTestApp(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,8 +18,8 @@ func TestRunSatelliteCascadePassthrough(t *testing.T) {
 	called := false
 	err = core.RunSatelliteCascade(testApp, func(txApp core.App) error {
 		called = true
-		if txApp != testApp {
-			t.Fatalf("expected passthrough app, got %T", txApp)
+		if !txApp.IsTransactional() {
+			t.Fatal("cascade must run in an instance database transaction")
 		}
 		return nil
 	})
@@ -31,16 +31,12 @@ func TestRunSatelliteCascadePassthrough(t *testing.T) {
 	}
 }
 
-func TestRunSatelliteCascadePostgres(t *testing.T) {
-	testApp, err := tests.NewTestApp()
+func TestRunSatelliteCascadeRollback(t *testing.T) {
+	testApp, err := tests.NewTestApp(t)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer testApp.Cleanup()
-
-	if !testApp.HasPostgres() {
-		t.Skip("postgres is not configured")
-	}
 
 	rolledBack := false
 	err = testApp.RunSatelliteCascade(func(txApp core.App) error {

@@ -451,7 +451,7 @@ func TestUnmarshalRequestDataUnexportedFields(t *testing.T) {
 
 		unexported string
 		// to ensure that the reflection doesn't take tags with higher priority than the exported state
-		unexportedWithTag string `form:"unexportedWithTag" json:"unexportedWithTag"`
+		unexportedWithTag string `form:"unexportedWithTag"`
 	}
 
 	dst := &TestStruct{}

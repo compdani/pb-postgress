@@ -3,6 +3,7 @@ package core_test
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/dbx"
@@ -15,7 +16,7 @@ import (
 func TestSyncRecordTableSchema(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	oldCollection, err := app.FindCollectionByNameOrId("demo2")
@@ -119,9 +120,9 @@ func getTotalViews(app core.App) (int, error) {
 	var total int
 
 	err := app.DB().Select("count(*)").
-		From("sqlite_master").
-		AndWhere(dbx.NewExp("sql is not null")).
-		AndWhere(dbx.HashExp{"type": "view"}).
+		From("information_schema.views").
+		AndWhere(dbx.NewExp("view_definition is not null")).
+		AndWhere(dbx.HashExp{"table_schema": "public"}).
 		Row(&total)
 
 	return total, err
@@ -130,7 +131,7 @@ func getTotalViews(app core.App) (int, error) {
 func TestSingleVsMultipleValuesNormalization(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCollectionByNameOrId("demo1")
@@ -201,7 +202,7 @@ func TestSingleVsMultipleValuesNormalization(t *testing.T) {
 				t.Fatalf("Missing info for column %q", col)
 			}
 
-			if v := row.DefaultValue.String; v != dflt {
+			if v := strings.Split(row.DefaultValue.String, "::")[0]; v != dflt {
 				t.Fatalf("Expected default value %q, got %q", dflt, v)
 			}
 		})
@@ -298,7 +299,7 @@ func TestSingleVsMultipleValuesNormalization(t *testing.T) {
 func TestDropIndexWithoutTableName(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	properIndex := "CREATE INDEX `new_test_idx2` ON `new_test` (`test`)"

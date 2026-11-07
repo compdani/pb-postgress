@@ -160,12 +160,13 @@ type App interface {
 
 	// DB returns the default app data.db builder instance.
 	//
-	// To minimize SQLITE_BUSY errors, it automatically routes the
+	// It automatically routes the
 	// SELECT queries to the underlying concurrent db pool and everything else
 	// to the nonconcurrent one.
 	//
 	// For more finer control over the used connections pools you can
 	// call directly ConcurrentDB() or NonconcurrentDB().
+	SQLDialect() SQLDialect
 	DB() dbx.Builder
 
 	// ConcurrentDB returns the concurrent app data.db builder instance.
@@ -185,7 +186,7 @@ type App interface {
 	// meaning that it can process only 1 db operation at a time (other queries queue up).
 	//
 	// This method is used mainly internally and in the tests to execute write
-	// (save/delete) db operations as it helps with minimizing the SQLITE_BUSY errors.
+	// (save/delete) db operations to coordinate writes within a transaction.
 	//
 	// Most users should use simply DB() as it will automatically
 	// route the query execution to ConcurrentDB() or NonconcurrentDB().
@@ -195,7 +196,7 @@ type App interface {
 
 	// AuxDB returns the app auxiliary.db builder instance.
 	//
-	// To minimize SQLITE_BUSY errors, it automatically routes the
+	// It automatically routes the
 	// SELECT queries to the underlying concurrent db pool and everything else
 	// to the nonconcurrent one.
 	//
@@ -220,7 +221,7 @@ type App interface {
 	// meaning that it can process only 1 db operation at a time (other queries queue up).
 	//
 	// This method is used mainly internally and in the tests to execute write
-	// (save/delete) db operations as it helps with minimizing the SQLITE_BUSY errors.
+	// (save/delete) db operations to coordinate writes within a transaction.
 	//
 	// Most users should use simply AuxDB() as it will automatically
 	// route the query execution to AuxConcurrentDB() or AuxNonconcurrentDB().

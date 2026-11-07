@@ -16,7 +16,7 @@ func TestSendSystemAlert(t *testing.T) {
 	}
 	defer os.RemoveAll(testDataDir)
 
-	testApp := NewBaseApp(BaseAppConfig{
+	testApp := newDatabaseTestApp(t, BaseAppConfig{
 		DataDir: testDataDir,
 	})
 	defer testApp.ClearBootstrap()
@@ -69,7 +69,7 @@ func TestSendSystemAlertToAllSuperusers(t *testing.T) {
 	}
 	defer os.RemoveAll(testDataDir)
 
-	testApp := NewBaseApp(BaseAppConfig{
+	testApp := newDatabaseTestApp(t, BaseAppConfig{
 		DataDir: testDataDir,
 	})
 	defer testApp.ClearBootstrap()

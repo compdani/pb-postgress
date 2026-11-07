@@ -60,7 +60,7 @@ func collectionPathRateLimit(collectionPathParam string, baseTags ...string) *ho
 		Id:       DefaultRateLimitMiddlewareId,
 		Priority: DefaultRateLimitMiddlewarePriority,
 		Func: func(e *core.RequestEvent) error {
-			collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue(collectionPathParam))
+			collection, err := scopedCollection(e.App, e.Request.PathValue(collectionPathParam))
 			if err != nil {
 				return e.NotFoundError("Missing or invalid collection context.", err)
 			}

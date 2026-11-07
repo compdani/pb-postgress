@@ -17,7 +17,6 @@ import (
 	"github.com/pocketbase/dbx"
 	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/core/validators"
-	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"github.com/pocketbase/pocketbase/tools/hook"
 	"github.com/pocketbase/pocketbase/tools/inflector"
@@ -1434,6 +1433,9 @@ func onRecordValidate(e *RecordEvent) error {
 }
 
 func onRecordSaveExecute(e *RecordEvent) error {
+	if e.Record.Collection().IsView() {
+		return errors.New("view records cannot be saved")
+	}
 	if e.Record.Collection().IsAuth() {
 		if !e.Record.IsNew() {
 			lastSavedRecord, err := e.App.FindRecordById(e.Record.Collection(), e.Record.Id)
@@ -1457,7 +1459,7 @@ func onRecordSaveExecute(e *RecordEvent) error {
 		}
 		for _, collection := range authCollections {
 			if e.Record.Collection().Id == collection.Id {
-				continue // skip current collection (sqlite will do the check for us)
+				continue // skip current collection (the primary key constraint checks this collection)
 			}
 			record, _ := e.App.FindRecordById(collection, e.Record.Id)
 			if record != nil {
@@ -1468,7 +1470,24 @@ func onRecordSaveExecute(e *RecordEvent) error {
 		}
 	}
 
-	err := e.Next()
+	originalApp := e.App
+	err := e.App.RunInTransaction(func(tx App) error {
+		e.App = tx
+		var old *Record
+		if !e.Record.IsNew() {
+			var err error
+			old, err = tx.FindRecordById(e.Record.Collection(), e.Record.Id)
+			if err != nil {
+				return err
+			}
+		}
+		changes := fileChanges(old, e.Record)
+		if err := e.Next(); err != nil {
+			return err
+		}
+		return appendFileChanges(tx, changes)
+	})
+	e.App = originalApp
 	if err == nil {
 		return nil
 	}
@@ -1483,8 +1502,8 @@ func onRecordSaveExecute(e *RecordEvent) error {
 func onRecordDeleteExecute(e *RecordEvent) error {
 	// fetch rel references (if any)
 	//
-	// note: the select is outside of the transaction to minimize
-	// SQLITE_BUSY errors when mixing read&write in a single transaction
+	// Include all collections, including hidden ones: scope must never suppress
+	// referential integrity maintenance.
 	refs, err := e.App.FindCachedCollectionReferences(e.Record.Collection())
 	if err != nil {
 		return err
@@ -1493,6 +1512,10 @@ func onRecordDeleteExecute(e *RecordEvent) error {
 	originalApp := e.App
 	txErr := e.App.RunInTransaction(func(txApp App) error {
 		e.App = txApp
+
+		if err := appendFileChanges(txApp, fileChanges(e.Record, nil)); err != nil {
+			return err
+		}
 
 		// delete the record before the relation references to ensure that there
 		// will be no "A<->B" relations to prevent deadlock when calling DeleteRecord recursively
@@ -1542,7 +1565,7 @@ func cascadeRecordDelete(app App, mainRecord *Record, refs map[*Collection][]Fie
 			} else {
 				query.AndWhere(dbx.Exists(dbx.NewExp(fmt.Sprintf(
 					`SELECT 1 FROM %s {{__je__}} WHERE [[__je__.value]]={:jevalue}`,
-					dbutils.JSONEach(prefixedFieldName),
+					appJSONEach(app, prefixedFieldName),
 				), dbx.Params{
 					"jevalue": mainRecord.Id,
 				})))

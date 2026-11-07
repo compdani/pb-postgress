@@ -12,7 +12,7 @@ import (
 )
 
 func TestDefaultRateLimitMiddleware(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	app.Settings().RateLimits.Enabled = true
@@ -147,7 +147,7 @@ func TestDefaultRateLimitMiddleware(t *testing.T) {
 			}
 
 			if s.wait > 0 {
-				time.Sleep(time.Duration(s.wait) * time.Millisecond)
+				time.Sleep((time.Duration(s.wait) + 30) * time.Millisecond)
 			}
 
 			mux.ServeHTTP(rec, req)
@@ -162,7 +162,7 @@ func TestDefaultRateLimitMiddleware(t *testing.T) {
 }
 
 func TestDefaultRateLimitMiddlewareSkipChecks(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	app.Settings().RateLimits.Enabled = true

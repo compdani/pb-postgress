@@ -15,7 +15,7 @@ func TestEditorFieldBaseMethods(t *testing.T) {
 }
 
 func TestEditorFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.EditorField{}
@@ -28,7 +28,7 @@ func TestEditorFieldColumnType(t *testing.T) {
 }
 
 func TestEditorFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.EditorField{}
@@ -65,7 +65,7 @@ func TestEditorFieldPrepareValue(t *testing.T) {
 }
 
 func TestEditorFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -165,7 +165,7 @@ func TestEditorFieldValidateSettings(t *testing.T) {
 	testDefaultFieldNameValidation(t, core.FieldTypeEditor)
 	testDefaultFieldHelpValidation[core.EditorField](t)
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -230,7 +230,7 @@ func TestEditorFieldValidateSettings(t *testing.T) {
 }
 
 func TestEditorFieldCalculateMaxBodySize(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	scenarios := []struct {

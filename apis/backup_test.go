@@ -3,7 +3,6 @@ package apis_test
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -140,26 +139,10 @@ func TestBackupsCreate(t *testing.T) {
 			Headers: map[string]string{
 				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
-			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				files, err := getBackupFiles(app)
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				if total := len(files); total != 1 {
-					t.Fatalf("Expected 1 backup file, got %d", total)
-				}
-
-				expected := "pb_backup_"
-				if !strings.HasPrefix(files[0].Key, expected) {
-					t.Fatalf("Expected backup file with prefix %q, got %q", expected, files[0].Key)
-				}
-			},
-			ExpectedStatus: 204,
-			ExpectedEvents: map[string]int{
-				"*":              0,
-				"OnBackupCreate": 1,
-			},
+			AfterTestFunc:   func(t testing.TB, app *tests.TestApp, res *http.Response) { ensureNoBackups(t, app) },
+			ExpectedStatus:  400,
+			ExpectedContent: []string{`Server database archive backup and restore are unsupported`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 		{
 			Name:   "authorized as superuser (invalid name)",
@@ -187,26 +170,10 @@ func TestBackupsCreate(t *testing.T) {
 			Headers: map[string]string{
 				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
-			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				files, err := getBackupFiles(app)
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				if total := len(files); total != 1 {
-					t.Fatalf("Expected 1 backup file, got %d", total)
-				}
-
-				expected := "test.zip"
-				if files[0].Key != expected {
-					t.Fatalf("Expected backup file %q, got %q", expected, files[0].Key)
-				}
-			},
-			ExpectedStatus: 204,
-			ExpectedEvents: map[string]int{
-				"*":              0,
-				"OnBackupCreate": 1,
-			},
+			AfterTestFunc:   func(t testing.TB, app *tests.TestApp, res *http.Response) { ensureNoBackups(t, app) },
+			ExpectedStatus:  400,
+			ExpectedContent: []string{`Server database archive backup and restore are unsupported`},
+			ExpectedEvents:  map[string]int{"*": 0},
 		},
 	}
 
@@ -506,8 +473,7 @@ func TestBackupsDownload(t *testing.T) {
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
 				"storage/",
-				"data.db",
-				"auxiliary.db",
+				"test archive",
 			},
 			ExpectedEvents: map[string]int{"*": 0},
 		},
@@ -523,8 +489,7 @@ func TestBackupsDownload(t *testing.T) {
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
 				"storage/",
-				"data.db",
-				"auxiliary.db",
+				"test archive",
 			},
 			ExpectedEvents: map[string]int{"*": 0},
 		},
@@ -551,8 +516,7 @@ func TestBackupsDownload(t *testing.T) {
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
 				"storage/",
-				"data.db",
-				"auxiliary.db",
+				"test archive",
 			},
 			ExpectedEvents: map[string]int{"*": 0},
 		},
@@ -824,6 +788,12 @@ func TestBackupsRestore(t *testing.T) {
 		},
 	}
 
+	unsupported := scenarios[2]
+	unsupported.Name = "authorized as superuser (server archive restore unsupported)"
+	unsupported.URL = "/api/backups/test1.zip/restore"
+	unsupported.ExpectedContent = []string{`Server database archive backup and restore are unsupported`}
+	scenarios = append(scenarios, unsupported)
+
 	for _, scenario := range scenarios {
 		scenario.Test(t)
 	}
@@ -832,22 +802,15 @@ func TestBackupsRestore(t *testing.T) {
 // -------------------------------------------------------------------
 
 func createTestBackups(app core.App) error {
-	ctx := context.Background()
-
-	if err := app.CreateBackup(ctx, "test1.zip"); err != nil {
+	fsys, err := app.NewBackupsFilesystem()
+	if err != nil {
 		return err
 	}
-
-	if err := app.CreateBackup(ctx, "test2.zip"); err != nil {
-		return err
-	}
-
-	if err := app.CreateBackup(ctx, "test3.zip"); err != nil {
-		return err
-	}
-
-	if err := app.CreateBackup(ctx, "@test4.zip"); err != nil {
-		return err
+	defer fsys.Close()
+	for _, name := range []string{"test1.zip", "test2.zip", "test3.zip", "@test4.zip"} {
+		if err := fsys.Upload([]byte("storage/test archive"), name); err != nil {
+			return err
+		}
 	}
 
 	return nil

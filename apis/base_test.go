@@ -17,7 +17,7 @@ import (
 func TestWrapStdHandler(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -43,7 +43,7 @@ func TestWrapStdHandler(t *testing.T) {
 func TestWrapStdMiddleware(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -71,7 +71,7 @@ func TestWrapStdMiddleware(t *testing.T) {
 func TestStatic(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	dir := createTestDir(t)

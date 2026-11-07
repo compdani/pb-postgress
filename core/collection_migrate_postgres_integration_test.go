@@ -8,7 +8,7 @@ import (
 )
 
 func TestMigrateCollectionToPostgresIntegration(t *testing.T) {
-	testApp, err := tests.NewTestApp()
+	testApp, err := tests.NewTestApp(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestMigrateCollectionToPostgresIntegration(t *testing.T) {
 }
 
 func TestMigrateCollectionToPostgresDryRunIntegration(t *testing.T) {
-	testApp, err := tests.NewTestApp()
+	testApp, err := tests.NewTestApp(t)
 	if err != nil {
 		t.Fatal(err)
 	}

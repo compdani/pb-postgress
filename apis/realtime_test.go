@@ -458,7 +458,7 @@ func TestRealtimeSubscribe(t *testing.T) {
 }
 
 func TestRealtimeAuthRecordDeleteEvent(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	// init realtime handlers
@@ -519,7 +519,7 @@ func TestRealtimeAuthRecordDeleteEvent(t *testing.T) {
 }
 
 func TestRealtimeAuthRecordUpdateEvent(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	// init realtime handlers
@@ -560,7 +560,7 @@ func TestRealtimeAuthRecordUpdateEvent(t *testing.T) {
 func TestRealtimeRecordHiddenFields(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	// init realtime handlers
@@ -673,7 +673,7 @@ func TestRealtimeRecordHiddenFields(t *testing.T) {
 }
 
 func TestRealtimeAuthRecordUnsetOnTokenKeyRefresh(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	// init realtime handlers
@@ -710,7 +710,7 @@ func TestRealtimeAuthRecordUnsetOnTokenKeyRefresh(t *testing.T) {
 }
 
 func TestRealtimeAuthRecordUnsetOnCollectionSecretChange(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	// init realtime handlers
@@ -789,7 +789,7 @@ func TestRealtimeAuthRecordUnsetOnCollectionSecretChange(t *testing.T) {
 }
 
 func TestRealtimeAuthRecordUnsetOnCollectionDelete(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	// init realtime handlers
@@ -895,7 +895,7 @@ func findCustomUserByEmail(app core.App, email string) (*CustomUser, error) {
 }
 
 func TestRealtimeCustomAuthModelDeleteEvent(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	// init realtime handlers
@@ -955,7 +955,7 @@ func TestRealtimeCustomAuthModelDeleteEvent(t *testing.T) {
 }
 
 func TestRealtimeCustomAuthModelUpdateEvent(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	// init realtime handlers
@@ -1144,7 +1144,7 @@ func TestRealtimeRecordResolve(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			testApp, _ := tests.NewTestApp()
+			testApp, _ := tests.NewTestApp(t)
 			defer testApp.Cleanup()
 
 			// init realtime handlers

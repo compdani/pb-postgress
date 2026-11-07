@@ -22,7 +22,7 @@ func TestFileFieldBaseMethods(t *testing.T) {
 }
 
 func TestFileFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -43,7 +43,7 @@ func TestFileFieldColumnType(t *testing.T) {
 		{
 			"multiple",
 			&core.FileField{MaxSelect: 2},
-			"JSON DEFAULT '[]' NOT NULL",
+			"JSONB DEFAULT '[]' NOT NULL",
 		},
 	}
 
@@ -89,7 +89,7 @@ func TestFileFieldIsMultiple(t *testing.T) {
 }
 
 func TestFileFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	record := core.NewRecord(core.NewBaseCollection("test"))
@@ -156,7 +156,7 @@ func TestFileFieldPrepareValue(t *testing.T) {
 }
 
 func TestFileFieldDriverValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f1, err := filesystem.NewFileFromBytes([]byte("test"), "test.txt")
@@ -225,7 +225,7 @@ func TestFileFieldDriverValue(t *testing.T) {
 }
 
 func TestFileFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -449,7 +449,7 @@ func TestFileFieldValidateSettings(t *testing.T) {
 	testDefaultFieldNameValidation(t, core.FieldTypeFile)
 	testDefaultFieldHelpValidation[core.FileField](t)
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -605,7 +605,7 @@ func TestFileFieldValidateSettings(t *testing.T) {
 }
 
 func TestFileFieldCalculateMaxBodySize(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	scenarios := []struct {
@@ -631,7 +631,7 @@ func TestFileFieldCalculateMaxBodySize(t *testing.T) {
 }
 
 func TestFileFieldFindGetter(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f1, err := filesystem.NewFileFromBytes([]byte("test"), "f1")
@@ -830,7 +830,7 @@ func TestFileFieldFindSetter(t *testing.T) {
 }
 
 func TestFileFieldIntercept(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	demo1, err := testApp.FindCollectionByNameOrId("demo1")
@@ -967,7 +967,7 @@ func TestFileFieldIntercept(t *testing.T) {
 }
 
 func TestFileFieldInterceptTx(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	demo1, err := testApp.FindCollectionByNameOrId("demo1")

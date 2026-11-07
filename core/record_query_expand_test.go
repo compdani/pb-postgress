@@ -18,7 +18,7 @@ import (
 func TestExpandRecords(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -256,7 +256,7 @@ func TestExpandRecords(t *testing.T) {
 func TestExpandRecord(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -436,7 +436,7 @@ func TestExpandRecord(t *testing.T) {
 func TestBackRelationExpandSingeVsArrayResult(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	record, err := app.FindRecordById("demo3", "7nwo8tuiatetxdm")
@@ -492,7 +492,7 @@ func TestBackRelationExpandSingeVsArrayResult(t *testing.T) {
 func TestExpandRecordsQuerySkipDuplicatedIds(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	// fetch records that are known to have at least 1 common relation between them
@@ -521,7 +521,7 @@ func TestExpandRecordsQuerySkipDuplicatedIds(t *testing.T) {
 	}
 
 	// "oap640cot4yru2s" is used in both relations but must exists only once
-	expected := "SELECT `users`.* FROM `users` WHERE `users`.`id` IN ('oap640cot4yru2s', 'bgs820n361vj1qd', '4q1xlclmfloku33')"
+	expected := "SELECT \"users\".* FROM \"users\" WHERE \"users\".\"id\" IN ('oap640cot4yru2s', 'bgs820n361vj1qd', '4q1xlclmfloku33')"
 	if concurrentQueries[0] != expected {
 		t.Fatalf("Expected query\n%v\ngot\n%v", expected, concurrentQueries[0])
 	}

@@ -122,7 +122,7 @@ func collectionMigrateToPostgres(e *core.RequestEvent) error {
 		return e.BadRequestError("Postgres is not configured.", nil)
 	}
 
-	collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+	collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 	if err != nil || collection == nil {
 		return e.NotFoundError("", err)
 	}
@@ -142,7 +142,7 @@ func collectionMigrateToPostgres(e *core.RequestEvent) error {
 
 	result, err := baseApp.MigrateCollectionToPostgres(collection, core.CollectionPostgresMigrationConfig{
 		DryRun:           form.DryRun,
-		DeleteSQLiteData:   form.DeleteSQLiteData,
+		DeleteSQLiteData: form.DeleteSQLiteData,
 		BatchSize:        form.BatchSize,
 		PostgresSchema:   form.PostgresSchema,
 		PostgresTable:    form.PostgresTable,

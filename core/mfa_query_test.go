@@ -12,7 +12,7 @@ import (
 func TestFindAllMFAsByRecord(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	if err := tests.StubMFARecords(app); err != nil {
@@ -72,7 +72,7 @@ func TestFindAllMFAsByRecord(t *testing.T) {
 func TestFindAllMFAsByCollection(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	if err := tests.StubMFARecords(app); err != nil {
@@ -140,7 +140,7 @@ func TestFindAllMFAsByCollection(t *testing.T) {
 func TestFindMFAById(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	if err := tests.StubMFARecords(app); err != nil {
@@ -181,7 +181,7 @@ func TestFindMFAById(t *testing.T) {
 func TestDeleteAllMFAsByRecord(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	demo1, err := testApp.FindRecordById("demo1", "84nmscqy84lsi1t")
@@ -216,7 +216,7 @@ func TestDeleteAllMFAsByRecord(t *testing.T) {
 
 	for i, s := range scenarios {
 		t.Run(fmt.Sprintf("%d_%s_%s", i, s.record.Collection().Name, s.record.Id), func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			if err := tests.StubMFARecords(app); err != nil {
@@ -277,7 +277,7 @@ func TestDeleteExpiredMFAs(t *testing.T) {
 	}
 
 	t.Run("default test collections", func(t *testing.T) {
-		app, _ := tests.NewTestApp()
+		app, _ := tests.NewTestApp(t)
 		defer app.Cleanup()
 
 		checkDeletedIds(app, t, []string{
@@ -288,7 +288,7 @@ func TestDeleteExpiredMFAs(t *testing.T) {
 	})
 
 	t.Run("mfa collection duration mock", func(t *testing.T) {
-		app, _ := tests.NewTestApp()
+		app, _ := tests.NewTestApp(t)
 		defer app.Cleanup()
 
 		superusers, err := app.FindCollectionByNameOrId(core.CollectionNameSuperusers)

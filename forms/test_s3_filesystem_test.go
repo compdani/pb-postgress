@@ -40,7 +40,7 @@ func TestS3FilesystemValidate(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			form := forms.NewTestS3Filesystem(app)
@@ -70,7 +70,7 @@ func TestS3FilesystemValidate(t *testing.T) {
 func TestS3FilesystemSubmitFailure(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	// check if validate was called

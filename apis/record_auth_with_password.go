@@ -4,9 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"slices"
-	"strings"
 
-	"github.com/pocketbase/dbx"
 	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/ozzo-validation/v4/is"
 	"github.com/pocketbase/pocketbase/core"
@@ -145,13 +143,7 @@ func findRecordByIdentityField(app core.App, collection *core.Collection, field 
 		return nil, errors.New("missing " + field + " unique index constraint")
 	}
 
-	var expr dbx.Expression
-	if strings.EqualFold(index.Columns[0].Collate, "nocase") {
-		// case-insensitive search
-		expr = dbx.NewExp("[["+field+"]] = {:identity} COLLATE NOCASE", dbx.Params{"identity": value})
-	} else {
-		expr = dbx.HashExp{field: value}
-	}
+	expr := core.AuthIdentityExpression(app, index, field, "identity", value)
 
 	record := &core.Record{}
 

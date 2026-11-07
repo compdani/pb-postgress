@@ -4,12 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/pocketbase/pocketbase/tests/testdb"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"github.com/pocketbase/pocketbase/tools/search"
 )
 
@@ -98,7 +101,7 @@ func TestFilterDataBuildExpr(t *testing.T) {
 			"nested json no coalesce",
 			"test5.a = test5.b || test5.c != test5.d",
 			false,
-			"(JSON_EXTRACT([[test5]], '$.a') IS JSON_EXTRACT([[test5]], '$.b') OR JSON_EXTRACT([[test5]], '$.c') IS NOT JSON_EXTRACT([[test5]], '$.d'))",
+			"(" + dbutils.JSONExtractPostgres("test5", "a") + " IS " + dbutils.JSONExtractPostgres("test5", "b") + " OR " + dbutils.JSONExtractPostgres("test5", "c") + " IS NOT " + dbutils.JSONExtractPostgres("test5", "d") + ")",
 		},
 		{
 			"macros",
@@ -131,7 +134,7 @@ func TestFilterDataBuildExpr(t *testing.T) {
 			"combination of special literals (null, true, false)",
 			"test1=true && test2 != false && null = test3 || null != test4_sub",
 			false,
-			"([[test1]] = 1 AND [[test2]] IS NOT 0 AND ('' = [[test3]] OR [[test3]] IS NULL) OR ('' IS NOT [[test4_sub]] AND [[test4_sub]] IS NOT NULL))",
+			"([[test1]] = TRUE AND [[test2]] IS NOT FALSE AND ('' = [[test3]] OR [[test3]] IS NULL) OR ('' IS NOT [[test4_sub]] AND [[test4_sub]] IS NOT NULL))",
 		},
 		{
 			"all operators",
@@ -143,7 +146,7 @@ func TestFilterDataBuildExpr(t *testing.T) {
 			"geoDistance function",
 			"geoDistance(1,2,3,4) < 567",
 			false,
-			"(6371 * acos(min(1, max(-1, cos(radians({:TEST})) * cos(radians({:TEST})) * cos(radians({:TEST}) - radians({:TEST})) + sin(radians({:TEST})) * sin(radians({:TEST})))))) < {:TEST}",
+			"(6371 * acos(LEAST(1, GREATEST(-1, cos(radians({:TEST})) * cos(radians({:TEST})) * cos(radians({:TEST}) - radians({:TEST})) + sin(radians({:TEST})) * sin(radians({:TEST})))))) < {:TEST}",
 		},
 	}
 
@@ -181,11 +184,16 @@ func TestFilterDataBuildExpr(t *testing.T) {
 
 func TestFilterDataBuildExprWithParams(t *testing.T) {
 	// create a dummy db
-	sqlDB, err := sql.Open("sqlite", "file::memory:?cache=shared")
+	driver, dsn := testdb.New(t)
+	if driver == "postgres" {
+		driver = "pgx"
+	}
+	raw, err := sql.Open(driver, dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	db := dbx.NewFromDB(sqlDB, "sqlite")
+	defer raw.Close()
+	db := dbx.NewFromDB(raw, driver)
 
 	calledQueries := []string{}
 	db.QueryLogFunc = func(ctx context.Context, t time.Duration, sql string, rows *sql.Rows, err error) {
@@ -242,7 +250,7 @@ func TestFilterDataBuildExprWithParams(t *testing.T) {
 		t.Fatalf("Expected 1 query, got %d", len(calledQueries))
 	}
 
-	expectedQuery := `SELECT * WHERE ([[test1]] = 1 OR [[test2]] = 0 OR [[test3a]] = 123.456 OR [[test3b]] = 123.456 OR ([[test4]] = '' OR [[test4]] IS NULL) OR ([[test5]] = '' OR [[test5]] IS NULL) OR [[test6]] = 'simple' OR [[test7]] = '''single_quotes''' OR [[test8]] = '"double_quotes"' OR [[test9]] = '''"quote_with_backslash\' OR [[test10]] = '2023-01-01 00:00:00 +0000 UTC' OR [[test11]] = '["a","''quote","\"quote"]' OR [[test12]] = '{"a":123,"b":"quote\""}' OR [[test13]] = 'a`
+	expectedQuery := `SELECT * WHERE ([[test1]] = TRUE OR [[test2]] = FALSE OR [[test3a]] = 123.456 OR [[test3b]] = 123.456 OR ([[test4]] = '' OR [[test4]] IS NULL) OR ([[test5]] = '' OR [[test5]] IS NULL) OR [[test6]] = 'simple' OR [[test7]] = '''single_quotes''' OR [[test8]] = '"double_quotes"' OR [[test9]] = '''"quote_with_backslash\' OR [[test10]] = '2023-01-01 00:00:00 +0000 UTC' OR [[test11]] = '["a","''quote","\"quote"]' OR [[test12]] = '{"a":123,"b":"quote\""}' OR [[test13]] = 'a`
 	expectedQuery += "\nb')"
 	if expectedQuery != calledQueries[0] {
 		t.Fatalf("Expected query \n%s, \ngot \n%s", expectedQuery, calledQueries[0])
@@ -306,11 +314,16 @@ func TestFilterDataBuildExprWithLimit(t *testing.T) {
 
 func TestLikeParamsWrapping(t *testing.T) {
 	// create a dummy db
-	sqlDB, err := sql.Open("sqlite", "file::memory:?cache=shared")
+	driver, dsn := testdb.New(t)
+	if driver == "postgres" {
+		driver = "pgx"
+	}
+	raw, err := sql.Open(driver, dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	db := dbx.NewFromDB(sqlDB, "sqlite")
+	defer raw.Close()
+	db := dbx.NewFromDB(raw, driver)
 
 	calledQueries := []string{}
 	db.QueryLogFunc = func(ctx context.Context, t time.Duration, sql string, rows *sql.Rows, err error) {

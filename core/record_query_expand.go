@@ -91,6 +91,9 @@ func (app *BaseApp) expandRecords(records []*Record, expandPath string, fetchFun
 
 	if len(matches) == 3 {
 		indirectRel, _ := getCollectionByModelOrIdentifier(app, matches[1])
+		if indirectRel != nil && !app.CollectionVisible(indirectRel) {
+			return nil
+		}
 		if indirectRel == nil {
 			return fmt.Errorf("couldn't find back-related collection %q", matches[1])
 		}
@@ -110,7 +113,7 @@ func (app *BaseApp) expandRecords(records []*Record, expandPath string, fetchFun
 			if indirectRelField.IsMultiple() {
 				q.AndWhere(dbx.Exists(dbx.NewExp(fmt.Sprintf(
 					"SELECT 1 FROM %s je WHERE je.value = {:id}",
-					dbutils.JSONEach(indirectRelField.Name),
+					appJSONEach(app, indirectRelField.Name),
 				))))
 			} else {
 				q.AndWhere(dbx.NewExp("[[" + indirectRelField.Name + "]] = {:id}"))
@@ -155,6 +158,9 @@ func (app *BaseApp) expandRecords(records []*Record, expandPath string, fetchFun
 		}
 
 		relCollection, _ = getCollectionByModelOrIdentifier(app, relField.CollectionId)
+		if relCollection != nil && !app.CollectionVisible(relCollection) {
+			return nil
+		}
 		if relCollection == nil {
 			return fmt.Errorf("couldn't find related collection %q", relField.CollectionId)
 		}

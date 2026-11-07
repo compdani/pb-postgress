@@ -2,48 +2,32 @@ package dbutils
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
-// JSONEachPostgres returns a jsonb_array_elements expression with
-// normalizations for non-json columns.
+func postgresJSONArray(column string) string {
+	c := "[[" + column + "]]"
+	value := "CASE WHEN " + c + "::text ~ '^\\s*[\\[{]' THEN " + c + "::text::jsonb ELSE to_jsonb(" + c + ") END"
+	return "CASE WHEN " + c + " IS NULL OR " + c + "::text = '' THEN '[]'::jsonb WHEN jsonb_typeof(" + value + ") = 'array' THEN " + value + " ELSE jsonb_build_array(" + c + ") END"
+}
 func JSONEachPostgres(column string) string {
-	return fmt.Sprintf(
-		`jsonb_array_elements(CASE WHEN jsonb_typeof(([[%s]])::jsonb) = 'array' THEN ([[%s]])::jsonb ELSE jsonb_build_array([[%s]]) END)`,
-		column, column, column,
-	)
+	return "LATERAL (SELECT jsonb_array_elements_text(" + postgresJSONArray(column) + ") AS value)"
 }
-
-// JSONArrayLengthPostgres returns jsonb_array_length expression
-// with normalizations for non-json columns.
 func JSONArrayLengthPostgres(column string) string {
-	return fmt.Sprintf(
-		`jsonb_array_length(CASE WHEN jsonb_typeof(([[%s]])::jsonb) = 'array' THEN ([[%s]])::jsonb WHEN [[%s]] = '' OR [[%s]] IS NULL THEN '[]'::jsonb ELSE jsonb_build_array([[%s]]) END)`,
-		column, column, column, column, column,
-	)
+	return "jsonb_array_length(" + postgresJSONArray(column) + ")"
 }
 
-// JSONExtractPostgres returns a JSON path extract expression with
-// normalizations for non-json columns.
-func JSONExtractPostgres(column string, path string) string {
-	if path != "" && !strings.HasPrefix(path, "[") {
-		path = "." + path
-	}
+var jsonPathPart = regexp.MustCompile(`[^.\[\]]+`)
 
+func JSONExtractPostgres(column, path string) string {
+	c := "[[" + column + "]]"
 	if path == "" {
-		return fmt.Sprintf(`([[%s]])::jsonb`, column)
+		return "to_jsonb(" + c + ")"
 	}
-
-	// convert SQLite-style $.path to Postgres #>> '{path,parts}'
-	path = strings.TrimPrefix(path, ".")
-	pathParts := strings.Split(path, ".")
-	pgPath := "{" + strings.Join(pathParts, ",") + "}"
-
-	return fmt.Sprintf(
-		`(CASE WHEN ([[%s]])::text ~ '^[\[\{]' THEN ([[%s]])::jsonb #>> '%s' ELSE ([[%s]])::text END)`,
-		column,
-		column,
-		pgPath,
-		column,
-	)
+	parts := jsonPathPart.FindAllString(path, -1)
+	for i, p := range parts {
+		parts[i] = "'" + strings.ReplaceAll(p, "'", "''") + "'"
+	}
+	return fmt.Sprintf("(CASE WHEN %s::text ~ '^\\s*[\\[{]' THEN %s::text::jsonb ELSE to_jsonb(%s) END #>> ARRAY[%s])", c, c, c, strings.Join(parts, ","))
 }

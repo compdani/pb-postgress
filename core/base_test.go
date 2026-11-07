@@ -64,6 +64,7 @@ func TestBaseAppBootstrap(t *testing.T) {
 
 	app := core.NewBaseApp(core.BaseAppConfig{
 		DataDir: testDataDir,
+		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: testDriver(),
 	})
 	defer app.ClearBootstrap()
 
@@ -140,6 +141,7 @@ func TestNewBaseAppTx(t *testing.T) {
 
 	app := core.NewBaseApp(core.BaseAppConfig{
 		DataDir: testDataDir,
+		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: testDriver(),
 	})
 	defer app.ClearBootstrap()
 
@@ -214,6 +216,7 @@ func TestBaseAppNewFilesystem(t *testing.T) {
 
 	app := core.NewBaseApp(core.BaseAppConfig{
 		DataDir: testDataDir,
+		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: testDriver(),
 	})
 	defer app.ClearBootstrap()
 
@@ -243,6 +246,7 @@ func TestBaseAppNewFilesystemForCollection(t *testing.T) {
 
 	app := core.NewBaseApp(core.BaseAppConfig{
 		DataDir: testDataDir,
+		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: testDriver(),
 	})
 	defer app.ResetBootstrapState()
 
@@ -307,6 +311,7 @@ func TestBaseAppNewBackupsFilesystem(t *testing.T) {
 
 	app := core.NewBaseApp(core.BaseAppConfig{
 		DataDir: testDataDir,
+		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: testDriver(),
 	})
 	defer app.ClearBootstrap()
 
@@ -349,7 +354,7 @@ func TestBaseAppLoggerWrites(t *testing.T) {
 	t.Parallel()
 
 	// note: outside of synctest because the bootstrap tickers could deadlock
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	// clear old logs
@@ -408,7 +413,7 @@ func TestBaseAppLoggerWrites(t *testing.T) {
 func TestBaseAppLoggerWritesAwaited(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	// clear old logs
@@ -536,7 +541,8 @@ func TestBaseAppRefreshSettingsLoggerMinLevelEnabled(t *testing.T) {
 
 			app := core.NewBaseApp(core.BaseAppConfig{
 				DataDir: testDataDir,
-				IsDev:   s.isDev,
+				DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: testDriver(),
+				IsDev: s.isDev,
 			})
 			defer app.ClearBootstrap()
 
@@ -573,7 +579,7 @@ func TestBaseAppRefreshSettingsLoggerMinLevelEnabled(t *testing.T) {
 func TestBaseAppDBDualBuilder(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	concurrentQueries := []string{}
@@ -649,7 +655,7 @@ func TestBaseAppDBDualBuilder(t *testing.T) {
 func TestBaseAppAuxDBDualBuilder(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	concurrentQueries := []string{}
@@ -725,7 +731,7 @@ func TestBaseAppAuxDBDualBuilder(t *testing.T) {
 func TestBaseAppTriggerOnTerminate(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	event := new(core.TerminateEvent)
@@ -736,4 +742,11 @@ func TestBaseAppTriggerOnTerminate(t *testing.T) {
 	app.OnTerminate().Trigger(event)
 	app.OnTerminate().Trigger(event)
 	app.OnTerminate().Trigger(event)
+}
+
+func testDriver() string {
+	if d := os.Getenv("PB_TEST_DB_DRIVER"); d != "" {
+		return d
+	}
+	return "postgres"
 }

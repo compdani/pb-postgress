@@ -8,7 +8,6 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
-	"github.com/pocketbase/pocketbase/tools/routine"
 	"github.com/pocketbase/pocketbase/tools/types"
 	"github.com/spf13/cast"
 )
@@ -143,18 +142,5 @@ func backupRestore(e *core.RequestEvent) error {
 		return e.BadRequestError("Missing or invalid backup file.", err)
 	}
 
-	routine.FireAndForget(func() {
-		// give some optimistic time to write the response before restarting the app
-		time.Sleep(1 * time.Second)
-
-		// wait max 10 minutes to fetch the backup
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		defer cancel()
-
-		if err := e.App.RestoreBackup(ctx, key); err != nil {
-			e.App.Logger().Error("Failed to restore backup", "key", key, "error", err.Error())
-		}
-	})
-
-	return e.NoContent(http.StatusNoContent)
+	return e.BadRequestError(core.ErrServerDatabaseBackupUnsupported.Error(), nil)
 }

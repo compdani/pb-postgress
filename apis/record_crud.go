@@ -34,7 +34,7 @@ func bindRecordCrudApi(app core.App, rg *router.RouterGroup[*core.RequestEvent])
 }
 
 func recordsList(e *core.RequestEvent) error {
-	collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+	collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 	if err != nil || collection == nil {
 		return e.NotFoundError("Missing collection context.", err)
 	}
@@ -79,12 +79,7 @@ func recordsList(e *core.RequestEvent) error {
 
 	searchProvider := search.NewProvider(fieldsResolver).Query(query)
 
-	// use rowid when available to minimize the need of a covering index with the "id" field
-	if !collection.IsView() {
-		if baseApp := core.AsBaseApp(e.App); baseApp == nil || !baseApp.IsPostgresBacked(collection) {
-			searchProvider.CountCol("_rowid_")
-		}
-	}
+	searchProvider.CountCol("id")
 
 	records := []*core.Record{}
 	result, err := searchProvider.ParseAndExec(e.Request.URL.Query().Encode(), &records)
@@ -144,7 +139,7 @@ func randomizedThrottle(softMax int64) {
 }
 
 func recordView(e *core.RequestEvent) error {
-	collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+	collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 	if err != nil || collection == nil {
 		return e.NotFoundError("Missing collection context.", err)
 	}
@@ -210,7 +205,7 @@ func recordView(e *core.RequestEvent) error {
 
 func recordCreate(responseWriteAfterTx bool, optFinalizer func(data any) error) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+		collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 		if err != nil || collection == nil {
 			return e.NotFoundError("Missing collection context.", err)
 		}
@@ -296,7 +291,22 @@ func recordCreate(responseWriteAfterTx bool, optFinalizer func(data any) error) 
 				k = inflector.Columnify(k) // columnify is just as extra measure in case of custom fields
 				param = "__pb_create__" + k
 				dummyParams[param] = v
-				selects = append(selects, "{:"+param+"} AS [["+k+"]]")
+				valueExpr := "{:" + param + "}"
+				if e.App.SQLDialect() == core.DialectPostgres {
+					typ := "TEXT"
+					if f := collection.Fields.GetByName(k); f != nil {
+						switch f.Type() {
+						case core.FieldTypeNumber:
+							typ = "DOUBLE PRECISION"
+						case core.FieldTypeBool:
+							typ = "BOOLEAN"
+						case core.FieldTypeJSON:
+							typ = "JSONB"
+						}
+					}
+					valueExpr = "CAST(" + valueExpr + " AS " + typ + ")"
+				}
+				selects = append(selects, valueExpr+" AS [["+k+"]]")
 			}
 
 			// shallow clone the current collection
@@ -393,7 +403,7 @@ func recordCreate(responseWriteAfterTx bool, optFinalizer func(data any) error) 
 
 func recordUpdate(responseWriteAfterTx bool, optFinalizer func(data any) error) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+		collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 		if err != nil || collection == nil {
 			return e.NotFoundError("Missing collection context.", err)
 		}
@@ -532,7 +542,7 @@ func recordUpdate(responseWriteAfterTx bool, optFinalizer func(data any) error) 
 
 func recordDelete(responseWriteAfterTx bool, optFinalizer func(data any) error) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		collection, err := e.App.FindCachedCollectionByNameOrId(e.Request.PathValue("collection"))
+		collection, err := scopedCollection(e.App, e.Request.PathValue("collection"))
 		if err != nil || collection == nil {
 			return e.NotFoundError("Missing collection context.", err)
 		}

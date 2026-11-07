@@ -24,7 +24,7 @@ func TestNewStaticAuthToken(t *testing.T) {
 func TestNewStaticAuthTokenWithCustomDuration(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	user, err := app.FindAuthRecordByEmail("users", "test@example.com")
@@ -121,7 +121,7 @@ func testRecordToken(
 	tokenFunc func(record *core.Record) (string, error),
 	expectedClaims map[string]any,
 ) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	demo1, err := app.FindRecordById("demo1", "84nmscqy84lsi1t")

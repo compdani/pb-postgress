@@ -263,7 +263,7 @@ func TestBindCoreSubscriptionMessage(t *testing.T) {
 }
 
 func TestBindCoreRecord(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCachedCollectionByNameOrId("users")
@@ -698,7 +698,7 @@ func TestBindCoreValidationError(t *testing.T) {
 }
 
 func TestBindDbx(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	vm := goja.New()
@@ -786,7 +786,7 @@ func TestBindDbx(t *testing.T) {
 
 		v, _ := result.Export().(string)
 
-		if v != s.expected {
+		if v != strings.ReplaceAll(s.expected, "`", `"`) {
 			t.Fatalf("[%s] Expected \n%s, \ngot \n%s", s.js, s.expected, v)
 		}
 	}
@@ -800,7 +800,7 @@ func TestBindMailsCount(t *testing.T) {
 }
 
 func TestBindMails(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	record, err := app.FindAuthRecordByEmail("users", "test@example.com")
@@ -997,7 +997,7 @@ func TestSecurityEncryptAndDecryptBinds(t *testing.T) {
 }
 
 func TestBindFilesystem(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1186,7 +1186,7 @@ func TestBindApisErrors(t *testing.T) {
 }
 
 func TestLoadingDynamicModel(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	vm := goja.New()
@@ -1287,7 +1287,7 @@ func TestLoadingDynamicModel(t *testing.T) {
 }
 
 func TestDynamicModelMapFieldCaching(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	vm := goja.New()
@@ -1346,7 +1346,7 @@ func TestDynamicModelMapFieldCaching(t *testing.T) {
 }
 
 func TestLoadingArrayOf(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	vm := goja.New()
@@ -1392,7 +1392,7 @@ func TestLoadingArrayOf(t *testing.T) {
 }
 
 func TestBindHTTPCount(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	vm := goja.New()
@@ -1589,7 +1589,7 @@ func TestBindHTTPSend(t *testing.T) {
 }
 
 func TestCronBindsCount(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	vm := goja.New()
@@ -1607,7 +1607,7 @@ func TestCronBindsCount(t *testing.T) {
 }
 
 func TestHooksBindsCount(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	vm := goja.New()
@@ -1617,7 +1617,7 @@ func TestHooksBindsCount(t *testing.T) {
 }
 
 func TestHooksBinds(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	result := &struct {
@@ -1705,7 +1705,7 @@ func TestHooksBinds(t *testing.T) {
 }
 
 func TestHooksExceptionUnwrapping(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	goErr := errors.New("test")
@@ -1746,7 +1746,7 @@ func TestHooksExceptionUnwrapping(t *testing.T) {
 }
 
 func TestRouterBindsCount(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	vm := goja.New()
@@ -1756,7 +1756,7 @@ func TestRouterBindsCount(t *testing.T) {
 }
 
 func TestRouterBinds(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	result := &struct {
@@ -1867,4 +1867,34 @@ func TestBindOSCount(t *testing.T) {
 	BindOS(vm)
 
 	testBindsCount(vm, "$os", 20, t)
+}
+
+func TestCollectionCronScopeChanges(t *testing.T) {
+	app, _ := tests.NewTestApp(t)
+	vm := goja.New()
+	calls := 0
+	pool := newPool(1, func() *goja.Runtime { v := goja.New(); v.Set("called", func() { calls++ }); return v })
+	cronBinds(app, vm, pool)
+	if _, err := vm.RunString(`cronAdd("scoped", "* * * * *", "function(){called()}", "demo1")`); err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range app.Cron().Jobs() {
+		if job.Id() == "scoped" {
+			job.Run()
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("visible job calls: %d", calls)
+	}
+	if err := app.SetInstanceScope(core.InstanceScope{Mode: "deny", Collections: []string{"demo1"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range app.Cron().Jobs() {
+		if job.Id() == "scoped" {
+			job.Run()
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("hidden job ran: %d", calls)
+	}
 }

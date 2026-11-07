@@ -35,8 +35,12 @@ func NewRouter(app core.App) (*router.Router[*core.RequestEvent], error) {
 	pbRouter.Bind(securityHeaders())
 	pbRouter.Bind(BodyLimit(DefaultMaxBodySize))
 
+	pbRouter.Any("/files/{storagePath...}", sharedFileHost)
+
 	// API routes
 	apiGroup := pbRouter.Group("/api")
+	bindInstallerAPI(app, apiGroup)
+	bindInstanceAPI(app, apiGroup)
 	bindSettingsApi(app, apiGroup)
 	bindCollectionApi(app, apiGroup)
 	bindCollectionPostgresApi(app, apiGroup)
