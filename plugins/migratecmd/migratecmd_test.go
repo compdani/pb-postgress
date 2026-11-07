@@ -389,7 +389,7 @@ func init() {
 
 	for _, s := range scenarios {
 		t.Run(s.lang, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			migrationsDir := filepath.Join(app.DataDir(), "_test_migrations")
@@ -838,7 +838,7 @@ func init() {
 
 	for _, s := range scenarios {
 		t.Run(s.lang, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			migrationsDir := filepath.Join(app.DataDir(), "_test_migrations")
@@ -1187,7 +1187,7 @@ func init() {
 
 	for _, s := range scenarios {
 		t.Run(s.lang, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			migrationsDir := filepath.Join(app.DataDir(), "_test_migrations")
@@ -1319,7 +1319,7 @@ func TestAutomigrateCollectionNoChanges(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.lang, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			migrationsDir := filepath.Join(app.DataDir(), "_test_migrations")

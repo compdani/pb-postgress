@@ -13,7 +13,7 @@ import (
 func TestImportCollections(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	var regularCollections []*core.Collection
@@ -193,7 +193,7 @@ func TestImportCollections(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			testApp, _ := tests.NewTestApp()
+			testApp, _ := tests.NewTestApp(t)
 			defer testApp.Cleanup()
 
 			err := testApp.ImportCollections(s.data, s.deleteMissing)
@@ -222,7 +222,7 @@ func TestImportCollections(t *testing.T) {
 func TestImportCollectionsByMarshaledJSON(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	var regularCollections []*core.Collection
@@ -293,7 +293,7 @@ func TestImportCollectionsByMarshaledJSON(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			testApp, _ := tests.NewTestApp()
+			testApp, _ := tests.NewTestApp(t)
 			defer testApp.Cleanup()
 
 			err := testApp.ImportCollectionsByMarshaledJSON([]byte(s.data), s.deleteMissing)
@@ -356,7 +356,7 @@ func TestImportCollectionsUpdateRules(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			testApp, _ := tests.NewTestApp()
+			testApp, _ := tests.NewTestApp(t)
 			defer testApp.Cleanup()
 
 			beforeCollection, err := testApp.FindCollectionByNameOrId("clients")
@@ -434,7 +434,7 @@ func TestImportCollectionsUpdateRules(t *testing.T) {
 func TestImportCollectionsCreateRules(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	err := testApp.ImportCollections([]map[string]any{

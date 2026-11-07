@@ -18,7 +18,7 @@ func TestPasswordFieldBaseMethods(t *testing.T) {
 }
 
 func TestPasswordFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.PasswordField{}
@@ -31,7 +31,7 @@ func TestPasswordFieldColumnType(t *testing.T) {
 }
 
 func TestPasswordFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.PasswordField{}
@@ -68,7 +68,7 @@ func TestPasswordFieldPrepareValue(t *testing.T) {
 }
 
 func TestPasswordFieldDriverValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.PasswordField{Name: "test"}
@@ -119,7 +119,7 @@ func TestPasswordFieldDriverValue(t *testing.T) {
 }
 
 func TestPasswordFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -289,7 +289,7 @@ func TestPasswordFieldValidateSettings(t *testing.T) {
 	testDefaultFieldNameValidation(t, core.FieldTypePassword)
 	testDefaultFieldHelpValidation[core.PasswordField](t)
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {

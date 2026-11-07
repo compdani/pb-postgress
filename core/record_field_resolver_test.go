@@ -17,7 +17,7 @@ import (
 func TestRecordFieldResolverAllowedFields(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCollectionByNameOrId("demo1")
@@ -55,7 +55,7 @@ func TestRecordFieldResolverAllowedFields(t *testing.T) {
 func TestRecordFieldResolverAllowHiddenFields(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCollectionByNameOrId("demo1")
@@ -83,7 +83,7 @@ func TestRecordFieldResolverAllowHiddenFields(t *testing.T) {
 func TestRecordFieldResolverUpdateQuery(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	authRecord, err := app.FindRecordById("users", "4q1xlclmfloku33")
@@ -713,7 +713,7 @@ func TestRecordFieldResolverUpdateQuery(t *testing.T) {
 }
 
 func TestRecordFieldResolverResolveCollectionFields(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCollectionByNameOrId("demo4")
@@ -822,7 +822,7 @@ func TestRecordFieldResolverResolveCollectionFields(t *testing.T) {
 }
 
 func TestRecordFieldResolverResolveStaticRequestInfoFields(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCollectionByNameOrId("demo1")

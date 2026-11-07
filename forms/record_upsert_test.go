@@ -19,7 +19,7 @@ import (
 func TestRecordUpsertLoad(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	demo1Col, err := testApp.FindCollectionByNameOrId("demo1")
@@ -269,14 +269,14 @@ func TestRecordUpsertDrySubmitFailure(t *testing.T) {
 	}
 
 	t.Run("without parent transaction", func(t *testing.T) {
-		testApp, _ := tests.NewTestApp()
+		testApp, _ := tests.NewTestApp(t)
 		defer testApp.Cleanup()
 
 		runTest(t, testApp)
 	})
 
 	t.Run("with parent transaction", func(t *testing.T) {
-		testApp, _ := tests.NewTestApp()
+		testApp, _ := tests.NewTestApp(t)
 		defer testApp.Cleanup()
 
 		testApp.RunInTransaction(func(txApp core.App) error {
@@ -337,14 +337,14 @@ func TestRecordUpsertDrySubmitCreateSuccess(t *testing.T) {
 	}
 
 	t.Run("without parent transaction", func(t *testing.T) {
-		testApp, _ := tests.NewTestApp()
+		testApp, _ := tests.NewTestApp(t)
 		defer testApp.Cleanup()
 
 		runTest(t, testApp)
 	})
 
 	t.Run("with parent transaction", func(t *testing.T) {
-		testApp, _ := tests.NewTestApp()
+		testApp, _ := tests.NewTestApp(t)
 		defer testApp.Cleanup()
 
 		testApp.RunInTransaction(func(txApp core.App) error {
@@ -420,14 +420,14 @@ func TestRecordUpsertDrySubmitUpdateSuccess(t *testing.T) {
 	}
 
 	t.Run("without parent transaction", func(t *testing.T) {
-		testApp, _ := tests.NewTestApp()
+		testApp, _ := tests.NewTestApp(t)
 		defer testApp.Cleanup()
 
 		runTest(t, testApp)
 	})
 
 	t.Run("with parent transaction", func(t *testing.T) {
-		testApp, _ := tests.NewTestApp()
+		testApp, _ := tests.NewTestApp(t)
 		defer testApp.Cleanup()
 
 		testApp.RunInTransaction(func(txApp core.App) error {
@@ -440,7 +440,7 @@ func TestRecordUpsertDrySubmitUpdateSuccess(t *testing.T) {
 func TestRecordUpsertSubmitValidations(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	demo2Col, err := app.FindCollectionByNameOrId("demo2")
@@ -745,7 +745,7 @@ func TestRecordUpsertSubmitValidations(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			testApp, _ := tests.NewTestApp()
+			testApp, _ := tests.NewTestApp(t)
 			defer testApp.Cleanup()
 
 			form := forms.NewRecordUpsert(testApp, s.record.Original())
@@ -762,7 +762,7 @@ func TestRecordUpsertSubmitValidations(t *testing.T) {
 }
 
 func TestRecordUpsertSubmitFailure(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	col, err := testApp.FindCollectionByNameOrId("demo1")
@@ -825,7 +825,7 @@ func TestRecordUpsertSubmitFailure(t *testing.T) {
 }
 
 func TestRecordUpsertSubmitSuccess(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	col, err := testApp.FindCollectionByNameOrId("demo1")
@@ -888,7 +888,7 @@ func TestRecordUpsertSubmitSuccess(t *testing.T) {
 }
 
 func TestRecordUpsertPasswordsSync(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	users, err := testApp.FindCollectionByNameOrId("users")

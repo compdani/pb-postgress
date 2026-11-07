@@ -16,7 +16,7 @@ import (
 )
 
 func TestCreateBackup(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	// set some long app name with spaces and special characters
@@ -83,7 +83,7 @@ func TestCreateBackup(t *testing.T) {
 }
 
 func TestRestoreBackup(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	// create a initial test backup to ensure that there are at least 1

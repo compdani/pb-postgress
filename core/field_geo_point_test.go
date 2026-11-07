@@ -16,7 +16,7 @@ func TestGeoPointFieldBaseMethods(t *testing.T) {
 }
 
 func TestGeoPointFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.GeoPointField{}
@@ -29,7 +29,7 @@ func TestGeoPointFieldColumnType(t *testing.T) {
 }
 
 func TestGeoPointFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.GeoPointField{}
@@ -71,7 +71,7 @@ func TestGeoPointFieldPrepareValue(t *testing.T) {
 }
 
 func TestGeoPointFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")

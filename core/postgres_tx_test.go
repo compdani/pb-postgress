@@ -9,7 +9,7 @@ import (
 )
 
 func TestRunSatelliteCascadePassthrough(t *testing.T) {
-	testApp, err := tests.NewTestApp()
+	testApp, err := tests.NewTestApp(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestRunSatelliteCascadePassthrough(t *testing.T) {
 }
 
 func TestRunSatelliteCascadePostgres(t *testing.T) {
-	testApp, err := tests.NewTestApp()
+	testApp, err := tests.NewTestApp(t)
 	if err != nil {
 		t.Fatal(err)
 	}

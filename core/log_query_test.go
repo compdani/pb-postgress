@@ -15,7 +15,7 @@ import (
 func TestFindLogById(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	tests.StubLogsData(app)
@@ -49,7 +49,7 @@ func TestFindLogById(t *testing.T) {
 func TestLogsStats(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	tests.StubLogsData(app)
@@ -72,7 +72,7 @@ func TestLogsStats(t *testing.T) {
 func TestDeleteOldLogs(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	tests.StubLogsData(app)

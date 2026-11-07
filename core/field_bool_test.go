@@ -14,7 +14,7 @@ func TestBoolFieldBaseMethods(t *testing.T) {
 }
 
 func TestBoolFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.BoolField{}
@@ -27,7 +27,7 @@ func TestBoolFieldColumnType(t *testing.T) {
 }
 
 func TestBoolFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.BoolField{}
@@ -59,7 +59,7 @@ func TestBoolFieldPrepareValue(t *testing.T) {
 }
 
 func TestBoolFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")

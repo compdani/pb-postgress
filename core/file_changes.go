@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/tools/fileschema"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"github.com/pocketbase/pocketbase/tools/security"
 	"slices"
@@ -13,21 +14,20 @@ import (
 
 // InitFileTables creates the shared host registry and durable, append-only file feed.
 func InitFileTables(app App) error {
-	id := "BIGSERIAL PRIMARY KEY"
+	driver := "postgres"
 	if asBaseApp(app).SQLDialect() == DialectMySQL {
-		id = "BIGINT AUTO_INCREMENT PRIMARY KEY"
+		driver = "mysql"
 	}
-	return ExecuteSchema(app, `CREATE TABLE IF NOT EXISTS {{_fileDeleteQueue}} ([[id]] VARCHAR(32) PRIMARY KEY, [[path]] TEXT NOT NULL);`+`CREATE TABLE IF NOT EXISTS {{_fileHosts}} ([[id]] VARCHAR(255) PRIMARY KEY, [[url]] VARCHAR(2048) NOT NULL, [[mode]] VARCHAR(16) NOT NULL CHECK ([[mode]] IN ('full','bucket','s3')), [[secret]] VARCHAR(255) NOT NULL, [[registered_at]] VARCHAR(64) NOT NULL);
- CREATE TABLE IF NOT EXISTS {{_fileChanges}} ([[id]] `+id+`, [[op]] VARCHAR(8) NOT NULL CHECK ([[op]] IN ('upsert','delete')), [[collection]] VARCHAR(255) NOT NULL, [[record_id]] VARCHAR(255) NOT NULL, [[filename]] VARCHAR(1024) NOT NULL, [[created_at]] VARCHAR(64) NOT NULL);`)
+	return ExecuteSchema(app, `CREATE TABLE IF NOT EXISTS {{_fileDeleteQueue}} ([[id]] VARCHAR(32) PRIMARY KEY, [[path]] TEXT NOT NULL);`+fileschema.Hosts(driver, "{{_fileHosts}}")+";"+fileschema.Changes(driver, "{{_fileChanges}}"))
 }
 
 type FileChange struct {
-	ID         int64  `db:"id" json:"id"`
-	Op         string `db:"op" json:"op"`
-	Collection string `db:"collection" json:"collection"`
-	RecordID   string `db:"record_id" json:"record_id"`
-	Filename   string `db:"filename" json:"filename"`
-	CreatedAt  string `db:"created_at" json:"created_at"`
+	ID         int64     `db:"id" json:"id"`
+	Op         string    `db:"op" json:"op"`
+	Collection string    `db:"collection" json:"collection"`
+	RecordID   string    `db:"record_id" json:"record_id"`
+	Filename   string    `db:"filename" json:"filename"`
+	CreatedAt  time.Time `db:"created_at" json:"created_at"`
 }
 
 func recordFileNames(record *Record) []string {
@@ -77,7 +77,7 @@ func appendFileChanges(app App, changes []FileChange) error {
 			}
 		}
 
-		_, err := app.DB().Insert("_fileChanges", dbx.Params{"op": change.Op, "collection": change.Collection, "record_id": change.RecordID, "filename": change.Filename, "created_at": time.Now().UTC().Format(time.RFC3339Nano)}).Execute()
+		_, err := app.DB().Insert("_fileChanges", dbx.Params{"op": change.Op, "collection": change.Collection, "record_id": change.RecordID, "filename": change.Filename, "created_at": time.Now().UTC()}).Execute()
 		if err != nil {
 			return err
 		}

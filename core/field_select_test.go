@@ -16,7 +16,7 @@ func TestSelectFieldBaseMethods(t *testing.T) {
 }
 
 func TestSelectFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -83,7 +83,7 @@ func TestSelectFieldIsMultiple(t *testing.T) {
 }
 
 func TestSelectFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	record := core.NewRecord(core.NewBaseCollection("test"))
@@ -132,7 +132,7 @@ func TestSelectFieldPrepareValue(t *testing.T) {
 }
 
 func TestSelectFieldDriverValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -194,7 +194,7 @@ func TestSelectFieldDriverValue(t *testing.T) {
 }
 
 func TestSelectFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -339,7 +339,7 @@ func TestSelectFieldValidateSettings(t *testing.T) {
 	testDefaultFieldNameValidation(t, core.FieldTypeSelect)
 	testDefaultFieldHelpValidation[core.SelectField](t)
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {

@@ -16,7 +16,7 @@ func TestDateFieldBaseMethods(t *testing.T) {
 }
 
 func TestDateFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.DateField{}
@@ -29,7 +29,7 @@ func TestDateFieldColumnType(t *testing.T) {
 }
 
 func TestDateFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.DateField{}
@@ -65,7 +65,7 @@ func TestDateFieldPrepareValue(t *testing.T) {
 }
 
 func TestDateFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -135,7 +135,7 @@ func TestDateFieldValidateSettings(t *testing.T) {
 	testDefaultFieldNameValidation(t, core.FieldTypeDate)
 	testDefaultFieldHelpValidation[core.DateField](t)
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")

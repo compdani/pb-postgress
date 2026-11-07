@@ -12,7 +12,7 @@ import (
 func TestFindAllAuthOriginsByRecord(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	demo1, err := app.FindRecordById("demo1", "84nmscqy84lsi1t")
@@ -68,7 +68,7 @@ func TestFindAllAuthOriginsByRecord(t *testing.T) {
 func TestFindAllAuthOriginsByCollection(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	demo1, err := app.FindCollectionByNameOrId("demo1")
@@ -118,7 +118,7 @@ func TestFindAllAuthOriginsByCollection(t *testing.T) {
 func TestFindAuthOriginById(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -153,7 +153,7 @@ func TestFindAuthOriginById(t *testing.T) {
 func TestFindAuthOriginByRecordAndFingerprint(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	demo1, err := app.FindRecordById("demo1", "84nmscqy84lsi1t")
@@ -205,7 +205,7 @@ func TestFindAuthOriginByRecordAndFingerprint(t *testing.T) {
 func TestDeleteAllAuthOriginsByRecord(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	demo1, err := testApp.FindRecordById("demo1", "84nmscqy84lsi1t")
@@ -240,7 +240,7 @@ func TestDeleteAllAuthOriginsByRecord(t *testing.T) {
 
 	for i, s := range scenarios {
 		t.Run(fmt.Sprintf("%d_%s_%s", i, s.record.Collection().Name, s.record.Id), func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			deletedIds := []string{}

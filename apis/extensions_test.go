@@ -27,7 +27,7 @@ func TestUIExtensions_Mainjs(t *testing.T) {
 			Method: http.MethodGet,
 			URL:    "/_/extensions.js",
 			TestAppFactory: func(t testing.TB) *tests.TestApp {
-				app, err := tests.NewTestApp()
+				app, err := tests.NewTestApp(t)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -58,7 +58,7 @@ func TestUIExtensions_Mainjs(t *testing.T) {
 			Method: http.MethodGet,
 			URL:    "/_/extensions.js",
 			TestAppFactory: func(t testing.TB) *tests.TestApp {
-				app, err := tests.NewTestApp()
+				app, err := tests.NewTestApp(t)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -85,7 +85,7 @@ func TestUIExtensions_Mainjs(t *testing.T) {
 // note: don't run in parallel to avoid conflicts with the ui.DistDirFS nil test
 func TestUIExtensions_Files(t *testing.T) {
 	testAppFactory := func(t testing.TB) *tests.TestApp {
-		app, err := tests.NewTestApp()
+		app, err := tests.NewTestApp(t)
 		if err != nil {
 			t.Fatal(err)
 		}

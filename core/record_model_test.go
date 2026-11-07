@@ -150,7 +150,7 @@ func TestRecordBaseFilesPath(t *testing.T) {
 func TestRecordOriginal(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	record, err := app.FindAuthRecordByEmail("users", "test@example.com")
@@ -236,7 +236,7 @@ func TestRecordOriginal(t *testing.T) {
 func TestRecordFresh(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	record, err := app.FindAuthRecordByEmail("users", "test@example.com")
@@ -325,7 +325,7 @@ func TestRecordFresh(t *testing.T) {
 func TestRecordClone(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	record, err := app.FindAuthRecordByEmail("users", "test@example.com")
@@ -1093,7 +1093,7 @@ func TestRecordGetGeoPoint(t *testing.T) {
 func TestRecordGetUnsavedFiles(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f1, err := filesystem.NewFileFromBytes([]byte("test"), "f1")
@@ -1254,7 +1254,7 @@ func TestRecordFindFileFieldByFile(t *testing.T) {
 func TestRecordDBExport(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f1 := &core.TextField{Name: "field1"}
@@ -1331,7 +1331,7 @@ func TestRecordDBExport(t *testing.T) {
 func TestRecordIgnoreUnchangedFields(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	col, err := app.FindCollectionByNameOrId("demo3")
@@ -1662,7 +1662,7 @@ func TestRecordReplaceModifiers(t *testing.T) {
 func TestRecordValidate(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	// dummy collection to ensure that the specified field validators are triggered
@@ -1698,7 +1698,7 @@ func TestRecordValidate(t *testing.T) {
 func TestRecordModelEventSync(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	col, err := app.FindCollectionByNameOrId("demo3")
@@ -2071,7 +2071,7 @@ func TestRecordSave(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			record, err := s.record(app)
@@ -2125,7 +2125,7 @@ func TestRecordSave(t *testing.T) {
 func TestRecordSaveIdFromOtherCollection(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	baseCollection, _ := app.FindCollectionByNameOrId("demo2")
@@ -2158,7 +2158,7 @@ func TestRecordSaveIdFromOtherCollection(t *testing.T) {
 func TestRecordSaveIdUpdateNoValidation(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	rec, err := app.FindRecordById("demo3", "7nwo8tuiatetxdm")
@@ -2184,7 +2184,7 @@ func TestRecordSaveIdUpdateNoValidation(t *testing.T) {
 func TestRecordSaveWithAutoTokenKeyRefresh(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -2239,7 +2239,7 @@ func TestRecordSaveWithAutoTokenKeyRefresh(t *testing.T) {
 func TestRecordDelete(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	demoCollection, _ := app.FindCollectionByNameOrId("demo2")
@@ -2330,7 +2330,7 @@ func TestRecordDelete(t *testing.T) {
 func TestRecordDeleteWithMultipleRelationCascade(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	// create a mock collection with self referencing multiple relation field
@@ -2419,7 +2419,7 @@ func TestRecordDeleteWithMultipleRelationCascade(t *testing.T) {
 func TestRecordDeleteBatchProcessing(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	if err := createMockBatchProcessingData(app); err != nil {

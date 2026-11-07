@@ -16,11 +16,11 @@ import (
 
 // FileHost is the single file-serving instance shared by all instances using this database.
 type FileHost struct {
-	Secret       string `db:"secret" json:"-"`
-	InstanceID   string `db:"instanceId" json:"instanceId"`
-	URL          string `db:"url" json:"url"`
-	Mode         string `db:"mode" json:"mode"`
-	RegisteredAt string `db:"registered_at" json:"registered_at,omitempty"`
+	Secret       string    `db:"secret" json:"-"`
+	InstanceID   string    `db:"instanceId" json:"instanceId"`
+	URL          string    `db:"url" json:"url"`
+	Mode         string    `db:"mode" json:"mode"`
+	RegisteredAt time.Time `db:"registered_at" json:"registered_at,omitempty"`
 }
 
 func (app *BaseApp) InstanceID() (string, error) {
@@ -70,7 +70,7 @@ func (app *BaseApp) SetFileHost(host FileHost) error {
 		if _, err := txApp.DB().Delete("_fileHosts", nil).Execute(); err != nil {
 			return err
 		}
-		_, err := txApp.DB().Insert("_fileHosts", dbx.Params{"id": host.InstanceID, "url": strings.TrimRight(host.URL, "/"), "mode": host.Mode, "secret": host.Secret, "registered_at": time.Now().UTC().Format(time.RFC3339)}).Execute()
+		_, err := txApp.DB().Insert("_fileHosts", dbx.Params{"id": host.InstanceID, "url": strings.TrimRight(host.URL, "/"), "mode": host.Mode, "secret": host.Secret, "registered_at": time.Now().UTC()}).Execute()
 		return err
 	})
 }

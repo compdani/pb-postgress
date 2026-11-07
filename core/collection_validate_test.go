@@ -893,7 +893,7 @@ func TestCollectionValidate(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			collection, err := s.collection(app)

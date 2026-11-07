@@ -73,7 +73,7 @@ func TestEventRequestRealIP(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			app, err := tests.NewTestApp()
+			app, err := tests.NewTestApp(t)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -109,7 +109,7 @@ func TestEventRequestRealIP(t *testing.T) {
 func TestEventRequestHasSuperUserAuth(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	user, err := app.FindAuthRecordByEmail("users", "test@example.com")
@@ -149,7 +149,7 @@ func TestEventRequestHasSuperUserAuth(t *testing.T) {
 func TestRequestEventRequestInfo(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	userCol, err := app.FindCollectionByNameOrId("users")
@@ -222,7 +222,7 @@ func TestRequestEventRequestInfo(t *testing.T) {
 func TestRequestInfoHasSuperuserAuth(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	user, err := app.FindAuthRecordByEmail("users", "test@example.com")
@@ -273,7 +273,7 @@ func TestRequestInfoHasSuperuserAuth(t *testing.T) {
 func TestRequestInfoClone(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	userCol, err := app.FindCollectionByNameOrId("users")

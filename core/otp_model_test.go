@@ -13,7 +13,7 @@ import (
 func TestNewOTP(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	otp := core.NewOTP(app)
@@ -40,7 +40,7 @@ func TestOTPProxyRecord(t *testing.T) {
 func TestOTPRecordRef(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	otp := core.NewOTP(app)
@@ -64,7 +64,7 @@ func TestOTPRecordRef(t *testing.T) {
 func TestOTPCollectionRef(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	otp := core.NewOTP(app)
@@ -88,7 +88,7 @@ func TestOTPCollectionRef(t *testing.T) {
 func TestOTPSentTo(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	otp := core.NewOTP(app)
@@ -112,7 +112,7 @@ func TestOTPSentTo(t *testing.T) {
 func TestOTPCreated(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	otp := core.NewOTP(app)
@@ -132,7 +132,7 @@ func TestOTPCreated(t *testing.T) {
 func TestOTPUpdated(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	otp := core.NewOTP(app)
@@ -152,7 +152,7 @@ func TestOTPUpdated(t *testing.T) {
 func TestOTPHasExpired(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	now := types.NowDateTime()
@@ -184,7 +184,7 @@ func TestOTPHasExpired(t *testing.T) {
 func TestOTPPreValidate(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	otpsCol, err := app.FindCollectionByNameOrId(core.CollectionNameOTPs)
@@ -233,7 +233,7 @@ func TestOTPPreValidate(t *testing.T) {
 func TestOTPValidateHook(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	user, err := app.FindAuthRecordByEmail("users", "test@example.com")
@@ -304,7 +304,7 @@ func TestOTPValidateHook(t *testing.T) {
 func TestOTPClearOnTokenKeyChange(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	user1, err := app.FindAuthRecordByEmail("users", "test@example.com")

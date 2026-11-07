@@ -18,7 +18,7 @@ import (
 func TestExpandRecords(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -256,7 +256,7 @@ func TestExpandRecords(t *testing.T) {
 func TestExpandRecord(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -436,7 +436,7 @@ func TestExpandRecord(t *testing.T) {
 func TestBackRelationExpandSingeVsArrayResult(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	record, err := app.FindRecordById("demo3", "7nwo8tuiatetxdm")
@@ -492,7 +492,7 @@ func TestBackRelationExpandSingeVsArrayResult(t *testing.T) {
 func TestExpandRecordsQuerySkipDuplicatedIds(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	// fetch records that are known to have at least 1 common relation between them

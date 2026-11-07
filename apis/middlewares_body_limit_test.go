@@ -13,7 +13,7 @@ import (
 )
 
 func TestBodyLimitMiddleware(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	pbRouter, err := apis.NewRouter(app)

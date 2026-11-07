@@ -14,7 +14,7 @@ func TestURLFieldBaseMethods(t *testing.T) {
 }
 
 func TestURLFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.URLField{}
@@ -27,7 +27,7 @@ func TestURLFieldColumnType(t *testing.T) {
 }
 
 func TestURLFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.URLField{}
@@ -64,7 +64,7 @@ func TestURLFieldPrepareValue(t *testing.T) {
 }
 
 func TestURLFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -184,7 +184,7 @@ func TestURLFieldValidateSettings(t *testing.T) {
 	testDefaultFieldNameValidation(t, core.FieldTypeURL)
 	testDefaultFieldHelpValidation[core.URLField](t)
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")

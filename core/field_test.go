@@ -71,7 +71,7 @@ func testFieldBaseMethods(t *testing.T, fieldType string) {
 }
 
 func testDefaultFieldIdValidation(t *testing.T, fieldType string) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -122,7 +122,7 @@ func testDefaultFieldIdValidation(t *testing.T, fieldType string) {
 }
 
 func testDefaultFieldNameValidation(t *testing.T, fieldType string) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -263,7 +263,7 @@ func testDefaultFieldNameValidation(t *testing.T, fieldType string) {
 }
 
 func testDefaultFieldHelpValidation[T any](t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")

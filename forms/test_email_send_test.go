@@ -33,7 +33,7 @@ func TestEmailSendValidateAndSubmit(t *testing.T) {
 
 	for i, s := range scenarios {
 		t.Run(fmt.Sprintf("%d_%s", i, s.template), func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			form := forms.NewTestEmailSend(app)

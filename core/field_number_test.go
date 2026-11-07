@@ -15,7 +15,7 @@ func TestNumberFieldBaseMethods(t *testing.T) {
 }
 
 func TestNumberFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.NumberField{}
@@ -28,7 +28,7 @@ func TestNumberFieldColumnType(t *testing.T) {
 }
 
 func TestNumberFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.NumberField{}
@@ -66,7 +66,7 @@ func TestNumberFieldPrepareValue(t *testing.T) {
 }
 
 func TestNumberFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -216,7 +216,7 @@ func TestNumberFieldValidateSettings(t *testing.T) {
 	testDefaultFieldNameValidation(t, core.FieldTypeNumber)
 	testDefaultFieldHelpValidation[core.NumberField](t)
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")

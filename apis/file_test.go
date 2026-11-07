@@ -539,7 +539,7 @@ func TestFileDownload(t *testing.T) {
 func TestConcurrentThumbsGeneration(t *testing.T) {
 	t.Parallel()
 
-	app, err := tests.NewTestApp()
+	app, err := tests.NewTestApp(t)
 	if err != nil {
 		t.Fatal(err)
 	}

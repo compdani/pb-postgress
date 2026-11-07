@@ -17,7 +17,7 @@ import (
 func TestHasTable(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -45,7 +45,7 @@ func TestHasTable(t *testing.T) {
 func TestAuxHasTable(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -70,7 +70,7 @@ func TestAuxHasTable(t *testing.T) {
 func TestTableColumns(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -101,7 +101,7 @@ func TestTableColumns(t *testing.T) {
 func TestTableInfo(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -135,7 +135,7 @@ func TestTableInfo(t *testing.T) {
 func TestTableIndexes(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -170,7 +170,7 @@ func TestTableIndexes(t *testing.T) {
 func TestDeleteTable(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -198,7 +198,7 @@ func TestDeleteTable(t *testing.T) {
 func TestVacuum(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	calledQueries := []string{}
@@ -225,7 +225,7 @@ func TestVacuum(t *testing.T) {
 func TestAuxVacuum(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	calledQueries := []string{}

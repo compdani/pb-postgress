@@ -12,7 +12,7 @@ import (
 )
 
 func TestDefaultRateLimitMiddleware(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	app.Settings().RateLimits.Enabled = true
@@ -162,7 +162,7 @@ func TestDefaultRateLimitMiddleware(t *testing.T) {
 }
 
 func TestDefaultRateLimitMiddlewareSkipChecks(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	app.Settings().RateLimits.Enabled = true

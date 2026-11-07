@@ -498,7 +498,7 @@ func TestCollectionPostScan(t *testing.T) {
 }
 
 func TestCollectionUnmarshalJSON(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -763,7 +763,7 @@ func TestCollectionSerialize(t *testing.T) {
 func TestCollectionSerializeNotModifyingCache(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	c, err := app.FindCachedCollectionByNameOrId("users")
@@ -803,7 +803,7 @@ func TestCollectionSerializeNotModifyingCache(t *testing.T) {
 func TestCollectionDBExport(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	date, err := types.ParseDateTime("2024-07-01 01:02:03.456Z")
@@ -978,7 +978,7 @@ func TestCollectionDelete(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			var col *core.Collection
@@ -1023,7 +1023,7 @@ func TestCollectionDelete(t *testing.T) {
 func TestCollectionModelEventSync(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	testCollections := make([]*core.Collection, 4)
@@ -1444,7 +1444,7 @@ func TestCollectionSaveModel(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			collection, err := s.collection(app)
@@ -1518,7 +1518,7 @@ func TestCollectionSaveModel(t *testing.T) {
 func TestCollectionSaveIndirectViewsUpdate(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCollectionByNameOrId("demo1")
@@ -1652,7 +1652,7 @@ func TestCollectionSaveViewWrapping(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			collection := core.NewViewCollection(viewName)
@@ -1682,7 +1682,7 @@ func TestCollectionSaveViewWrapping(t *testing.T) {
 func TestCollectionSaveIndexesTableNameNormalization(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	dummyCollection := core.NewBaseCollection("new_test")

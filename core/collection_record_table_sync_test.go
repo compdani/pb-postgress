@@ -15,7 +15,7 @@ import (
 func TestSyncRecordTableSchema(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	oldCollection, err := app.FindCollectionByNameOrId("demo2")
@@ -130,7 +130,7 @@ func getTotalViews(app core.App) (int, error) {
 func TestSingleVsMultipleValuesNormalization(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCollectionByNameOrId("demo1")
@@ -298,7 +298,7 @@ func TestSingleVsMultipleValuesNormalization(t *testing.T) {
 func TestDropIndexWithoutTableName(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	properIndex := "CREATE INDEX `new_test_idx2` ON `new_test` (`test`)"

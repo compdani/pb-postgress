@@ -16,7 +16,7 @@ func TestJSONFieldBaseMethods(t *testing.T) {
 }
 
 func TestJSONFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.JSONField{}
@@ -29,7 +29,7 @@ func TestJSONFieldColumnType(t *testing.T) {
 }
 
 func TestJSONFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.JSONField{}
@@ -80,7 +80,7 @@ func TestJSONFieldPrepareValue(t *testing.T) {
 }
 
 func TestJSONFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -190,7 +190,7 @@ func TestJSONFieldValidateSettings(t *testing.T) {
 	testDefaultFieldNameValidation(t, core.FieldTypeJSON)
 	testDefaultFieldHelpValidation[core.JSONField](t)
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -255,7 +255,7 @@ func TestJSONFieldValidateSettings(t *testing.T) {
 }
 
 func TestJSONFieldCalculateMaxBodySize(t *testing.T) {
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	scenarios := []struct {

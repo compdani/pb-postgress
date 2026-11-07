@@ -14,7 +14,7 @@ import (
 func TestMigrationsRunnerUpAndDown(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	callsOrder := []string{}
@@ -157,7 +157,7 @@ func TestMigrationsRunnerUpAndDown(t *testing.T) {
 func TestMigrationsRunnerRemoveMissingAppliedMigrations(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	// mock migrations history

@@ -13,7 +13,7 @@ import (
 func TestFindAllExternalAuthsByRecord(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	demo1, err := app.FindRecordById("demo1", "84nmscqy84lsi1t")
@@ -81,7 +81,7 @@ func TestFindAllExternalAuthsByRecord(t *testing.T) {
 func TestFindAllExternalAuthsByCollection(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	demo1, err := app.FindCollectionByNameOrId("demo1")
@@ -143,7 +143,7 @@ func TestFindAllExternalAuthsByCollection(t *testing.T) {
 func TestFindFirstExternalAuthByExpr(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -179,7 +179,7 @@ func TestFindFirstExternalAuthByExpr(t *testing.T) {
 func TestDeleteAllExternalAuthsByRecord(t *testing.T) {
 	t.Parallel()
 
-	testApp, _ := tests.NewTestApp()
+	testApp, _ := tests.NewTestApp(t)
 	defer testApp.Cleanup()
 
 	demo1, err := testApp.FindRecordById("demo1", "84nmscqy84lsi1t")
@@ -214,7 +214,7 @@ func TestDeleteAllExternalAuthsByRecord(t *testing.T) {
 
 	for i, s := range scenarios {
 		t.Run(fmt.Sprintf("%d_%s_%s", i, s.record.Collection().Name, s.record.Id), func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			deletedIds := []string{}

@@ -14,7 +14,7 @@ func TestEmailFieldBaseMethods(t *testing.T) {
 }
 
 func TestEmailFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.EmailField{}
@@ -27,7 +27,7 @@ func TestEmailFieldColumnType(t *testing.T) {
 }
 
 func TestEmailFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.EmailField{}
@@ -64,7 +64,7 @@ func TestEmailFieldPrepareValue(t *testing.T) {
 }
 
 func TestEmailFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")
@@ -184,7 +184,7 @@ func TestEmailFieldValidateSettings(t *testing.T) {
 	testDefaultFieldNameValidation(t, core.FieldTypeEmail)
 	testDefaultFieldHelpValidation[core.EmailField](t)
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")

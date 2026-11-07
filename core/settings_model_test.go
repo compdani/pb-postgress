@@ -17,7 +17,7 @@ import (
 func TestSettingsDelete(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	err := app.Delete(app.Settings())
@@ -39,7 +39,7 @@ func TestSettings_DBExport(t *testing.T) {
 
 	for _, s := range scenarios {
 		t.Run(s.name, func(t *testing.T) {
-			app, _ := tests.NewTestApp()
+			app, _ := tests.NewTestApp(t)
 			defer app.Cleanup()
 
 			originalEnv := os.Getenv(app.EncryptionEnv())
@@ -190,7 +190,7 @@ func TestSettingsMarshalJSON(t *testing.T) {
 func TestSettingsValidate(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	s := app.Settings()

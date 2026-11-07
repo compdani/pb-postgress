@@ -32,7 +32,7 @@ func ensureNoTempViews(app core.App, t *testing.T) {
 func TestDeleteView(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -61,7 +61,7 @@ func TestDeleteView(t *testing.T) {
 func TestSaveView(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -184,7 +184,7 @@ func TestSaveView(t *testing.T) {
 func TestCreateViewFieldsWithDiscardedNestedTransaction(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	app.RunInTransaction(func(txApp core.App) error {
@@ -202,7 +202,7 @@ func TestCreateViewFieldsWithDiscardedNestedTransaction(t *testing.T) {
 func TestCreateViewFields(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -554,7 +554,7 @@ func TestCreateViewFields(t *testing.T) {
 func TestCreateViewFieldsWithNumberOnlyInt(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	sql := `select
@@ -609,7 +609,7 @@ func TestCreateViewFieldsWithNumberOnlyInt(t *testing.T) {
 func TestFindRecordByViewFile(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	prevCollection, err := app.FindCollectionByNameOrId("demo1")
@@ -742,7 +742,7 @@ func TestFindRecordByViewFile(t *testing.T) {
 func TestDryRunView(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {

@@ -32,7 +32,7 @@ func TestGenerateDefaultRandomId(t *testing.T) {
 func TestModelQuery(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	modelsQuery := app.ModelQuery(&core.Collection{})
@@ -58,7 +58,7 @@ func TestModelQuery(t *testing.T) {
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	u := &mockSuperusers{}
@@ -78,7 +78,7 @@ func TestValidate(t *testing.T) {
 func TestValidateWithContext(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	u := &mockSuperusers{}

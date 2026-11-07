@@ -349,7 +349,7 @@ func TestBaseAppLoggerWrites(t *testing.T) {
 	t.Parallel()
 
 	// note: outside of synctest because the bootstrap tickers could deadlock
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	// clear old logs
@@ -408,7 +408,7 @@ func TestBaseAppLoggerWrites(t *testing.T) {
 func TestBaseAppLoggerWritesAwaited(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	// clear old logs
@@ -573,7 +573,7 @@ func TestBaseAppRefreshSettingsLoggerMinLevelEnabled(t *testing.T) {
 func TestBaseAppDBDualBuilder(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	concurrentQueries := []string{}
@@ -649,7 +649,7 @@ func TestBaseAppDBDualBuilder(t *testing.T) {
 func TestBaseAppAuxDBDualBuilder(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	concurrentQueries := []string{}
@@ -725,7 +725,7 @@ func TestBaseAppAuxDBDualBuilder(t *testing.T) {
 func TestBaseAppTriggerOnTerminate(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	event := new(core.TerminateEvent)

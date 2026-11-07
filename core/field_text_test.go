@@ -15,7 +15,7 @@ func TestTextFieldBaseMethods(t *testing.T) {
 }
 
 func TestTextFieldColumnType(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.TextField{}
@@ -28,7 +28,7 @@ func TestTextFieldColumnType(t *testing.T) {
 }
 
 func TestTextFieldPrepareValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	f := &core.TextField{}
@@ -65,7 +65,7 @@ func TestTextFieldPrepareValue(t *testing.T) {
 }
 
 func TestTextFieldValidateValue(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection, err := app.FindCollectionByNameOrId("demo1")
@@ -383,7 +383,7 @@ func TestTextFieldValidateSettings(t *testing.T) {
 	testDefaultFieldNameValidation(t, core.FieldTypeText)
 	testDefaultFieldHelpValidation[core.TextField](t)
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	scenarios := []struct {
@@ -583,7 +583,7 @@ func TestTextFieldValidateSettings(t *testing.T) {
 }
 
 func TestTextFieldAutogenerate(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	collection := core.NewBaseCollection("test_collection")

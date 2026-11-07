@@ -9,7 +9,7 @@ import (
 )
 
 func TestRunInTransaction(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	t.Run("failed nested transaction", func(t *testing.T) {
@@ -49,7 +49,7 @@ func TestRunInTransaction(t *testing.T) {
 }
 
 func TestTransactionHooksCallsOnFailure(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	createHookCalls := 0
@@ -142,7 +142,7 @@ func TestTransactionHooksCallsOnFailure(t *testing.T) {
 }
 
 func TestTransactionHooksCallsOnSuccess(t *testing.T) {
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	createHookCalls := 0
@@ -249,7 +249,7 @@ func TestTransactionHooksCallsOnSuccess(t *testing.T) {
 func TestTransactionFromInnerCreateHook(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	app.OnRecordCreateExecute("demo2").BindFunc(func(e *core.RecordEvent) error {
@@ -307,7 +307,7 @@ func TestTransactionFromInnerCreateHook(t *testing.T) {
 func TestTransactionFromInnerUpdateHook(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	app.OnRecordUpdateExecute("demo2").BindFunc(func(e *core.RecordEvent) error {
@@ -361,7 +361,7 @@ func TestTransactionFromInnerUpdateHook(t *testing.T) {
 func TestTransactionFromInnerDeleteHook(t *testing.T) {
 	t.Parallel()
 
-	app, _ := tests.NewTestApp()
+	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
 
 	app.OnRecordDeleteExecute("demo2").BindFunc(func(e *core.RecordEvent) error {
