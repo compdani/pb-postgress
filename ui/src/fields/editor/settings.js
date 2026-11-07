@@ -35,6 +35,16 @@ export function settings(props) {
                             placeholder: "Default to max ~5MB",
                             value: () => props.field.maxSize || "",
                             oninput: (e) => {
+                                // temp skip invalid numbers with leading 0 while typing to avoid reseting the entire input
+                                // (always normalized in onchange)
+                                if (e.target.value?.length > 1 && e.target.value[0] == "0") {
+                                    return;
+                                }
+
+                                props.field.maxSize = parseInt(e.target.value, 10);
+                            },
+                            onchange: (e) => {
+                                props.field.maxSize = null; // reset reactivity
                                 props.field.maxSize = parseInt(e.target.value, 10);
                             },
                         }),

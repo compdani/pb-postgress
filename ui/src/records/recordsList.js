@@ -107,7 +107,10 @@ window.app.components.recordsList = function(propsArg = {}) {
                 relExpands.push(field.name);
             }
 
-            let requestFields = fieldsWithExcerpt(props.collection.id, relationFields);
+            // disable for now since loading the entire json often tends
+            // to be faster with encoding/json/v2 because it can be directly streamed
+            // const requestFields = fieldsWithExcerpt(props.collection.id, relationFields);
+            const requestFields = undefined;
 
             // allow sorting by the top level relation presentable fields
             let normalizedSort = props.sort || undefined;
@@ -150,6 +153,7 @@ window.app.components.recordsList = function(propsArg = {}) {
             });
 
             if (result.page == 1) {
+                props.suggestReset = false;
                 clearList();
             }
 
@@ -315,7 +319,14 @@ window.app.components.recordsList = function(propsArg = {}) {
 
             clearTimeout(deleteRefreshTimeoutId);
             deleteRefreshTimeoutId = setTimeout(() => {
-                if (!data.records?.length) {
+                if (
+                    // no more client-side records
+                    !data.records?.length
+                    // has cascade self-reference field
+                    || !!props.collection?.fields?.find((f) => {
+                        return f.type == "relation" && f.cascadeDelete && f.collectionId == props.collection.id;
+                    })
+                ) {
                     loadRecords(true);
                 }
             }, 100);
@@ -548,7 +559,7 @@ window.app.components.recordsList = function(propsArg = {}) {
                         );
                     }
 
-                    return data.records.map((record, i) => {
+                    return data.records.map((record) => {
                         return t.tr(
                             {
                                 rid: recordRid(record),
@@ -594,7 +605,21 @@ window.app.components.recordsList = function(propsArg = {}) {
                                         id: () => uniqueId + record.id,
                                         checked: () => !!data.bulkSelected[record.id],
                                         onchange: (e) => {
-                                            const bulkSelected = JSON.parse(JSON.stringify(data.bulkSelected));
+                                            let bulkSelected = Object.assign({}, data.bulkSelected);
+
+                                            // range select
+                                            if (e.target.__shiftKey) {
+                                                e.target.__shiftKey = false;
+
+                                                app.utils.bulkSelectRange(
+                                                    data.records,
+                                                    bulkSelected,
+                                                    record,
+                                                    e.target.checked,
+                                                );
+                                            }
+
+                                            // toggle current record
                                             if (e.target.checked) {
                                                 bulkSelected[record.id] = record;
                                             } else {
@@ -605,7 +630,18 @@ window.app.components.recordsList = function(propsArg = {}) {
                                             data.bulkSelected = bulkSelected;
                                         },
                                     }),
-                                    t.label({ htmlFor: uniqueId + record.id }),
+                                    t.label({
+                                        htmlFor: uniqueId + record.id,
+                                        // workaround https://github.com/pocketbase/pocketbase/issues/7771
+                                        onclick: (e) => {
+                                            e.preventDefault();
+                                            const input = document.getElementById(e.target.htmlFor);
+                                            if (input) {
+                                                input.__shiftKey = e.shiftKey;
+                                                input.click();
+                                            }
+                                        },
+                                    }),
                                 ),
                             ),
                             () => {

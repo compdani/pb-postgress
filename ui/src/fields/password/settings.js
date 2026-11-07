@@ -36,6 +36,16 @@ export function settings(props) {
                         placeholder: "No min limit",
                         value: () => props.field.min || "",
                         oninput: (e) => {
+                            // temp skip invalid numbers with leading 0 while typing to avoid reseting the entire input
+                            // (always normalized in onchange)
+                            if (e.target.value?.length > 1 && e.target.value[0] == "0") {
+                                return;
+                            }
+
+                            props.field.min = parseInt(e.target.value, 10);
+                        },
+                        onchange: (e) => {
+                            props.field.min = null; // reset reactivity
                             props.field.min = parseInt(e.target.value, 10);
                         },
                     }),
@@ -65,6 +75,16 @@ export function settings(props) {
                         placeholder: "Up to 71 chars",
                         value: () => props.field.max || "",
                         oninput: (e) => {
+                            // temp skip invalid numbers with leading 0 while typing to avoid reseting the entire input
+                            // (always normalized in onchange)
+                            if (e.target.value?.length > 1 && e.target.value[0] == "0") {
+                                return;
+                            }
+
+                            props.field.max = parseInt(e.target.value, 10);
+                        },
+                        onchange: (e) => {
+                            props.field.max = null; // reset reactivity
                             props.field.max = parseInt(e.target.value, 10);
                         },
                     }),
@@ -95,6 +115,16 @@ export function settings(props) {
                         placeholder: "Default to 10",
                         value: () => props.field.cost || "",
                         oninput: (e) => {
+                            // temp skip invalid numbers with leading 0 while typing to avoid reseting the entire input
+                            // (always normalized in onchange)
+                            if (e.target.value?.length > 1 && e.target.value[0] == "0") {
+                                return;
+                            }
+
+                            props.field.cost = parseInt(e.target.value, 10);
+                        },
+                        onchange: (e) => {
+                            props.field.cost = null; // reset reactivity
                             props.field.cost = parseInt(e.target.value, 10);
                         },
                     }),

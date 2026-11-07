@@ -1118,7 +1118,7 @@ const utils = {
             return searchTerm;
         }
 
-        const opChars = ["=", "!=", "~", "!~", ">", ">=", "<", "<="];
+        const opChars = ["=", "~", ">", "<"];
 
         // loosely check if it is already a filter expression
         for (const op of opChars) {
@@ -1128,10 +1128,12 @@ const utils = {
         }
 
         searchTerm = isNaN(searchTerm) && searchTerm != "true" && searchTerm != "false"
-            ? `"${searchTerm.replace(/^[\"\'\`]|[\"\'\`]$/gm, "")}"`
+            ? searchTerm.replace(/^[\"\'\`]|[\"\'\`]$/gm, "")
             : searchTerm;
 
-        return fallbackFields.map((f) => `${f}~${searchTerm}`).join("||");
+        return fallbackFields.map((f) => {
+            return app.pb.filter(`${f}?~{:searchTerm}`, { searchTerm });
+        }).join("||");
     },
 
     logLevels: {
@@ -1251,11 +1253,67 @@ const utils = {
         return yiq < 128;
     },
 
+    /**
+     * Applies a bulk selection from the last bulkSelected model entry
+     * to the specified current one (used for "Shift + Click" selection).
+     *
+     * The bulkSelected argument is changed in place.
+     *
+     * @param {Array}   models
+     * @param {Object}  bulkSelected
+     * @param {Object}  currentModel
+     * @param {boolean} checked
+     */
+    bulkSelectRange(models, bulkSelected, currentModel, checked) {
+        const currentSelectedIndex = models.findIndex((m) => m.id == currentModel.id);
+        if (currentSelectedIndex == -1) {
+            return;
+        }
+
+        const bulkSelectedKeys = Object.keys(bulkSelected);
+        const lastSelectedId = bulkSelectedKeys[bulkSelectedKeys.length - 1];
+        const lastSelectedIndex = models.findIndex((m) => m.id == lastSelectedId);
+        if (lastSelectedIndex == -1) {
+            return;
+        }
+
+        let start = lastSelectedIndex;
+        let end = currentSelectedIndex;
+        if (start > end) {
+            [start, end] = [end, start];
+        }
+
+        for (let i = start; i <= end; i++) {
+            if (checked) {
+                bulkSelected[models[i].id] = models[i];
+            } else {
+                delete bulkSelected[models[i].id];
+            }
+        }
+    },
+
     // ---------------------------------------------------------------
     imageExtensions: [".jpg", ".jpeg", ".png", ".svg", ".gif", ".jfif", ".webp", ".avif"],
     videoExtensions: [".mp4", ".avi", ".mov", ".3gp", ".wmv"],
     audioExtensions: [".aa", ".aac", ".m4v", ".mp3", ".ogg", ".oga", ".mogg", ".amr"],
     documentExtensions: [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odp", ".odt", ".ods", ".txt"],
+    archiveExtensions: [".zip", ".gz", ".tar", ".rar", ".7z"],
+
+    /**
+     * Loosely check if a file has an extension from the specified list.
+     *
+     * @param  {Array} extensionsList
+     * @param  {string} filename
+     * @return {boolean}
+     */
+    hasExtension(extensionsList, filename) {
+        if (typeof filename != "string") {
+            return false;
+        }
+
+        filename = filename.toLowerCase();
+        return !!extensionsList?.find((ext) => filename.endsWith(ext));
+    },
 
     /**
      * Loosely check if a file has image extension.
@@ -1264,8 +1322,7 @@ const utils = {
      * @return {boolean}
      */
     hasImageExtension(filename) {
-        filename = (filename || "").toLowerCase();
-        return !!app.utils.imageExtensions.find((ext) => filename.endsWith(ext));
+        return app.utils.hasExtension(app.utils.imageExtensions, filename);
     },
 
     /**
@@ -1275,8 +1332,7 @@ const utils = {
      * @return {boolean}
      */
     hasVideoExtension(filename) {
-        filename = (filename || "").toLowerCase();
-        return !!app.utils.videoExtensions.find((ext) => filename.endsWith(ext));
+        return app.utils.hasExtension(app.utils.videoExtensions, filename);
     },
 
     /**
@@ -1286,8 +1342,7 @@ const utils = {
      * @return {boolean}
      */
     hasAudioExtension(filename) {
-        filename = (filename || "").toLowerCase();
-        return !!app.utils.audioExtensions.find((ext) => filename.endsWith(ext));
+        return app.utils.hasExtension(app.utils.audioExtensions, filename);
     },
 
     /**
@@ -1297,8 +1352,17 @@ const utils = {
      * @return {boolean}
      */
     hasDocumentExtension(filename) {
-        filename = (filename || "").toLowerCase();
-        return !!app.utils.documentExtensions.find((ext) => filename.endsWith(ext));
+        return app.utils.hasExtension(app.utils.documentExtensions, filename);
+    },
+
+    /**
+     * Loosely check if a file has an archive extension.
+     *
+     * @param  {string} filename
+     * @return {boolean}
+     */
+    hasArchiveExtension(filename) {
+        return app.utils.hasExtension(app.utils.archiveExtensions, filename);
     },
 
     /**
@@ -1312,6 +1376,7 @@ const utils = {
         if (app.utils.hasVideoExtension(filename)) return "video";
         if (app.utils.hasAudioExtension(filename)) return "audio";
         if (app.utils.hasDocumentExtension(filename)) return "document";
+        if (app.utils.hasArchiveExtension(filename)) return "archive";
         return "file";
     },
     fileTypeIcons: {
@@ -1319,6 +1384,7 @@ const utils = {
         video: "ri-movie-line",
         audio: "ri-music-2-line",
         document: "ri-file-line",
+        archive: "ri-file-zip-line",
         file: "ri-file-line",
     },
 
@@ -1601,14 +1667,14 @@ const utils = {
         };
 
         const indexRegex =
-            /create\s+(unique\s+)?\s*index\s*(if\s+not\s+exists\s+)?(\S*)\s+on\s+(\S*)\s*\(([\s\S]*)\)(?:\s*where\s+([\s\S]*))?/gim;
+            /\s*create\s+(unique\s+)?\s*index\s*(if\s+not\s+exists\s+)?(\S*)\s+on\s+(\S*)\s*\(([\s\S]*?)\)(?:\s*where\s+([\s\S]*?))?\s*$/gi;
         const matches = indexRegex.exec((idx || "").trim());
 
         if (matches?.length != 7) {
             return result;
         }
 
-        const sqlQuoteRegex = /^[\"\'\`\[\{}]|[\"\'\`\]\}]$/gm;
+        const sqlQuoteRegex = /^[\"\'\`\[\{}]|[\"\'\`\]\}]$/g;
 
         // unique
         result.unique = matches[1]?.trim().toLowerCase() === "unique";
@@ -1631,13 +1697,13 @@ const utils = {
 
         // columns
         const rawColumns = (matches[5] || "")
-            .replace(/,(?=[^\(]*\))/gim, "{PB_TEMP}") // temporary replace comma within expressions for easier splitting
+            .replace(/,(?=[^\(]*\))/gi, "{PB_TEMP}") // temporary replace comma within expressions for easier splitting
             .split(","); // split columns
 
         for (let col of rawColumns) {
             col = col.trim().replaceAll("{PB_TEMP}", ","); // revert temp replacement
 
-            const colRegex = /^([\s\S]+?)(?:\s+collate\s+([\w]+))?(?:\s+(asc|desc))?$/gim;
+            const colRegex = /^([\s\S]+?)(?:\s+collate\s+([\w]+))?(?:\s+(asc|desc))?\s*$/gi;
             const colMatches = colRegex.exec(col);
             if (colMatches?.length != 4) {
                 continue;
