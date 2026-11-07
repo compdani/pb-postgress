@@ -129,7 +129,7 @@ type excludeHooks<Type> = {
 type CoreApp = excludeHooks<ORIGINAL_CORE_APP>
 
 // pocketbase.PocketBase without the on* hook methods
-type PocketBase = excludeHooks<ORIGINAL_POCKETBASE>
+interface PocketBase extends excludeHooks<ORIGINAL_POCKETBASE>{}
 
 /**
  * ` + "`$app`" + ` is the current running PocketBase instance that is globally
@@ -1289,7 +1289,7 @@ func main() {
 
 	gen := tygoja.New(tygoja.Config{
 		Packages: map[string][]string{
-			"github.com/go-ozzo/ozzo-validation/v4":             {"Error"},
+			"github.com/pocketbase/ozzo-validation/v4":          {"Error"},
 			"github.com/pocketbase/dbx":                         {"*"},
 			"github.com/pocketbase/pocketbase/tools/security":   {"*"},
 			"github.com/pocketbase/pocketbase/tools/filesystem": {"*"},

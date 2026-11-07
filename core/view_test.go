@@ -236,6 +236,12 @@ func TestCreateViewFields(t *testing.T) {
 			nil,
 		},
 		{
+			"wrapped query with wildcard column",
+			"select * from (select 1 as id)",
+			true,
+			nil,
+		},
+		{
 			"query without id",
 			"select text, url, created, updated from demo1",
 			true,
@@ -781,7 +787,7 @@ func TestDryRunView(t *testing.T) {
 		},
 		{
 			"select resolving to records with missing id",
-			"(select 'a' as id UNION ALL select null as id UNION ALL select 'c' as id)",
+			"select id from (select 'a' as id UNION ALL select null as id UNION ALL select 'c' as id)",
 			10,
 			true,
 			nil,
@@ -789,7 +795,7 @@ func TestDryRunView(t *testing.T) {
 		},
 		{
 			"select resolving to records with duplicated ids",
-			"(select 'a' as id UNION ALL select 'a' as id UNION ALL select 'c' as id)",
+			"select id from (select 'a' as id UNION ALL select 'a' as id UNION ALL select 'c' as id)",
 			10,
 			true,
 			nil,
@@ -797,7 +803,7 @@ func TestDryRunView(t *testing.T) {
 		},
 		{
 			"no sample size and valid select query but with invalid records result",
-			"(select 'a' as id UNION ALL select 'a' as id UNION ALL select 'c' as id)",
+			"select id from (select 'a' as id UNION ALL select 'a' as id UNION ALL select 'c' as id)",
 			0,
 			false, // still "valid" because there is no sample to check
 			map[string]string{"id": "text"},
@@ -805,7 +811,7 @@ func TestDryRunView(t *testing.T) {
 		},
 		{
 			"sample size < total select records",
-			"(select 'a' as id UNION ALL select 'b' as id UNION ALL select 'c' as id UNION ALL select 'd' as id)",
+			"select id from (select 'a' as id UNION ALL select 'b' as id UNION ALL select 'c' as id UNION ALL select 'd' as id)",
 			3,
 			false,
 			map[string]string{"id": "text"},
