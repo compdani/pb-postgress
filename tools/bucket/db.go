@@ -154,7 +154,10 @@ func (d *DB) Register(ctx context.Context, h Host) error {
 	}
 
 	var other string
-	err = tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT mode FROM %s WHERE mode <> %s LIMIT 1`, d.hostsTable, d.ph(1)), h.Mode).Scan(&other)
+	// A locking (current) read: on MySQL the named lock is released before
+	// commit, so a plain REPEATABLE READ snapshot could miss a full/s3 row
+	// whose writer has not committed yet. FOR UPDATE waits for that commit.
+	err = tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT mode FROM %s WHERE mode <> %s LIMIT 1 FOR UPDATE`, d.hostsTable, d.ph(1)), h.Mode).Scan(&other)
 	if err == nil {
 		return fmt.Errorf("a %q file host is already registered; remove it from _fileHosts before starting a bucket", other)
 	}

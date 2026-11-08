@@ -186,3 +186,57 @@ func TestFileHostRegistrationIsSerialized(t *testing.T) {
 		t.Fatalf("full host lost: %+v %v", host, err)
 	}
 }
+
+// A bucket racing PocketBase's SetFileHost(full) must never end up replacing
+// the full host: if both succeed, the bucket ran first and the full host wins.
+func TestFileHostRegistrationKeepsConcurrentFullHost(t *testing.T) {
+	cfg := tests.NewDatabaseConfig(t)
+	app := core.NewBaseApp(cfg)
+	if err := app.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { app.ResetBootstrapState() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	db, err := bucket.OpenDB(ctx, cfg.DBDriver, cfg.DBDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.EnsureSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	for round := 0; round < 20; round++ {
+		if _, err := app.DB().NewQuery("DELETE FROM {{_fileHosts}}").Execute(); err != nil {
+			t.Fatal(err)
+		}
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		var fullErr, bucketErr error
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			fullErr = app.SetFileHost(core.FileHost{InstanceID: "full_host", URL: "http://127.0.0.1:8090", Mode: "full"})
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			bucketErr = db.Register(ctx, bucket.Host{ID: "bucket_host", URL: "http://127.0.0.1:8091", Secret: "s"})
+		}()
+		close(start)
+		wg.Wait()
+		if fullErr != nil {
+			t.Fatalf("round %d: SetFileHost: %v", round, fullErr)
+		}
+		host, err := app.FileHost()
+		if err != nil || host == nil {
+			t.Fatalf("round %d: %+v %v", round, host, err)
+		}
+		if host.Mode != "full" {
+			t.Fatalf("round %d: bucket (err %v) replaced a full host", round, bucketErr)
+		}
+	}
+}
