@@ -79,18 +79,19 @@ func (app *BaseApp) SetFileHost(host FileHost) error {
 		// Same lock as the bucket's Register, so a concurrent bucket start
 		// cannot interleave with this replace.
 		if asBaseApp(txApp).SQLDialect() == DialectMySQL {
+			// Same name as tools/bucket (FileHostsLockName + database name).
 			// A named lock, not a row lock: on an empty table MySQL's gap
 			// locks are shared, so two first writers would deadlock. It is
 			// released before commit; the next writer then blocks on the
 			// inserted row until this transaction commits.
 			var got int
-			if err := txApp.DB().NewQuery("SELECT GET_LOCK({:name}, 30)").Bind(dbx.Params{"name": "pb_file_hosts"}).Row(&got); err != nil {
+			if err := txApp.DB().NewQuery("SELECT GET_LOCK(CONCAT({:name}, DATABASE()), 30)").Bind(dbx.Params{"name": "pb_file_hosts:"}).Row(&got); err != nil {
 				return err
 			}
 			if got != 1 {
 				return errors.New("timed out waiting for the _fileHosts lock")
 			}
-			defer txApp.DB().NewQuery("SELECT RELEASE_LOCK({:name})").Bind(dbx.Params{"name": "pb_file_hosts"}).Execute()
+			defer txApp.DB().NewQuery("SELECT RELEASE_LOCK(CONCAT({:name}, DATABASE()))").Bind(dbx.Params{"name": "pb_file_hosts:"}).Execute()
 		} else if _, err := txApp.DB().NewQuery("LOCK TABLE {{_fileHosts}} IN EXCLUSIVE MODE").Execute(); err != nil {
 			return err
 		}

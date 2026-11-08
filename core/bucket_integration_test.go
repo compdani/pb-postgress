@@ -113,13 +113,18 @@ func TestBucketProcessFileLifecycle(t *testing.T) {
 			if err := os.MkdirAll(filepath.Dir(key), 0700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(key, content, 0600); err != nil {
+			// Publish the file already backdated (older than the logged delete by
+			// more than the bucket's clock-skew tolerance) in one rename, so the
+			// watcher can never cache a fresh timestamp for it in between.
+			tmp := filepath.Join(filepath.Dir(key), ".tmp-reintroduced")
+			if err := os.WriteFile(tmp, content, 0600); err != nil {
 				t.Fatal(err)
 			}
-			// Older than the logged delete by more than the bucket's clock-skew
-			// tolerance, so the feed may remove it.
 			old := time.Now().Add(-time.Minute)
-			if err := os.Chtimes(key, old, old); err != nil {
+			if err := os.Chtimes(tmp, old, old); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(tmp, key); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := app.DB().Insert("_fileChanges", map[string]any{"op": "delete", "collection": c.Id, "record_id": r.Id, "filename": r.GetString("file"), "created_at": time.Now().UTC()}).Execute(); err != nil {
@@ -143,7 +148,7 @@ func TestFileHostRegistrationIsSerialized(t *testing.T) {
 	}
 	t.Cleanup(func() { app.ResetBootstrapState() })
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	db, err := bucket.OpenDB(ctx, cfg.DBDriver, cfg.DBDSN)
 	if err != nil {

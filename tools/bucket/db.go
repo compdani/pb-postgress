@@ -406,9 +406,11 @@ func quoteIdent(driver, name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
-// FileHostsLockName is the MySQL named lock that serializes writers of
-// _fileHosts (the bucket's Register and PocketBase's SetFileHost).
-const FileHostsLockName = "pb_file_hosts"
+// FileHostsLockName prefixes the MySQL named lock that serializes writers of
+// _fileHosts (the bucket's Register and PocketBase's SetFileHost). Named locks
+// are server-wide, so the current database name is appended; both sides build
+// the name the same way in SQL.
+const FileHostsLockName = "pb_file_hosts:"
 
 // lockFileHostsMySQL takes the named lock on the transaction's connection.
 // A row lock cannot do this: on an empty table MySQL's gap locks are shared,
@@ -417,7 +419,7 @@ const FileHostsLockName = "pb_file_hosts"
 // (before Commit or Rollback), or the pooled connection keeps it.
 func lockFileHostsMySQL(ctx context.Context, tx *sql.Tx) (func(), error) {
 	var got sql.NullInt64
-	if err := tx.QueryRowContext(ctx, "SELECT GET_LOCK(?, 30)", FileHostsLockName).Scan(&got); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT GET_LOCK(CONCAT(?, DATABASE()), 30)", FileHostsLockName).Scan(&got); err != nil {
 		return nil, err
 	}
 	if !got.Valid || got.Int64 != 1 {
@@ -426,7 +428,7 @@ func lockFileHostsMySQL(ctx context.Context, tx *sql.Tx) (func(), error) {
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			_, _ = tx.ExecContext(context.Background(), "SELECT RELEASE_LOCK(?)", FileHostsLockName)
+			_, _ = tx.ExecContext(context.Background(), "SELECT RELEASE_LOCK(CONCAT(?, DATABASE()))", FileHostsLockName)
 		})
 	}, nil
 }
