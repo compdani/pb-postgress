@@ -82,16 +82,16 @@ You could also check the recommendations in https://pocketbase.io/docs/how-to-us
 
 ### Use as standalone app
 
-Build it from this repository (there are no prebuilt releases yet). You need [Go 1.27.3+](https://go.dev/doc/install).
+Build it from this repository (releases are tags only, with no prebuilt binaries). You need [Go 1.27.3+](https://go.dev/doc/install).
 
 ```sh
-git clone https://github.com/compdani/pb-postgress.git
+git clone --branch v0.41.1 https://github.com/compdani/pb-postgress.git
 cd pb-postgress
 go build -o pocketbase ./examples/base
 ./pocketbase serve --dbDriver postgres --dbDSN "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
 ```
 
-Without `--dbDriver` / `--dbDSN`, `serve` starts the installer and prints a setup URL. The dashboard is at `/_/`. To update, run `git pull` and build again.
+Without `--dbDriver` / `--dbDSN`, `serve` starts the installer and prints a setup URL. The dashboard is at `/_/`. To update, check out a newer tag and build again.
 
 The executable is based on [`examples/base/main.go`](examples/base/main.go) and has the JS VM plugin enabled, so it can be extended with JavaScript (see [Extend with JavaScript](https://pocketbase.io/docs/js-overview/) in the PocketBase docs).
 
@@ -103,11 +103,11 @@ your own custom app specific business logic and still have a single portable exe
 In a custom app, keep importing `github.com/pocketbase/pocketbase` and point it at this repository:
 
 ```sh
-go mod edit -replace github.com/pocketbase/pocketbase=github.com/compdani/pb-postgress@master
+go mod edit -replace github.com/pocketbase/pocketbase=github.com/compdani/pb-postgress@v0.41.1
 go mod tidy
 ```
 
-(Use a tag or commit instead of `master` to pin a version.) Your app's `go.mod` must also say `go 1.27` or later. Then set `pocketbase.Config{DBDriver, DBDSN}` or the `PB_DB_DRIVER` / `PB_DB_DSN` variables. The server database is required.
+(`v0.41.1` is the [latest release](https://github.com/compdani/pb-postgress/releases/tag/v0.41.1); use a newer tag, a commit or `master` to move to a newer version.) Your app's `go.mod` must also say `go 1.27` or later. Then set `pocketbase.Config{DBDriver, DBDSN}` or the `PB_DB_DRIVER` / `PB_DB_DSN` variables. The server database is required.
 
 Here is a minimal example:
 
