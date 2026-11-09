@@ -1,7 +1,9 @@
 import { emailTemplateAccordion } from "./emailTemplateAccordion";
 import { mfaAccordion } from "./mfaAccordion";
 import { oauth2Accordion } from "./oauth2Accordion";
+import { oauth2ServerAccordion } from "./oauth2ServerAccordion";
 import { otpAccordion } from "./otpAccordion";
+import { passkeyAccordion } from "./passkeyAccordion";
 import { passwordAuthAccordion } from "./passwordAuthAccordion";
 import { tokenOptionsAccordion } from "./tokenOptionsAccordion";
 
@@ -43,7 +45,21 @@ export function collectionAuthOptionsTab(upsertData) {
                     return oauth2Accordion(upsertData.collection);
                 },
                 otpAccordion(upsertData.collection),
+                () => {
+                    if (upsertData.originalCollection?.name == "_superusers") {
+                        return;
+                    }
+
+                    return passkeyAccordion(upsertData.collection);
+                },
                 mfaAccordion(upsertData.collection),
+                () => {
+                    if (upsertData.originalCollection?.name == "_superusers") {
+                        return;
+                    }
+
+                    return oauth2ServerAccordion(upsertData.collection);
+                },
             ),
             t.div(
                 { className: "col-12" },

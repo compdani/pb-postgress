@@ -55,7 +55,6 @@ func TestSettings_DBExport(t *testing.T) {
 			settings.SMTP.Password = "" // ensures that empty password is exported
 			settings.S3.Endpoint = "s3_endpoint"
 			settings.S3.Secret = "s3_secret"
-			settings.Backups.Cron = "* * * * *"
 			settings.Backups.S3.Enabled = true
 			settings.Backups.S3.Secret = ""
 			settings.Batch.Timeout = 15
@@ -84,7 +83,7 @@ func TestSettings_DBExport(t *testing.T) {
 				valueStr = export["value"].(string)
 			}
 
-			expected := `{"superuserIPs":[],"smtp":{"enabled":false,"port":0,"host":"smtp_host","username":"smtp_username","password":"","authMethod":"","tls":false,"localName":""},"backups":{"cron":"* * * * *","cronMaxKeep":0,"s3":{"enabled":true,"bucket":"","region":"","endpoint":"","accessKey":"","forcePathStyle":false}},"s3":{"enabled":false,"bucket":"","region":"","endpoint":"s3_endpoint","accessKey":"","secret":"s3_secret","forcePathStyle":false},"meta":{"accentColor":"","appName":"test_app_name","appURL":"","senderName":"","senderAddress":"","hideControls":false},"rateLimits":{"rules":[],"excludedIPs":[],"enabled":true},"trustedProxy":{"headers":[],"useLeftmostIP":true},"batch":{"enabled":false,"maxRequests":0,"timeout":15,"maxBodySize":0},"logs":{"maxDays":123,"minLevel":0,"logIP":false,"logAuthId":false}}`
+			expected := `{"superuserIPs":[],"smtp":{"enabled":false,"port":0,"host":"smtp_host","username":"smtp_username","password":"","authMethod":"","tls":false,"localName":""},"backups":{"s3":{"enabled":true,"bucket":"","region":"","endpoint":"","accessKey":"","forcePathStyle":false}},"s3":{"enabled":false,"bucket":"","region":"","endpoint":"s3_endpoint","accessKey":"","secret":"s3_secret","forcePathStyle":false},"meta":{"accentColor":"","appName":"test_app_name","appURL":"","senderName":"","senderAddress":"","hideControls":false},"rateLimits":{"rules":[],"excludedIPs":[],"enabled":true},"trustedProxy":{"headers":[],"useLeftmostIP":true},"batch":{"enabled":false,"maxRequests":0,"timeout":15,"maxBodySize":0},"logs":{"maxDataSize":0,"maxDays":123,"minLevel":0,"logIP":false,"logAuthId":false}}`
 			if valueStr != expected {
 				t.Fatalf("Expected exported settings\n%s\ngot\n%s", expected, valueStr)
 			}
@@ -105,7 +104,7 @@ func TestSettingsMerge(t *testing.T) {
 	s2.SMTP.Enabled = true
 	s2.S3.Enabled = true
 	s2.S3.Endpoint = "test"
-	s2.Backups.Cron = "* * * * *"
+	s2.Backups.S3.Bucket = "test"
 	s2.Batch.Timeout = 15
 
 	if err := s1.Merge(s2); err != nil {
@@ -180,7 +179,7 @@ func TestSettingsMarshalJSON(t *testing.T) {
 	}
 	rawStr := string(raw)
 
-	expected := `{"superuserIPs":[],"smtp":{"enabled":false,"port":0,"host":"","username":"abc","authMethod":"","tls":false,"localName":""},"backups":{"cron":"","cronMaxKeep":0,"s3":{"enabled":false,"bucket":"","region":"","endpoint":"","accessKey":"","forcePathStyle":false}},"s3":{"enabled":false,"bucket":"","region":"","endpoint":"","accessKey":"","forcePathStyle":false},"meta":{"accentColor":"","appName":"test123","appURL":"","senderName":"","senderAddress":"","hideControls":false},"rateLimits":{"rules":[],"excludedIPs":[],"enabled":false},"trustedProxy":{"headers":[],"useLeftmostIP":false},"batch":{"enabled":false,"maxRequests":0,"timeout":0,"maxBodySize":0},"logs":{"maxDays":0,"minLevel":0,"logIP":false,"logAuthId":false}}`
+	expected := `{"superuserIPs":[],"smtp":{"enabled":false,"port":0,"host":"","username":"abc","authMethod":"","tls":false,"localName":""},"backups":{"s3":{"enabled":false,"bucket":"","region":"","endpoint":"","accessKey":"","forcePathStyle":false}},"s3":{"enabled":false,"bucket":"","region":"","endpoint":"","accessKey":"","forcePathStyle":false},"meta":{"accentColor":"","appName":"test123","appURL":"","senderName":"","senderAddress":"","hideControls":false},"rateLimits":{"rules":[],"excludedIPs":[],"enabled":false},"trustedProxy":{"headers":[],"useLeftmostIP":false},"batch":{"enabled":false,"maxRequests":0,"timeout":0,"maxBodySize":0},"logs":{"maxDataSize":0,"maxDays":0,"minLevel":0,"logIP":false,"logAuthId":false}}`
 
 	if rawStr != expected {
 		t.Fatalf("Expected\n%v\ngot\n%v", expected, rawStr)
@@ -203,8 +202,8 @@ func TestSettingsValidate(t *testing.T) {
 	s.SMTP.Host = ""
 	s.S3.Enabled = true
 	s.S3.Endpoint = "invalid"
-	s.Backups.Cron = "invalid"
-	s.Backups.CronMaxKeep = -10
+	s.Backups.S3.Enabled = true
+	s.Backups.S3.Endpoint = "invalid"
 	s.Batch.Enabled = true
 	s.Batch.MaxRequests = -1
 	s.Batch.Timeout = -1
@@ -502,14 +501,6 @@ func TestBackupsConfigValidate(t *testing.T) {
 			[]string{},
 		},
 		{
-			"invalid cron",
-			core.BackupsConfig{
-				Cron:        "invalid",
-				CronMaxKeep: 0,
-			},
-			[]string{"cron", "cronMaxKeep"},
-		},
-		{
 			"invalid enabled S3",
 			core.BackupsConfig{
 				S3: core.S3Config{
@@ -529,8 +520,6 @@ func TestBackupsConfigValidate(t *testing.T) {
 					AccessKey: "test",
 					Secret:    "test",
 				},
-				Cron:        "*/10 * * * *",
-				CronMaxKeep: 1,
 			},
 			[]string{},
 		},

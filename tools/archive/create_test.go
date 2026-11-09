@@ -48,9 +48,9 @@ func TestCreateSuccess(t *testing.T) {
 		t.Fatalf("Expected zip with name %q, got %q", zipName, name)
 	}
 
-	expectedSize := int64(544)
-	if size := info.Size(); size != expectedSize {
-		t.Fatalf("Expected zip with size %d, got %d", expectedSize, size)
+	// the compressed size depends on the Go version (544 up to Go 1.26, 532 with Go 1.27+)
+	if size := info.Size(); size != 544 && size != 532 {
+		t.Fatalf("Expected zip with size 544 or 532, got %d", size)
 	}
 }
 

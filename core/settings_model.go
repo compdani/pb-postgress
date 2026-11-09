@@ -16,7 +16,6 @@ import (
 	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/ozzo-validation/v4/is"
 	"github.com/pocketbase/pocketbase/core/validators"
-	"github.com/pocketbase/pocketbase/tools/cron"
 	"github.com/pocketbase/pocketbase/tools/hook"
 	"github.com/pocketbase/pocketbase/tools/mailer"
 	"github.com/pocketbase/pocketbase/tools/security"
@@ -165,9 +164,6 @@ func newDefaultSettings() *Settings {
 				Username: "",
 				Password: "",
 				TLS:      false,
-			},
-			Backups: BackupsConfig{
-				CronMaxKeep: 3,
 			},
 			Batch: BatchConfig{
 				Enabled:     false,
@@ -506,18 +502,11 @@ func (c BatchConfig) Validate() error {
 
 // -------------------------------------------------------------------
 
+// BackupsConfig configures where on-demand backups are stored.
+//
+// There are no scheduled backups: the PostgreSQL/MySQL server is
+// responsible for regular database backups.
 type BackupsConfig struct {
-	// Cron is a cron expression to schedule auto backups, eg. "* * * * *".
-	//
-	// Leave it empty to disable the auto backups functionality.
-	Cron string `form:"cron" json:"cron"`
-
-	// CronMaxKeep is the max number of cron generated backups to
-	// keep before removing older entries.
-	//
-	// This field works only when the cron config has valid cron expression.
-	CronMaxKeep int `form:"cronMaxKeep" json:"cronMaxKeep"`
-
 	// S3 is an optional S3 storage config specifying where to store the app backups.
 	S3 S3Config `form:"s3" json:"s3"`
 }
@@ -526,27 +515,7 @@ type BackupsConfig struct {
 func (c BackupsConfig) Validate() error {
 	return validation.ValidateStruct(&c,
 		validation.Field(&c.S3),
-		validation.Field(&c.Cron, validation.By(checkCronExpression)),
-		validation.Field(
-			&c.CronMaxKeep,
-			validation.When(c.Cron != "", validation.Required),
-			validation.Min(1),
-		),
 	)
-}
-
-func checkCronExpression(value any) error {
-	v, _ := value.(string)
-	if v == "" {
-		return nil // nothing to check
-	}
-
-	_, err := cron.NewSchedule(v)
-	if err != nil {
-		return validation.NewError("validation_invalid_cron", err.Error())
-	}
-
-	return nil
 }
 
 // -------------------------------------------------------------------
@@ -579,6 +548,12 @@ func (c MetaConfig) Validate() error {
 // -------------------------------------------------------------------
 
 type LogsConfig struct {
+	// MaxDataSize specifies the maximum allowed serialized log data
+	// size before it gets truncated (see [Log.DBExport]).
+	//
+	// If zero, fallbacks to ~16kb by default.
+	MaxDataSize int64 `form:"maxDataSize" json:"maxDataSize"`
+
 	MaxDays   int  `form:"maxDays" json:"maxDays"`
 	MinLevel  int  `form:"minLevel" json:"minLevel"`
 	LogIP     bool `form:"logIP" json:"logIP"`
@@ -588,6 +563,7 @@ type LogsConfig struct {
 // Validate makes LogsConfig validatable by implementing [validation.Validatable] interface.
 func (c LogsConfig) Validate() error {
 	return validation.ValidateStruct(&c,
+		validation.Field(&c.MaxDataSize, validation.Min(0), validation.Max(maxSafeJSONInt)),
 		validation.Field(&c.MaxDays, validation.Min(0)),
 	)
 }

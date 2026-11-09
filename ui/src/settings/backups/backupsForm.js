@@ -5,20 +5,12 @@ export function backupsForm(propsArg = {}) {
 
     const watchers = app.utils.extendStore(props, propsArg);
 
-    const presets = [
-        { cron: "0 0 * * *", label: "Every day at 00:00h" },
-        { cron: "0 0 * * 0", label: "Every sunday at 00:00h" },
-        { cron: "0 0 * * 1,3", label: "Every Mon and Wed at 00:00h" },
-        { cron: "0 0 1 * *", label: "Every first day of the month at 00:00h" },
-    ];
-
     const data = store({
         showForm: false,
         isLoading: false,
         isSaving: false,
         formSettings: null,
         initSerialized: "null",
-        enableAutoBackups: false,
         get hasChanges() {
             return data.initSerialized != JSON.stringify(data.formSettings);
         },
@@ -68,25 +60,15 @@ export function backupsForm(propsArg = {}) {
         app.store.settings = JSON.parse(JSON.stringify(settings));
 
         data.formSettings = {
-            backups: settings?.backups || {},
+            backups: { s3: settings?.backups?.s3 || {} },
         };
 
-        data.enableAutoBackups = !!data.formSettings.backups.cron;
         data.initSerialized = JSON.stringify(data.formSettings);
     }
 
     function reset() {
         data.formSettings = JSON.parse(data.initSerialized);
-        data.enableAutoBackups = !!data.formSettings.backups.cron;
     }
-
-    watchers.push(
-        watch(() => {
-            if (!data.enableAutoBackups && data.formSettings?.backups?.cron) {
-                data.formSettings.backups.cron = "";
-            }
-        }),
-    );
 
     return t.div(
         {
@@ -131,121 +113,9 @@ export function backupsForm(propsArg = {}) {
                     return [
                         t.div(
                             { className: "col-lg-12" },
-                            t.div(
-                                { className: "field" },
-                                t.input({
-                                    id: "enableAutoBackupsToggle",
-                                    type: "checkbox",
-                                    className: "switch",
-                                    checked: () => data.enableAutoBackups,
-                                    onchange: (e) => {
-                                        data.enableAutoBackups = e.target.checked;
-                                        if (!data.formSettings.backups.cron) {
-                                            data.formSettings.backups.cron = presets[0].cron;
-                                        }
-                                    },
-                                }),
-                                t.label({ htmlFor: "enableAutoBackupsToggle" }, "Enable auto backups"),
-                            ),
-                            app.components.slide(
-                                () => data.enableAutoBackups,
-                                t.div(
-                                    { className: "grid m-t-base m-b-base" },
-                                    t.div(
-                                        { className: "col-lg-6" },
-                                        t.div(
-                                            { className: "fields" },
-                                            t.div(
-                                                { className: "field" },
-                                                t.label({ htmlFor: "backups.cron" }, "Cron expression"),
-                                                t.input({
-                                                    id: "backups.cron",
-                                                    name: "backups.cron",
-                                                    className: "txt-code",
-                                                    type: "text",
-                                                    placeholder: "e.g. 0 0 * * *",
-                                                    required: () => data.enableAutoBackups,
-                                                    value: () => data.formSettings.backups.cron,
-                                                    oninput: (e) => (data.formSettings.backups.cron = e.target.value),
-                                                }),
-                                            ),
-                                            t.div(
-                                                { className: "field addon" },
-                                                t.button(
-                                                    {
-                                                        type: "button",
-                                                        className: "btn outline sm",
-                                                        "html-popovertarget": "cron-presets-dropdown",
-                                                    },
-                                                    t.span({ className: "txt" }, "Presets"),
-                                                    t.i({ className: "ri-arrow-drop-down-line", ariaHidden: true }),
-                                                ),
-                                                t.div(
-                                                    {
-                                                        id: "cron-presets-dropdown",
-                                                        className: "dropdown sm txt-nowrap",
-                                                        popover: "auto",
-                                                    },
-                                                    () => {
-                                                        return presets.map((preset) => {
-                                                            return t.button({
-                                                                type: "button",
-                                                                className: () =>
-                                                                    `dropdown-item ${
-                                                                        data.formSettings.backups.cron == preset.cron
-                                                                            ? "active"
-                                                                            : ""
-                                                                    }`,
-                                                                textContent: preset.label,
-                                                                onclick: (e) => {
-                                                                    data.formSettings.backups.cron = preset.cron;
-                                                                    e.target.closest(".dropdown").hidePopover();
-                                                                },
-                                                            });
-                                                        });
-                                                    },
-                                                ),
-                                            ),
-                                        ),
-                                        t.div(
-                                            { className: "field-help" },
-                                            "Supports numeric list, steps, ranges or ",
-                                            t.strong(
-                                                {
-                                                    className: "link-hint tooltip-bottom",
-                                                    ariaDescription: app.attrs.tooltip(
-                                                        "@yearly\n@annually\n@monthly\n@weekly\n@daily\n@midnight\n@hourly",
-                                                    ),
-                                                },
-                                                "macros",
-                                            ),
-                                            ".",
-                                            t.br(),
-                                            "By default the timezone is in UTC.",
-                                        ),
-                                    ),
-                                    t.div(
-                                        { className: "col-lg-6" },
-                                        t.div(
-                                            { className: "field" },
-                                            t.label({ htmlFor: "backups.cronMaxKeep" }, "Max @auto backups to keep"),
-                                            t.input({
-                                                id: "backups.cronMaxKeep",
-                                                name: "backups.cronMaxKeep",
-                                                type: "number",
-                                                required: () => data.enableAutoBackups,
-                                                min: 1,
-                                                value: () => data.formSettings.backups.cronMaxKeep,
-                                                oninput: (e) => {
-                                                    data.formSettings.backups.cronMaxKeep = parseInt(
-                                                        e.target.value,
-                                                        10,
-                                                    );
-                                                },
-                                            }),
-                                        ),
-                                    ),
-                                ),
+                            t.p(
+                                { className: "txt-hint" },
+                                "Backups are created on demand. Scheduled backups belong to your PostgreSQL or MySQL server (base backups, point-in-time recovery, binlogs or managed snapshots).",
                             ),
                         ),
                         t.div(

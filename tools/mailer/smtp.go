@@ -95,7 +95,9 @@ func (c *SMTPClient) send(m *Message) error {
 	}
 	yak.From(m.From.Address)
 	yak.Subject(m.Subject)
-	yak.HTML().Set(m.HTML)
+	if m.HTML != "" {
+		yak.HTML().Set(m.HTML)
+	}
 
 	if m.Text == "" {
 		// try to generate a plain text version of the HTML

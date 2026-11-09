@@ -147,11 +147,17 @@ func collectionUpdate(e *core.RequestEvent) error {
 
 	originalExternal := *collection
 
+	// bind onto secret-less clients so that a client without a submitted
+	// secret can't inherit another client's secret through slice reuse
+	originalOAuth2ServerClients := collection.OAuth2Server.Clients
+	collection.OAuth2Server.Clients = core.RedactedOAuth2ServerClients(originalOAuth2ServerClients)
+
 	if err := e.BindBody(collection); err != nil {
 		return e.BadRequestError("Failed to load the submitted data due to invalid formatting.", err)
 	}
 
 	collection.RestoreImmutableExternalOptions(originalExternal)
+	collection.OAuth2Server.RestoreSecrets(originalOAuth2ServerClients)
 
 	event := new(core.CollectionRequestEvent)
 	event.RequestEvent = e

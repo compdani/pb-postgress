@@ -151,6 +151,12 @@ migrate((app) => {
         "username": ""
       }
     },
+    "oauth2Server": {
+      "clients": [],
+      "codeDuration": 120,
+      "enabled": false,
+      "sessionDuration": 2592000
+    },
     "otp": {
       "duration": 180,
       "emailTemplate": {
@@ -159,6 +165,12 @@ migrate((app) => {
       },
       "enabled": false,
       "length": 8
+    },
+    "passkey": {
+      "enabled": false,
+      "origins": null,
+      "rpId": "",
+      "rpName": ""
     },
     "passwordAuth": {
       "enabled": true,
@@ -333,6 +345,12 @@ func init() {
 					"username": ""
 				}
 			},
+			"oauth2Server": {
+				"clients": [],
+				"codeDuration": 120,
+				"enabled": false,
+				"sessionDuration": 2592000
+			},
 			"otp": {
 				"duration": 180,
 				"emailTemplate": {
@@ -341,6 +359,12 @@ func init() {
 				},
 				"enabled": false,
 				"length": 8
+			},
+			"passkey": {
+				"enabled": false,
+				"origins": null,
+				"rpId": "",
+				"rpName": ""
 			},
 			"passwordAuth": {
 				"enabled": true,
@@ -604,6 +628,12 @@ migrate((app) => {
         "username": ""
       }
     },
+    "oauth2Server": {
+      "clients": [],
+      "codeDuration": 120,
+      "enabled": false,
+      "sessionDuration": 2592000
+    },
     "otp": {
       "duration": 180,
       "emailTemplate": {
@@ -612,6 +642,12 @@ migrate((app) => {
       },
       "enabled": false,
       "length": 8
+    },
+    "passkey": {
+      "enabled": false,
+      "origins": null,
+      "rpId": "",
+      "rpName": ""
     },
     "passwordAuth": {
       "enabled": true,
@@ -789,6 +825,12 @@ func init() {
 					"username": ""
 				}
 			},
+			"oauth2Server": {
+				"clients": [],
+				"codeDuration": 120,
+				"enabled": false,
+				"sessionDuration": 2592000
+			},
 			"otp": {
 				"duration": 180,
 				"emailTemplate": {
@@ -797,6 +839,12 @@ func init() {
 				},
 				"enabled": false,
 				"length": 8
+			},
+			"passkey": {
+				"enabled": false,
+				"origins": null,
+				"rpId": "",
+				"rpName": ""
 			},
 			"passwordAuth": {
 				"enabled": true,

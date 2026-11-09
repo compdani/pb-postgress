@@ -2,7 +2,6 @@ package apis
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"regexp"
 
@@ -30,10 +29,7 @@ func backupCreate(e *core.RequestEvent) error {
 
 	err = e.App.CreateBackup(context.Background(), form.Name)
 	if err != nil {
-		if errors.Is(err, core.ErrServerDatabaseBackupUnsupported) {
-			return e.BadRequestError(err.Error(), err)
-		}
-		return e.BadRequestError("Failed to create backup.", err)
+		return e.BadRequestError("Failed to create backup: "+err.Error(), nil)
 	}
 
 	// we don't retrieve the generated backup file because it may not be

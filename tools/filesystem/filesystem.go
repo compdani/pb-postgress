@@ -654,7 +654,7 @@ func (s *System) createThumb(originalKey, thumbKey, thumbSize string) error {
 
 	maxPixels := cast.ToInt64(os.Getenv("PB_THUMBS_MAX_SOURCE_PIXELS"))
 	if maxPixels <= 0 {
-		maxPixels = 250 << 20
+		maxPixels = 100 << 20
 	}
 
 	currentDimensions := int64(config.Width) * int64(config.Height)

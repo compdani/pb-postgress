@@ -96,11 +96,11 @@ function backupCreateModal(settings) {
                             { className: "content" },
                             t.p(
                                 null,
-                                `Please note that during the backup the performance could be slightly degraded and some queries may take longer to complete than usual.`,
+                                `The backup is a portable archive of all collections, records and settings, read from one consistent database snapshot. It can be restored on PostgreSQL or MySQL.`,
                             ),
                             t.p(
                                 { className: "txt-bold" },
-                                `If you are using S3 storage for the collections file upload, you'll have to backup them separately since they are not locally stored and they will not be included in the generated backup!`,
+                                `Uploaded files are included only when they are stored locally. Files in S3 or on a file server are not included; back them up separately.`,
                             ),
                         ),
                     ),

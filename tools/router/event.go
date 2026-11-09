@@ -185,23 +185,24 @@ const jsonFieldsParam = "fields"
 // For example, if you are requesting `?fields=a,b` for `e.JSON(200, map[string]int{ "a":1, "b":2, "c":3 })`,
 // it should result in a JSON response like: `{"a":1, "b": 2}`.
 func (e *Event) JSON(status int, data any) error {
+	rawFields := e.Request.URL.Query().Get(jsonFieldsParam)
+
+	// pick only the requested fields (currently allowed only for "success" responses)
+	//
+	// note: this is done before writing the status header so that a failed
+	// picker doesn't prevent custom error status code to be set by the caller
+	if rawFields != "" && status >= 200 && status <= 299 {
+		modified, err := picker.Pick(data, rawFields)
+		if err != nil {
+			return err
+		}
+		data = modified
+	}
+
 	e.setResponseHeaderIfEmpty(headerContentType, "application/json")
 	e.Response.WriteHeader(status)
 
-	rawFields := e.Request.URL.Query().Get(jsonFieldsParam)
-
-	// error response or no fields to pick
-	if rawFields == "" || status < 200 || status > 299 {
-		return json.NewEncoder(e.Response).Encode(data)
-	}
-
-	// pick only the requested fields
-	modified, err := picker.Pick(data, rawFields)
-	if err != nil {
-		return err
-	}
-
-	return json.NewEncoder(e.Response).Encode(modified)
+	return json.NewEncoder(e.Response).Encode(data)
 }
 
 // XML writes an XML response.

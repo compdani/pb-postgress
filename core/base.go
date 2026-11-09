@@ -748,17 +748,41 @@ func (app *BaseApp) NewFilesystem() (*filesystem.System, error) {
 // NB! Make sure to call Close() on the returned result
 // after you are done working with it.
 func (app *BaseApp) NewFilesystemForCollection(c *Collection) (*filesystem.System, error) {
+	kind, host, err := app.fileStorageKind(c)
+	if err != nil {
+		return nil, err
+	}
+
+	switch kind {
+	case fileStorageS3:
+		return app.newS3Filesystem()
+	case fileStorageRemote:
+		return filesystem.NewRemote(host.URL, host.Secret)
+	default:
+		return filesystem.NewLocal(filepath.Join(app.DataDir(), LocalStorageDirName))
+	}
+}
+
+const (
+	fileStorageLocal  = "local"
+	fileStorageS3     = "s3"
+	fileStorageRemote = "remote"
+)
+
+// fileStorageKind reports where the record files of c (or the app files
+// when c is nil) are stored. host is set only for fileStorageRemote.
+func (app *BaseApp) fileStorageKind(c *Collection) (string, *FileHost, error) {
 	if app.IsBootstrapped() && app.HasTable("_fileHosts") {
 		mode, err := app.FileMode()
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		if mode == "s3" {
-			return app.newS3Filesystem()
+			return fileStorageS3, nil, nil
 		}
 		host, err := app.FileHost()
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		// A full PocketBase host serves the other instances in any mode. A
 		// bucket serves only fileServer mode, so a bucket started next to
@@ -766,10 +790,10 @@ func (app *BaseApp) NewFilesystemForCollection(c *Collection) (*filesystem.Syste
 		if host != nil && (host.Mode == "full" || (host.Mode == "bucket" && mode == "fileServer")) {
 			id, err := app.InstanceID()
 			if err != nil {
-				return nil, err
+				return "", nil, err
 			}
 			if id != host.InstanceID {
-				return filesystem.NewRemote(host.URL, host.Secret)
+				return fileStorageRemote, host, nil
 			}
 		}
 	}
@@ -782,10 +806,10 @@ func (app *BaseApp) NewFilesystemForCollection(c *Collection) (*filesystem.Syste
 	}
 
 	if useS3 {
-		return app.newS3Filesystem()
+		return fileStorageS3, nil, nil
 	}
 
-	return filesystem.NewLocal(filepath.Join(app.DataDir(), LocalStorageDirName))
+	return fileStorageLocal, nil, nil
 }
 
 func (app *BaseApp) newS3Filesystem() (*filesystem.System, error) {
@@ -1495,7 +1519,6 @@ func (app *BaseApp) registerBaseHooks() {
 	})
 
 	app.registerSettingsHooks()
-	app.registerAutobackupHooks()
 	app.registerCollectionHooks()
 	app.registerRecordHooks()
 	app.registerSuperuserHooks()
@@ -1503,6 +1526,8 @@ func (app *BaseApp) registerBaseHooks() {
 	app.registerMFAHooks()
 	app.registerOTPHooks()
 	app.registerAuthOriginHooks()
+	app.registerOAuth2CodeHooks()
+	app.registerPasskeyHooks()
 	app.registerNotifyWatcherHooks()
 }
 

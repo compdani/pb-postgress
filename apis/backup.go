@@ -142,5 +142,21 @@ func backupRestore(e *core.RequestEvent) error {
 		return e.BadRequestError("Missing or invalid backup file.", err)
 	}
 
-	return e.BadRequestError(core.ErrServerDatabaseBackupUnsupported.Error(), nil)
+	// The restore runs synchronously, so a failure is reported to the
+	// caller. It is detached from the request context so a dropped
+	// connection does not abort it halfway.
+	ctx, cancelRestore := context.WithTimeout(context.Background(), 2*time.Hour)
+	defer cancelRestore()
+
+	if err := e.App.RestoreBackup(ctx, key); err != nil {
+		return e.BadRequestError("Failed to restore the backup: "+err.Error(), nil)
+	}
+
+	// Views a PocketBase import translated or skipped.
+	report, _ := e.App.Store().Get(core.StoreKeyLastRestoreReport).(*core.RestoreReport)
+	if report == nil {
+		report = &core.RestoreReport{TranslatedViews: []core.RestoreViewReport{}, SkippedViews: []core.RestoreViewReport{}}
+	}
+
+	return e.JSON(http.StatusOK, report)
 }

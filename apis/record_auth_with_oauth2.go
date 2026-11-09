@@ -121,12 +121,18 @@ func recordAuthWithOAuth2(e *core.RequestEvent) error {
 		return e.InternalServerError("Failed OAuth2 relation check.", err)
 	}
 
+	// the provider is an OAuth2 server of this same collection and database
+	// (eg. a central sign-in app sharing the database with this instance)
+	sameDatabaseRecord := findSameDatabaseOAuth2Record(e.App, form.collection, authUser)
+
 	switch {
 	case err == nil && externalAuthRel != nil:
 		authRecord, err = e.App.FindRecordById(form.collection, externalAuthRel.RecordRef())
 		if err != nil {
 			return err
 		}
+	case sameDatabaseRecord != nil:
+		authRecord = sameDatabaseRecord
 	case fallbackAuthRecord != nil && fallbackAuthRecord.Collection().Id == form.collection.Id:
 		// fallback to the logged auth record (if any)
 		authRecord = fallbackAuthRecord
@@ -500,4 +506,25 @@ func safeFileFromURL(ctx context.Context, url string) (*filesystem.File, error) 
 	}
 
 	return filesystem.NewFileFromBytes(buf.Bytes(), path.Base(url))
+}
+
+// findSameDatabaseOAuth2Record returns the auth record of this collection
+// when the OAuth2 provider is a collection OAuth2 server sharing the same
+// database (see the "oauth2Server" collection option).
+//
+// That server issues the regular collection auth token as access_token,
+// so if the token is valid here (which requires the collection secret
+// and the record tokenKey) and belongs to the provider "sub", the external
+// user is this exact record and no email based matching is needed.
+func findSameDatabaseOAuth2Record(app core.App, collection *core.Collection, authUser *auth.AuthUser) *core.Record {
+	if authUser == nil || authUser.AccessToken == "" || authUser.Id == "" {
+		return nil
+	}
+
+	record, err := app.FindAuthRecordByToken(authUser.AccessToken, core.TokenTypeAuth)
+	if err != nil || record.Collection().Id != collection.Id || record.Id != authUser.Id {
+		return nil
+	}
+
+	return record
 }

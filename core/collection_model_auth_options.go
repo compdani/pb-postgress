@@ -65,6 +65,11 @@ func (m *Collection) setDefaultAuthOptions() {
 			Enabled:  false,
 			Duration: 600, // 10min
 		},
+		OAuth2Server: OAuth2ServerConfig{
+			Enabled:         false,
+			CodeDuration:    120,     // 2min
+			SessionDuration: 2592000, // 30days
+		},
 		OTP: OTPConfig{
 			Enabled:       false,
 			Duration:      180, // 3min
@@ -125,6 +130,13 @@ type collectionAuthOptions struct {
 	// and which OAuth2 providers are allowed.
 	OAuth2 OAuth2Config `form:"oauth2" json:"oauth2"`
 
+	// Passkey defines options related to the usernameless passkey (WebAuthn) authentication.
+	Passkey PasskeyConfig `form:"passkey" json:"passkey"`
+
+	// OAuth2Server turns the collection into an OAuth2 authorization server
+	// (authorization code grant) for the configured client applications.
+	OAuth2Server OAuth2ServerConfig `form:"oauth2Server" json:"oauth2Server"`
+
 	// PasswordAuth defines options related to the collection password authentication.
 	PasswordAuth PasswordAuthConfig `form:"passwordAuth" json:"passwordAuth"`
 
@@ -165,6 +177,8 @@ func (o *collectionAuthOptions) validate(cv *collectionValidator) error {
 		validation.Field(&o.AuthAlert),
 		validation.Field(&o.PasswordAuth),
 		validation.Field(&o.OAuth2),
+		validation.Field(&o.OAuth2Server),
+		validation.Field(&o.Passkey),
 		validation.Field(&o.OTP),
 		validation.Field(&o.MFA),
 		validation.Field(&o.AuthToken),
@@ -195,6 +209,9 @@ func (o *collectionAuthOptions) validate(cv *collectionValidator) error {
 		if o.OTP.Enabled {
 			authsEnabled++
 		}
+		if o.Passkey.Enabled {
+			authsEnabled++
+		}
 		if authsEnabled < 2 {
 			return validation.Errors{
 				"mfa": validation.Errors{
@@ -219,6 +236,22 @@ func (o *collectionAuthOptions) validate(cv *collectionValidator) error {
 					}
 				}
 			}
+		}
+	}
+
+	if o.Passkey.Enabled && cv.new.Name == CollectionNameSuperusers {
+		return validation.Errors{
+			"passkey": validation.Errors{
+				"enabled": validation.NewError("validation_passkey_superusers", "Passkeys are not supported for the superusers collection."),
+			},
+		}
+	}
+
+	if o.OAuth2Server.Enabled && cv.new.Name == CollectionNameSuperusers {
+		return validation.Errors{
+			"oauth2Server": validation.Errors{
+				"enabled": validation.NewError("validation_oauth2_server_superusers", "The superusers collection cannot act as an OAuth2 server."),
+			},
 		}
 	}
 

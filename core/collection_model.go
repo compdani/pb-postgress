@@ -534,8 +534,6 @@ func (m *Collection) unmarshalRawOptions() error {
 // For new/"blank" Collection models it replaces the model with a factory
 // instance and then unmarshal the provided data one on top of it.
 func (m *Collection) UnmarshalJSON(b []byte) error {
-	type alias *Collection
-
 	// initialize the default fields
 	// (e.g. in case the collection was NOT created using the designated factories)
 	if m.IsNew() && m.Type == "" {
@@ -552,7 +550,8 @@ func (m *Collection) UnmarshalJSON(b []byte) error {
 		*m = *blank
 	}
 
-	return json.Unmarshal(b, alias(m))
+	type alias Collection
+	return json.Unmarshal(b, (*alias)(m))
 }
 
 // MarshalJSON implements the [json.Marshaler] interface.
@@ -595,6 +594,8 @@ func (m Collection) MarshalJSON() ([]byte, error) {
 			alias.OAuth2.Providers = redactedProviders
 		}
 
+		alias.OAuth2Server.Clients = RedactedOAuth2ServerClients(alias.OAuth2Server.Clients)
+
 		return json.Marshal(alias)
 	default:
 		return json.Marshal(struct {
@@ -602,6 +603,36 @@ func (m Collection) MarshalJSON() ([]byte, error) {
 			collectionExternalOptions
 		}{m.baseCollection, m.collectionExternalOptions})
 	}
+}
+
+// marshalJSONWithSecrets is like [Collection.MarshalJSON] but keeps the
+// token, OAuth2 provider and OAuth2 server client secrets.
+//
+// It is used only for backups, so that a restore doesn't invalidate the
+// existing auth tokens or drop the configured OAuth2 secrets.
+func (m Collection) marshalJSONWithSecrets() ([]byte, error) {
+	if m.Type != CollectionTypeAuth {
+		return json.Marshal(m)
+	}
+
+	return json.Marshal(struct {
+		baseCollection
+		collectionAuthOptions
+		collectionExternalOptions
+	}{m.baseCollection, m.collectionAuthOptions, m.collectionExternalOptions})
+}
+
+// collectionsBackupJSON serializes the collections in the import format, including their secrets.
+func collectionsBackupJSON(collections []*Collection) ([]json.RawMessage, error) {
+	result := make([]json.RawMessage, 0, len(collections))
+	for _, c := range collections {
+		raw, err := c.marshalJSONWithSecrets()
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, raw)
+	}
+	return result, nil
 }
 
 // String returns a string representation of the current collection.

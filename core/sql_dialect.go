@@ -23,3 +23,11 @@ func (d SQLDialect) Quote(name string) string {
 	}
 	return q + strings.ReplaceAll(name, q, q+q) + q
 }
+
+// dialectName returns the configured driver name ("postgres" or "mysql").
+func (app *BaseApp) dialectName() string {
+	if app.SQLDialect() == DialectMySQL {
+		return "mysql"
+	}
+	return "postgres"
+}

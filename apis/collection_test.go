@@ -47,13 +47,16 @@ func TestCollectionsList(t *testing.T) {
 			ExpectedContent: []string{
 				`"page":1`,
 				`"perPage":30`,
-				`"totalItems":16`,
+				`"totalItems":19`,
 				`"items":[{`,
 				`"name":"` + core.CollectionNameSuperusers + `"`,
 				`"name":"` + core.CollectionNameAuthOrigins + `"`,
 				`"name":"` + core.CollectionNameExternalAuths + `"`,
 				`"name":"` + core.CollectionNameMFAs + `"`,
 				`"name":"` + core.CollectionNameOTPs + `"`,
+				`"name":"` + core.CollectionNameOAuth2Codes + `"`,
+				`"name":"` + core.CollectionNamePasskeys + `"`,
+				`"name":"` + core.CollectionNamePasskeySessions + `"`,
 				`"name":"users"`,
 				`"name":"nologin"`,
 				`"name":"clients"`,
@@ -77,15 +80,17 @@ func TestCollectionsList(t *testing.T) {
 		{
 			Name:   "authorized as superuser + paging and sorting",
 			Method: http.MethodGet,
-			URL:    "/api/collections?page=2&perPage=2&sort=-created",
+			// page 1-2 hold the 3 newest system collections created by the
+			// latest system migrations (oauth2 codes, passkeys, passkey sessions)
+			URL: "/api/collections?page=3&perPage=2&sort=-created",
 			Headers: map[string]string{
 				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
 			ExpectedStatus: 200,
 			ExpectedContent: []string{
-				`"page":2`,
+				`"page":3`,
 				`"perPage":2`,
-				`"totalItems":16`,
+				`"totalItems":19`,
 				`"items":[{`,
 				`"name":"` + core.CollectionNameMFAs + `"`,
 			},

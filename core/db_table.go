@@ -49,7 +49,7 @@ func (app *BaseApp) TableIndexes(name string) (map[string]string, error) {
 		Name string
 		SQL  string
 	}{}
-	query := `SELECT indexname AS name, indexdef AS sql FROM pg_indexes WHERE schemaname = current_schema() AND tablename = {:name} AND indexname NOT IN (SELECT conname FROM pg_constraint WHERE contype = 'p' AND conrelid = to_regclass({:name}))`
+	query := `SELECT indexname AS name, indexdef AS sql FROM pg_indexes WHERE schemaname = current_schema() AND tablename = {:name} AND indexname NOT IN (SELECT conname FROM pg_constraint WHERE contype = 'p' AND conrelid = to_regclass(quote_ident(current_schema()) || '.' || quote_ident({:name})))`
 	if app.SQLDialect() == DialectMySQL {
 		query = "SELECT index_name AS name, concat('CREATE ', IF(min(non_unique)=0, 'UNIQUE ', ''), 'INDEX `', index_name, '` ON `', table_name, '` (', group_concat(COALESCE(concat('`',column_name,'`'), concat('(',expression,')')) ORDER BY seq_in_index), ')') AS `sql` FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = {:name} AND index_name <> 'PRIMARY' GROUP BY index_name,table_name"
 	}

@@ -4,9 +4,8 @@ Configure one PostgreSQL or MySQL database with `--dbDriver` and `--dbDSN`,
 `PB_DB_DRIVER` and `PB_DB_DSN`, or `pocketbase.Config.DBDriver` / `DBDSN`.
 Main records, metadata, migrations, logs, and auxiliary operations use the same
 configured database. SQLite is no longer opened and modernc dependencies are
-removed. Existing SQLite datasets require an external migration/export process.
-Database archives are unsupported: use `pg_dump`/`pg_restore` or
-`mysqldump`/`mysql`, and back up uploaded files separately.
+removed (the SQLite driver is used only to read `data.db` from imported
+PocketBase backups). See "Backups" below for moving data in and out.
 
 Without database configuration, `serve` exposes only the installer API and the
 dashboard, and prints a setup URL (`/_/#/pbinstall/<token>`). When setup
@@ -158,11 +157,83 @@ can discard an error without poisoning the parent transaction. Collection API
 updates bind fresh metadata rather than mutating the shared collection cache.
 View records remain read-only even when PostgreSQL considers a view updatable.
 
-CreateBackup and RestoreBackup return ErrServerDatabaseBackupUnsupported for
-both drivers. Authorized API requests report an explicit unsupported error;
-restore no longer returns success before a background failure. Listing,
-uploading, downloading and deleting archive files remain supported filesystem
-operations. Native server dumps and uploaded-file backups are managed externally.
+## Backups
+
+Backups are on demand only: the backup cron and its `backups.cron` /
+`backups.cronMaxKeep` settings are removed. Regular protection is the job of
+the database server (PostgreSQL base backups and PITR, MySQL binlogs,
+managed snapshots). `backups.s3` still selects where archives are stored.
+
+`CreateBackup` (`POST /api/backups`) writes a **portable backup**, a zip
+that restores on PostgreSQL and MySQL alike:
+
+```
+manifest.json      {"format":"pocketbase-portable","formatVersion":1,
+                    "created","sourceDriver","files",collections:[{id,name,rows}]}
+collections.json   collections in the import format
+params.json        [{id,value}]  _params rows as stored (encrypted settings stay
+                   encrypted; restoring needs the same PB_ENCRYPTION key)
+migrations.json    [{file,applied}]
+records/<collectionId>.jsonl   one JSON object per record: column -> string|null
+storage/<collectionId>/<recordId>/<file>   record files, no thumbnails
+```
+
+Record values are the text a database returns for each column, which is
+the form PocketBase already loads records from, so no type is tied to one
+driver. Every table is read in one REPEATABLE READ, read-only transaction.
+Files are included only for collections stored in this instance's
+`pb_data/storage`; S3 and file-server files are not copied.
+
+`RestoreBackup` (`POST /api/backups/{key}/restore`) accepts that format or
+a **standard PocketBase backup**: a `pb_data` zip containing `data.db` (at the
+root or one folder down) and `storage/`. Supported PocketBase versions:
+**v0.23.0 to v0.41.x** (`core.PocketBaseImportVersions`). Older backups have
+the pre-v0.23 `_collections` layout and are rejected; upgrade them with
+PocketBase v0.23+ first. Field types or options unknown to this build are
+rejected too. `auxiliary.db` (logs) is not imported.
+
+Restore runs synchronously and in this order:
+
+1. Read and check everything: collections, settings (decrypted with the
+   current key), every record, and on MySQL the indexes and `VARCHAR(255)`
+   lengths. Nothing changes if this fails.
+2. Copy files into the configured file storage (local, S3 or file server),
+   which also migrates PocketBase files into remote storage.
+3. Replace the collections (missing ones are deleted), records (raw inserts,
+   no hooks), settings, and add migration entries the database lacks.
+   PostgreSQL does this in one transaction. MySQL commits schema changes
+   implicitly, so only the record step is atomic there.
+4. Reload the cached collections and settings.
+
+Kept from the target: file mode, `_fileHosts`, `_instances` scopes, and the
+S3 and backups settings. Superusers come from the backup, so current sessions
+end. Files of replaced records are not deleted. Other instances sharing the
+database must be restarted to reload their caches. Backup and restore require
+an instance whose scope is `all`. View queries written for SQLite may need
+rewriting; see below.
+
+### View queries in PocketBase imports
+
+PocketBase view queries are SQLite SQL. During a PocketBase import only,
+each view query is translated token by token (`core/view_translate.go`):
+quoted identifiers, `IFNULL`, `IIF`, `TOTAL`, `CAST` types,
+`GROUP_CONCAT`, `json_extract` and `json_array_length`, `date`/`time`/
+`datetime`/`strftime` without modifiers (`%Y %m %d %H %M %S %j`), `==`,
+`INSTR` and `LENGTH`, `ROUND(x, n)` on PostgreSQL, `||` as `CONCAT` on MySQL,
+and case-insensitive `LIKE` (`ILIKE` on PostgreSQL, `LOWER(a) LIKE LOWER(b)`
+on MySQL, whose text columns use a binary collation).
+
+Views are then created one at a time, in passes so a view can follow the
+views it selects from. A view the database still rejects is undone
+(PostgreSQL savepoint; on MySQL its view and collection row are removed)
+and skipped; everything else is restored. The restore response lists
+`translatedViews` and `skippedViews` with the original and translated
+queries, the dashboard shows them, and skipped views are also logged.
+Recreate skipped views by hand. Not translated: date modifiers (`'+1 day'`),
+other `strftime` codes, `json_each`, `unixepoch`, `LIMIT a, b`, and
+non-aggregated columns next to aggregates (which SQLite allows). Results of a
+translated view can differ slightly (for example integer division or text
+sorting), so check them. Portable backups restore views unchanged.
 
 The SQL API executes multiple statements individually in a transaction and
 returns the final statement's result. PostgreSQL DDL rollback is verified;

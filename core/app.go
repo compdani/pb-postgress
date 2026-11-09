@@ -560,6 +560,39 @@ type App interface {
 
 	// ---------------------------------------------------------------
 
+	// FindOAuth2CodeByCode returns the pending OAuth2 server authorization code matching the raw code.
+	FindOAuth2CodeByCode(code string) (*OAuth2Code, error)
+
+	// ConsumeOAuth2Code atomically deletes the provided authorization code
+	// and reports whether this call was the one that consumed it.
+	ConsumeOAuth2Code(m *OAuth2Code) (bool, error)
+
+	// DeleteAllOAuth2CodesByRecord deletes all pending authorization codes issued for the provided auth record.
+	DeleteAllOAuth2CodesByRecord(authRecord *Record) error
+
+	// DeleteExpiredOAuth2Codes deletes the expired authorization codes for all auth collections.
+	DeleteExpiredOAuth2Codes() error
+
+	// ---------------------------------------------------------------
+
+	// FindPasskeyByCredentialId returns the passkey with the provided raw WebAuthn credential id.
+	FindPasskeyByCredentialId(credentialId []byte) (*Passkey, error)
+
+	// FindAllPasskeysByRecord returns all passkeys registered for the provided auth record.
+	FindAllPasskeysByRecord(authRecord *Record) ([]*Passkey, error)
+
+	// FindPasskeySessionById returns a single pending passkey ceremony by its id.
+	FindPasskeySessionById(id string) (*PasskeySession, error)
+
+	// ConsumePasskeySession atomically deletes the provided passkey ceremony
+	// and reports whether this call was the one that consumed it.
+	ConsumePasskeySession(m *PasskeySession) (bool, error)
+
+	// DeleteExpiredPasskeySessions deletes the abandoned passkey ceremonies.
+	DeleteExpiredPasskeySessions() error
+
+	// ---------------------------------------------------------------
+
 	// FindAllAuthOriginsByRecord returns all AuthOrigin models linked to the provided auth record (in DESC order).
 	FindAllAuthOriginsByRecord(authRecord *Record) ([]*AuthOrigin, error)
 

@@ -166,6 +166,26 @@ function logsSettingsModal(modalSettings) {
                             { className: "col-lg-12" },
                             t.field(
                                 { className: "field" },
+                                t.label({ htmlFor: "logs.maxDataSize" }, "Max log data size (bytes)"),
+                                t.input({
+                                    type: "number",
+                                    id: "logs.maxDataSize",
+                                    name: "logs.maxDataSize",
+                                    min: 0,
+                                    placeholder: "Default: 16384",
+                                    value: () => data.formSettings.logs.maxDataSize || "",
+                                    oninput: (e) => (data.formSettings.logs.maxDataSize = e.target.value << 0),
+                                }),
+                            ),
+                            t.div(
+                                { className: "field-help" },
+                                "Larger log data is truncated. Leave empty for the ~16KB default.",
+                            ),
+                        ),
+                        t.div(
+                            { className: "col-lg-12" },
+                            t.field(
+                                { className: "field" },
                                 t.label({ htmlFor: "logs.maxDays" }, "Max days retention"),
                                 t.input({
                                     type: "number",

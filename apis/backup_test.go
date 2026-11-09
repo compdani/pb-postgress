@@ -3,6 +3,7 @@ package apis_test
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -139,10 +140,17 @@ func TestBackupsCreate(t *testing.T) {
 			Headers: map[string]string{
 				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
-			AfterTestFunc:   func(t testing.TB, app *tests.TestApp, res *http.Response) { ensureNoBackups(t, app) },
-			ExpectedStatus:  400,
-			ExpectedContent: []string{`Server database archive backup and restore are unsupported`},
-			ExpectedEvents:  map[string]int{"*": 0},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				files, err := getBackupFiles(app)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(files) != 1 || !strings.HasPrefix(files[0].Key, "pb_backup_") {
+					t.Fatalf("expected one pb_backup_* file, got %v", files)
+				}
+			},
+			ExpectedStatus: 204,
+			ExpectedEvents: map[string]int{"*": 0, "OnBackupCreate": 1},
 		},
 		{
 			Name:   "authorized as superuser (invalid name)",
@@ -170,10 +178,17 @@ func TestBackupsCreate(t *testing.T) {
 			Headers: map[string]string{
 				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
 			},
-			AfterTestFunc:   func(t testing.TB, app *tests.TestApp, res *http.Response) { ensureNoBackups(t, app) },
-			ExpectedStatus:  400,
-			ExpectedContent: []string{`Server database archive backup and restore are unsupported`},
-			ExpectedEvents:  map[string]int{"*": 0},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				files, err := getBackupFiles(app)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(files) != 1 || files[0].Key != "test.zip" {
+					t.Fatalf("expected test.zip, got %v", files)
+				}
+			},
+			ExpectedStatus: 204,
+			ExpectedEvents: map[string]int{"*": 0, "OnBackupCreate": 1},
 		},
 	}
 
@@ -788,11 +803,27 @@ func TestBackupsRestore(t *testing.T) {
 		},
 	}
 
-	unsupported := scenarios[2]
-	unsupported.Name = "authorized as superuser (server archive restore unsupported)"
-	unsupported.URL = "/api/backups/test1.zip/restore"
-	unsupported.ExpectedContent = []string{`Server database archive backup and restore are unsupported`}
-	scenarios = append(scenarios, unsupported)
+	invalid := scenarios[2]
+	invalid.Name = "authorized as superuser (not a backup archive)"
+	invalid.URL = "/api/backups/test1.zip/restore"
+	invalid.ExpectedContent = []string{`not a valid zip archive`}
+	invalid.ExpectedEvents = map[string]int{"*": 0, "OnBackupRestore": 1}
+	scenarios = append(scenarios, invalid)
+
+	scenarios = append(scenarios, tests.ApiScenario{
+		Name:    "authorized as superuser (portable backup)",
+		Method:  http.MethodPost,
+		URL:     "/api/backups/portable.zip/restore",
+		Headers: invalid.Headers,
+		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+			if err := app.CreateBackup(context.Background(), "portable.zip"); err != nil {
+				t.Fatal(err)
+			}
+		},
+		ExpectedStatus:  200,
+		ExpectedContent: []string{`"translatedViews":[]`, `"skippedViews":[]`},
+		ExpectedEvents:  map[string]int{"OnBackupRestore": 1},
+	})
 
 	for _, scenario := range scenarios {
 		scenario.Test(t)

@@ -208,8 +208,6 @@ func migrateSettings(txApp core.App, oldSettings *oldSettingsModel) error {
 	newSettings.SMTP.TLS = cast.ToBool(getMapVal(oldSettings.Value, "smtp", "tls"))
 	newSettings.SMTP.LocalName = cast.ToString(getMapVal(oldSettings.Value, "smtp", "localName"))
 	// ---
-	newSettings.Backups.Cron = cast.ToString(getMapVal(oldSettings.Value, "backups", "cron"))
-	newSettings.Backups.CronMaxKeep = cast.ToInt(getMapVal(oldSettings.Value, "backups", "cronMaxKeep"))
 	newSettings.Backups.S3 = core.S3Config{
 		Enabled:        cast.ToBool(getMapVal(oldSettings.Value, "backups", "s3", "enabled")),
 		Bucket:         cast.ToString(getMapVal(oldSettings.Value, "backups", "s3", "bucket")),
