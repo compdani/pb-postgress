@@ -82,17 +82,32 @@ You could also check the recommendations in https://pocketbase.io/docs/how-to-us
 
 ### Use as standalone app
 
-You could download the prebuilt executable for your platform from the [Releases page](https://github.com/pocketbase/pocketbase/releases).
-Once downloaded, extract the archive and run `./pocketbase serve` in the extracted directory.
+Build it from this repository (there are no prebuilt releases yet). You need [Go 1.27.3+](https://go.dev/doc/install).
 
-The prebuilt executables are based on the [`examples/base/main.go` file](https://github.com/pocketbase/pocketbase/blob/master/examples/base/main.go) and comes with the JS VM plugin enabled by default which allows to extend PocketBase with JavaScript (_for more details please refer to [Extend with JavaScript](https://pocketbase.io/docs/js-overview/)_).
+```sh
+git clone https://github.com/compdani/pb-postgress.git
+cd pb-postgress
+go build -o pocketbase ./examples/base
+./pocketbase serve --dbDriver postgres --dbDSN "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
+```
+
+Without `--dbDriver` / `--dbDSN`, `serve` starts the installer and prints a setup URL. The dashboard is at `/_/`. To update, run `git pull` and build again.
+
+The executable is based on [`examples/base/main.go`](examples/base/main.go) and has the JS VM plugin enabled, so it can be extended with JavaScript (see [Extend with JavaScript](https://pocketbase.io/docs/js-overview/) in the PocketBase docs).
 
 ### Use as a Go framework/toolkit
 
 PocketBase is distributed as a regular Go library package which allows you to build
 your own custom app specific business logic and still have a single portable executable at the end.
 
-In a custom app, depend on this fork (`replace github.com/pocketbase/pocketbase => <this repo>` in `go.mod`) and set `pocketbase.Config{DBDriver, DBDSN}` or the `PB_DB_DRIVER` / `PB_DB_DSN` variables. The server database is required.
+In a custom app, keep importing `github.com/pocketbase/pocketbase` and point it at this repository:
+
+```sh
+go mod edit -replace github.com/pocketbase/pocketbase=github.com/compdani/pb-postgress@master
+go mod tidy
+```
+
+(Use a tag or commit instead of `master` to pin a version.) Your app's `go.mod` must also say `go 1.27` or later. Then set `pocketbase.Config{DBDriver, DBDSN}` or the `PB_DB_DRIVER` / `PB_DB_DSN` variables. The server database is required.
 
 Here is a minimal example:
 
@@ -140,7 +155,7 @@ _For more details please refer to [Extend with Go](https://pocketbase.io/docs/go
 To build the minimal standalone executable, like the prebuilt ones in the releases page, you can simply run `go build` inside the `examples/base` directory:
 
 0. [Install Go 1.27.3+](https://go.dev/doc/install) (_if you haven't already_)
-1. Clone/download the repo
+1. Clone `https://github.com/compdani/pb-postgress`
 2. Navigate to `examples/base`
 3. Run `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build`
    (_https://go.dev/doc/install/source#environment_)

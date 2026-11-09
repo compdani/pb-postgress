@@ -35,7 +35,11 @@ func NewRouter(app core.App) (*router.Router[*core.RequestEvent], error) {
 	pbRouter.Bind(securityHeaders())
 	pbRouter.Bind(BodyLimit(DefaultMaxBodySize))
 
-	pbRouter.Any("/files/{storagePath...}", sharedFileHost)
+	// explicit methods (instead of Any) so that the route doesn't conflict
+	// with a custom "GET /{path...}" catch-all like the one in examples/base
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete} {
+		pbRouter.Route(method, "/files/{storagePath...}", sharedFileHost)
+	}
 
 	// API routes
 	apiGroup := pbRouter.Group("/api")
