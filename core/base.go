@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -1388,10 +1389,12 @@ func (app *BaseApp) registerBaseHooks() {
 	guardCollection := func(e *ModelEvent) error {
 		if c, ok := e.Model.(*Collection); ok {
 			ba := asBaseApp(e.App)
-			if !ba.CollectionVisible(c) {
-				return errors.New("collection is outside this instance scope")
-			}
+			// brand new collections have nothing to hide yet, so only
+			// existing ones are checked against the instance scope
 			if !c.IsNew() {
+				if !ba.CollectionVisible(c) {
+					return errors.New("collection is outside this instance scope")
+				}
 				old, err := e.App.FindCollectionByNameOrId(cast.ToString(c.LastSavedPK()))
 				if err != nil {
 					return err
@@ -1406,6 +1409,26 @@ func (app *BaseApp) registerBaseHooks() {
 	app.OnModelValidate().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
 	app.OnModelCreate().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
 	app.OnModelUpdate().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
+	// In allow mode a newly created collection joins this instance's scope,
+	// so its table is created and it stays visible here.
+	app.OnModelCreate().Bind(&hook.Handler[*ModelEvent]{Func: func(e *ModelEvent) error {
+		if c, ok := e.Model.(*Collection); ok && !c.System && c.IsNew() {
+			ba := asBaseApp(e.App)
+			if ba != nil && ba.IsBootstrapped() && ba.HasTable("_instances") {
+				scope, err := ba.InstanceScope()
+				if err != nil {
+					return err
+				}
+				if scope.Mode == "allow" && !slices.Contains(scope.Collections, c.Name) {
+					scope.Collections = append(slices.Clone(scope.Collections), c.Name)
+					if err := ba.writeInstanceScope(scope); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return e.Next()
+	}, Priority: -999998})
 	app.OnModelDelete().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
 
 	app.OnModelUpdate().BindFunc(func(e *ModelEvent) error {
