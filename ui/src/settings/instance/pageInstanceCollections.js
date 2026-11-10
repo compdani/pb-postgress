@@ -6,6 +6,7 @@ export function pageInstanceCollections() {
     const data = store({
         isLoading: true,
         isSaving: false,
+        isRefreshing: false,
         mode: "all",
         selected: [],
         instances: [],
@@ -36,6 +37,26 @@ export function pageInstanceCollections() {
                 app.checkApiError(err);
             }
         }
+    }
+
+    // Reloads the collections and instances lists without touching unsaved selection changes.
+    async function refresh() {
+        if (data.isRefreshing) {
+            return;
+        }
+        data.isRefreshing = true;
+        try {
+            const [instances] = await Promise.all([
+                app.pb.send("/api/instances", { method: "GET", requestKey: "instance_list" }),
+                app.store.loadCollections(),
+            ]);
+            data.instances = instanceRows(instances);
+        } catch (err) {
+            if (!err?.isAbort) {
+                app.checkApiError(err);
+            }
+        }
+        data.isRefreshing = false;
     }
 
     function toggleCollection(name, checked) {
@@ -108,6 +129,19 @@ export function pageInstanceCollections() {
                         t.p(
                             { className: "txt-hint" },
                             "Choose which collections this instance serves. The choice is stored for the superuser scope of this instance.",
+                        ),
+                    ),
+                    t.div(
+                        { className: "col-lg-12" },
+                        t.button(
+                            {
+                                type: "button",
+                                className: () => `btn sm secondary ${data.isRefreshing ? "loading" : ""}`,
+                                disabled: () => data.isRefreshing || data.isSaving,
+                                onclick: refresh,
+                            },
+                            t.i({ className: "ri-refresh-line", ariaHidden: "true" }),
+                            t.span({ className: "txt" }, "Refresh collections"),
                         ),
                     ),
                     t.div(
