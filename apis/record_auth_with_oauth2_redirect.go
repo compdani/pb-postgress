@@ -48,6 +48,11 @@ func oauth2SubscriptionRedirect(e *core.RequestEvent) error {
 		return failureRedirect(e)
 	}
 
+	// sign-in started from the hosted OAuth2 server page
+	if sessionId, ok := strings.CutPrefix(data.State, oauth2ServerProviderStatePrefix); ok {
+		return oauth2ServerProviderCallback(e, sessionId, data)
+	}
+
 	client, err := e.App.SubscriptionsBroker().ClientById(data.State)
 	if err != nil || client.IsDiscarded() || !client.HasSubscription(oauth2SubscriptionTopic) {
 		e.App.Logger().Debug("Missing or invalid OAuth2 subscription client", "error", err, "clientId", data.State)

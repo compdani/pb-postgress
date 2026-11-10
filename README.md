@@ -51,10 +51,46 @@ Any auth collection can act as an OAuth2 / OIDC server (**Collection → Options
 
 - authorization code flow with optional PKCE (S256), `client_secret_basic` or `client_secret_post`, OIDC `id_token`, `userinfo` and discovery;
 - the issued access token is the collection's regular auth token;
-- a built-in sign-in page with password or passkey, a remembered sign-in cookie (configurable duration), an account chooser (continue, switch account, sign out), `prompt=none|login|select_account|consent`, and `logout`;
+- a built-in sign-in page with password, passkey or any OAuth2 provider enabled on the collection, a remembered sign-in cookie (configurable duration), an account chooser (continue, switch account, sign out), `prompt=none|login|select_account|consent`, and `logout`;
 - apps that share the database accept the same token. Other PocketBase apps can use it as an `oidc` provider through the normal popup + realtime flow, which lets all of them share one passkey domain.
+- the collection's own frontends can use the sign-in page in a popup with no client setup (see below).
+
+The sign-in page shows a **Continue with …** button for every provider under the collection's **Options → OAuth2**, and follows that list as providers are added or removed. The provider must have `https://<sign-in server>/api/oauth2-redirect` registered as a redirect URL, the same one the JS SDK flow uses.
 
 Endpoints live under `/api/collections/{collection}/oauth2-server/` (`authorize`, `token`, `userinfo`, `logout`, `.well-known/openid-configuration`).
+
+#### Sign in with a popup
+
+A frontend can sign users in without ever handling a password. It calls one function, a popup opens on the PocketBase sign-in page, the user signs in there with a password, a passkey or an OAuth2 provider, and the function returns the auth token:
+
+```js
+import PocketBase from "pocketbase";
+import { authWithPopup } from "https://pb.example.com/api/collections/users/oauth2-server/popup.js";
+
+const pb = new PocketBase("https://pb.example.com");
+
+document.getElementById("login").addEventListener("click", async () => {
+    const authData = await authWithPopup(pb, "users");
+
+    console.log(authData.record.id, authData.token);
+    console.log(pb.authStore.isValid); // true, the token is stored for later requests
+});
+```
+
+**Setup.** In the dashboard, open the auth collection → **Options → OAuth2 server** and turn on **Popup sign-in**. No client, secret or OAuth2 provider is needed. If the frontend runs on another address than PocketBase (for example `https://app.example.com` or `http://localhost:5173`), add it to the allowed origins. Only the Application URL (and the server itself on localhost) is allowed implicitly, so list every other frontend origin.
+
+Notes:
+
+- `authWithPopup` is a small helper for the standard JS SDK, served by PocketBase itself. If you bundle your frontend, you can copy the file into your project instead of importing it from the server.
+- Call it directly in the click handler, with no `await` before it, or the browser may block the popup. The promise rejects if the user closes the popup or cancels.
+- The sign-in page remembers the user, so the next popup offers **Continue as…**, **Use another account** and **Sign out** instead of asking for the password again. Pass `{ prompt: "login" }` as the third argument to always ask.
+- `pb.authStore.clear()` forgets the token in the frontend only. To make the sign-in page forget the user too, open `https://pb.example.com/api/collections/users/oauth2-server/logout`.
+- The frontend must not send `Cross-Origin-Opener-Policy: same-origin` on the page that opens the popup (`same-origin-allow-popups` is fine), or the browser cuts the popup off. Password and passkey sign-in are unaffected by providers; a provider's own pages may also send an opener policy that stops the popup from returning the code, in which case use a redirect-based flow for that provider.
+- Allowed origins are exact: `scheme://host[:port]`, lowercase, no path and no default port.
+- `prompt=none` (silent sign-in) is not supported by the popup, so the user is always asked.
+- Accounts that require MFA can't sign in this way, because the sign-in page has no second step.
+
+Under the hood the popup returns a single-use code to the allowed origin with `window.postMessage`, and the helper exchanges it at `POST /api/collections/{collection}/auth-with-popup` using PKCE.
 
 ### Passkeys
 

@@ -155,6 +155,10 @@ migrate((app) => {
       "clients": [],
       "codeDuration": 120,
       "enabled": false,
+      "popup": {
+        "enabled": false,
+        "origins": null
+      },
       "sessionDuration": 2592000
     },
     "otp": {
@@ -349,6 +353,10 @@ func init() {
 				"clients": [],
 				"codeDuration": 120,
 				"enabled": false,
+				"popup": {
+					"enabled": false,
+					"origins": null
+				},
 				"sessionDuration": 2592000
 			},
 			"otp": {
@@ -632,6 +640,10 @@ migrate((app) => {
       "clients": [],
       "codeDuration": 120,
       "enabled": false,
+      "popup": {
+        "enabled": false,
+        "origins": null
+      },
       "sessionDuration": 2592000
     },
     "otp": {
@@ -829,6 +841,10 @@ func init() {
 				"clients": [],
 				"codeDuration": 120,
 				"enabled": false,
+				"popup": {
+					"enabled": false,
+					"origins": null
+				},
 				"sessionDuration": 2592000
 			},
 			"otp": {

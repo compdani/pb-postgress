@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	validation "github.com/pocketbase/ozzo-validation/v4"
@@ -37,6 +38,10 @@ type OAuth2ServerConfig struct {
 
 	// Clients lists the applications allowed to request authorization.
 	Clients []OAuth2ServerClient `form:"clients" json:"clients"`
+
+	// Popup configures the popup sign-in for the collection own frontends,
+	// which needs no registered client or secret (see [OAuth2ServerPopupConfig]).
+	Popup OAuth2ServerPopupConfig `form:"popup" json:"popup"`
 }
 
 // Validate makes OAuth2ServerConfig validatable by implementing [validation.Validatable] interface.
@@ -48,7 +53,36 @@ func (c OAuth2ServerConfig) Validate() error {
 	return validation.ValidateStruct(&c,
 		validation.Field(&c.CodeDuration, validation.Required, validation.Min(10), validation.Max(600)),
 		validation.Field(&c.SessionDuration, validation.When(c.SessionDuration != 0, validation.Min(int64(60)), validation.Max(int64(31536000)))), // 1min - 1y
-		validation.Field(&c.Clients, validation.Required, validation.By(checkOAuth2ServerClients)),
+		// the popup sign-in doesn't need a registered client
+		validation.Field(&c.Clients, validation.When(!c.Popup.Enabled, validation.Required), validation.By(checkOAuth2ServerClients)),
+		validation.Field(&c.Popup),
+	)
+}
+
+// OAuth2ServerPopupConfig defines the options of the popup sign-in.
+//
+// A frontend opens the hosted sign-in page in a popup and receives a
+// single use code with window.postMessage, which it exchanges for the
+// regular auth token (PKCE is required, there is no client secret).
+type OAuth2ServerPopupConfig struct {
+	Enabled bool `form:"enabled" json:"enabled"`
+
+	// Origins lists the additional frontend origins allowed to use the
+	// popup sign-in (eg. "https://app.example.com").
+	//
+	// The origin of the application URL setting (and the local server on
+	// loopback) is always allowed; every other frontend origin must be listed.
+	Origins []string `form:"origins" json:"origins"`
+}
+
+// Validate makes OAuth2ServerPopupConfig validatable by implementing [validation.Validatable] interface.
+func (c OAuth2ServerPopupConfig) Validate() error {
+	if !c.Enabled {
+		return nil // no need to validate
+	}
+
+	return validation.ValidateStruct(&c,
+		validation.Field(&c.Origins, validation.Each(validation.By(checkOAuth2ServerPopupOrigin))),
 	)
 }
 
@@ -94,6 +128,47 @@ func checkOAuth2ServerClients(value any) error {
 			}
 		}
 		existing[client.Id] = struct{}{}
+	}
+
+	return nil
+}
+
+// checkOAuth2ServerPopupOrigin accepts only serialized origins (scheme://host[:port], lowercase,
+// no default port, userinfo, path, query or fragment), because they are compared as is
+// with the Origin header and used as the postMessage target.
+func checkOAuth2ServerPopupOrigin(value any) error {
+	raw, _ := value.(string)
+
+	invalid := validation.NewError("validation_invalid_origin", "Must be an origin like https://app.example.com (lowercase, no path, no default port).")
+
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || u.User != nil || u.Fragment != "" || u.RawQuery != "" || u.Path != "" || u.Opaque != "" {
+		return invalid
+	}
+
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return invalid
+	}
+
+	if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
+		return validation.NewError("validation_insecure_origin", "Plain http is allowed only for localhost.")
+	}
+
+	port := u.Port()
+	if strings.HasSuffix(u.Host, ":") {
+		return invalid // empty explicit port
+	}
+	if port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 || strconv.Itoa(n) != port {
+			return invalid
+		}
+		if (u.Scheme == "https" && n == 443) || (u.Scheme == "http" && n == 80) {
+			return invalid
+		}
+	}
+	if raw != u.Scheme+"://"+strings.ToLower(u.Host) {
+		return invalid
 	}
 
 	return nil

@@ -36,11 +36,6 @@ func recordAuthWithOAuth2(e *core.RequestEvent) error {
 		return e.ForbiddenError("The collection is not configured to allow OAuth2 authentication.", nil)
 	}
 
-	var fallbackAuthRecord *core.Record
-	if e.Auth != nil && e.Auth.Collection().Id == collection.Id {
-		fallbackAuthRecord = e.Auth
-	}
-
 	e.Set(core.RequestEventKeyInfoContext, core.RequestInfoContextOAuth2)
 
 	form := new(recordOAuth2LoginForm)
@@ -56,6 +51,41 @@ func recordAuthWithOAuth2(e *core.RequestEvent) error {
 
 	if err = form.validate(); err != nil {
 		return firstApiError(err, e.BadRequestError("An error occurred while loading the submitted data.", err))
+	}
+
+	return oauth2Authenticate(e, collection, form, nil, func(e *core.RecordAuthWithOAuth2RequestEvent) error {
+		// @todo revert back to struct after removing the custom auth.AuthUser marshalization
+		meta := map[string]any{}
+		rawOAuth2User, err := json.Marshal(e.OAuth2User)
+		if err != nil {
+			return err
+		}
+		err = json.Unmarshal(rawOAuth2User, &meta)
+		if err != nil {
+			return err
+		}
+		meta["isNew"] = e.IsNewRecord
+
+		return RecordAuthResponse(e.RequestEvent, e.Record, core.MFAMethodOAuth2, meta)
+	})
+}
+
+// oauth2Authenticate exchanges the OAuth2 code of the validated form and
+// signs in (or signs up) the related auth record.
+//
+// precheck (optional) is called with the resolved event before anything is
+// created, linked or updated; its error aborts the sign-in untouched.
+// finalize is called at the end, after the event record was resolved and saved.
+func oauth2Authenticate(
+	e *core.RequestEvent,
+	collection *core.Collection,
+	form *recordOAuth2LoginForm,
+	precheck func(e *core.RecordAuthWithOAuth2RequestEvent) error,
+	finalize func(e *core.RecordAuthWithOAuth2RequestEvent) error,
+) error {
+	var fallbackAuthRecord *core.Record
+	if e.Auth != nil && e.Auth.Collection().Id == collection.Id {
+		fallbackAuthRecord = e.Auth
 	}
 
 	// exchange token for OAuth2 user info and locate existing ExternalAuth rel
@@ -157,23 +187,17 @@ func recordAuthWithOAuth2(e *core.RequestEvent) error {
 	event.IsNewRecord = authRecord == nil
 
 	return e.App.OnRecordAuthWithOAuth2Request().Trigger(event, func(e *core.RecordAuthWithOAuth2RequestEvent) error {
+		if precheck != nil {
+			if err := precheck(e); err != nil {
+				return err
+			}
+		}
+
 		if err := oauth2Submit(e, externalAuthRel); err != nil {
 			return firstApiError(err, e.BadRequestError("Failed to authenticate.", err))
 		}
 
-		// @todo revert back to struct after removing the custom auth.AuthUser marshalization
-		meta := map[string]any{}
-		rawOAuth2User, err := json.Marshal(e.OAuth2User)
-		if err != nil {
-			return err
-		}
-		err = json.Unmarshal(rawOAuth2User, &meta)
-		if err != nil {
-			return err
-		}
-		meta["isNew"] = e.IsNewRecord
-
-		return RecordAuthResponse(e.RequestEvent, e.Record, core.MFAMethodOAuth2, meta)
+		return finalize(e)
 	})
 }
 

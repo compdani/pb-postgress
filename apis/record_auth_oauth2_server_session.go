@@ -157,7 +157,7 @@ func issueOAuth2ServerCode(e *core.RequestEvent, collection *core.Collection, cl
 		return "", err
 	}
 
-	return oauth2ServerRedirectURL(params.RedirectURI, map[string]string{
+	return oauth2ServerReturnURL(collection, params, map[string]string{
 		"code":  rawCode,
 		"state": params.State,
 		"iss":   oauth2ServerIssuer(e, collection),

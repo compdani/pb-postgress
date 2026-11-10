@@ -56,6 +56,8 @@ func bindRecordAuthOAuth2ServerApi(sub *router.RouterGroup[*core.RequestEvent]) 
 	sub.GET("/oauth2-server/.well-known/openid-configuration", oauth2ServerDiscovery)
 	sub.GET("/oauth2-server/logout", oauth2ServerLogout)
 	sub.POST("/oauth2-server/logout", oauth2ServerLogout)
+
+	bindRecordAuthPopupApi(sub)
 }
 
 func findOAuth2ServerCollection(e *core.RequestEvent) (*core.Collection, error) {
@@ -98,6 +100,9 @@ type oauth2ServerAuthorizeForm struct {
 
 	// Action is set by the account chooser ("continue" or "signout").
 	Action string `form:"action"`
+
+	// Provider is the name of the OAuth2 provider to sign in with.
+	Provider string `form:"provider"`
 }
 
 func oauth2ServerParamsFromQuery(q url.Values) oauth2ServerAuthorizeParams {
@@ -128,14 +133,36 @@ func (err *oauth2ServerAuthorizeError) Error() string {
 	return err.code + ": " + err.description
 }
 
-func (p *oauth2ServerAuthorizeParams) validate(collection *core.Collection) (core.OAuth2ServerClient, *oauth2ServerAuthorizeError) {
-	client, ok := collection.OAuth2Server.GetClient(p.ClientId)
-	if !ok {
-		return client, &oauth2ServerAuthorizeError{code: "invalid_client", description: "Unknown or missing client_id."}
-	}
+func (p *oauth2ServerAuthorizeParams) validate(e *core.RequestEvent, collection *core.Collection) (core.OAuth2ServerClient, *oauth2ServerAuthorizeError) {
+	var client core.OAuth2ServerClient
 
-	if !client.HasRedirectURI(p.RedirectURI) {
-		return client, &oauth2ServerAuthorizeError{code: "invalid_request", description: "The redirect_uri is not registered for this client."}
+	if p.isPopup() {
+		// popup sign-in: no registered client, the redirect_uri is the frontend origin
+		if !collection.OAuth2Server.Popup.Enabled {
+			return client, &oauth2ServerAuthorizeError{code: "invalid_client", description: "The popup sign-in is not enabled for this account type."}
+		}
+
+		if !isOAuth2ServerPopupOrigin(e, collection, p.RedirectURI) {
+			return client, &oauth2ServerAuthorizeError{code: "invalid_request", description: "This site is not allowed to use the popup sign-in."}
+		}
+
+		client = oauth2ServerPopupClient(p.RedirectURI)
+
+		// a silent sign-in would hand the token of the remembered user to the frontend
+		// without asking, so the popup always shows the account chooser or the form
+		if hasOAuth2ServerPrompt(p.Prompt, "none") {
+			return client, &oauth2ServerAuthorizeError{code: "invalid_request", description: "prompt=none is not supported by the popup sign-in.", redirect: true}
+		}
+	} else {
+		var ok bool
+		client, ok = collection.OAuth2Server.GetClient(p.ClientId)
+		if !ok {
+			return client, &oauth2ServerAuthorizeError{code: "invalid_client", description: "Unknown or missing client_id."}
+		}
+
+		if !client.HasRedirectURI(p.RedirectURI) {
+			return client, &oauth2ServerAuthorizeError{code: "invalid_request", description: "The redirect_uri is not registered for this client."}
+		}
 	}
 
 	if p.ResponseType != "code" {
@@ -155,7 +182,8 @@ func (p *oauth2ServerAuthorizeParams) validate(collection *core.Collection) (cor
 		}
 	}
 
-	if p.CodeChallenge != "" || p.CodeChallengeMethod != "" {
+	// there is no client secret in the popup sign-in, so PKCE is required
+	if p.CodeChallenge != "" || p.CodeChallengeMethod != "" || p.isPopup() {
 		if p.CodeChallengeMethod != "S256" {
 			return client, &oauth2ServerAuthorizeError{code: "invalid_request", description: "Only code_challenge_method=S256 is supported.", redirect: true}
 		}
@@ -192,7 +220,7 @@ func oauth2ServerAuthorizePage(e *core.RequestEvent) error {
 
 	params := oauth2ServerParamsFromQuery(e.Request.URL.Query())
 
-	client, authErr := params.validate(collection)
+	client, authErr := params.validate(e, collection)
 	if authErr != nil {
 		return oauth2ServerAuthorizeFailure(e, collection, params, authErr)
 	}
@@ -236,10 +264,53 @@ func oauth2ServerAuthorizePage(e *core.RequestEvent) error {
 	return renderOAuth2ServerLoginPage(e, http.StatusOK, collection, client, params, "", "")
 }
 
+// isOAuth2ServerSameSitePost reports whether the form post comes from the hosted page.
+//
+// Browsers send Sec-Fetch-Site (and Origin for posts), other clients send none of them.
+func isOAuth2ServerSameSitePost(e *core.RequestEvent) bool {
+	// an opaque origin never comes from the hosted page
+	if e.Request.Header.Get("Origin") == "null" {
+		return false
+	}
+
+	if site := e.Request.Header.Get("Sec-Fetch-Site"); site != "" {
+		return site == "same-origin" || site == "none"
+	}
+
+	if origin := e.Request.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return false // includes the opaque "null" origin
+		}
+
+		got := strings.ToLower(u.Scheme + "://" + u.Host)
+
+		if got == strings.ToLower(oauth2ServerBaseURL(e)) {
+			return true
+		}
+
+		appURL, err := url.Parse(e.App.Settings().Meta.AppURL)
+
+		return err == nil && appURL.Host != "" && got == strings.ToLower(appURL.Scheme+"://"+appURL.Host)
+	}
+
+	return true
+}
+
 func oauth2ServerAuthorizeSubmit(e *core.RequestEvent) error {
 	collection, err := findOAuth2ServerCollection(e)
 	if err != nil {
 		return err
+	}
+
+	// the forms are posted by the hosted page itself; a cross-site post could otherwise
+	// start a provider sign-in (and get a code back) without the user seeing the page
+	if !isOAuth2ServerSameSitePost(e) {
+		return renderOAuth2ServerPage(e, http.StatusForbidden, oauth2ServerPageData{
+			AppName:    e.App.Settings().Meta.AppName,
+			ErrorTitle: "Invalid sign-in request",
+			Error:      "The sign-in form must be submitted from this page.",
+		})
 	}
 
 	form := &oauth2ServerAuthorizeForm{}
@@ -247,13 +318,17 @@ func oauth2ServerAuthorizeSubmit(e *core.RequestEvent) error {
 		return e.BadRequestError("An error occurred while loading the submitted data.", err)
 	}
 
-	client, authErr := form.validate(collection)
+	client, authErr := form.validate(e, collection)
 	if authErr != nil {
 		return oauth2ServerAuthorizeFailure(e, collection, form.oauth2ServerAuthorizeParams, authErr)
 	}
 
 	loginFailed := func(message string) error {
 		return renderOAuth2ServerLoginPage(e, http.StatusBadRequest, collection, client, form.oauth2ServerAuthorizeParams, form.Identity, message)
+	}
+
+	if form.Provider != "" {
+		return oauth2ServerProviderStart(e, collection, client, form.oauth2ServerAuthorizeParams, form.Provider)
 	}
 
 	switch form.Action {
@@ -338,12 +413,26 @@ func oauth2ServerAuthorizeSubmit(e *core.RequestEvent) error {
 		authMethod = core.MFAMethodPassword
 	}
 
+	return oauth2ServerCompleteSignIn(e, collection, client, form.oauth2ServerAuthorizeParams, record, authMethod, form.Identity)
+}
+
+// oauth2ServerCompleteSignIn finishes the hosted page sign-in of an
+// already authenticated record and sends the code back to the client.
+func oauth2ServerCompleteSignIn(
+	e *core.RequestEvent,
+	collection *core.Collection,
+	client core.OAuth2ServerClient,
+	params oauth2ServerAuthorizeParams,
+	record *core.Record,
+	authMethod string,
+	identity string,
+) error {
 	message, err := checkOAuth2ServerSignIn(e, collection, record)
 	if err != nil {
 		return err
 	}
 	if message != "" {
-		return loginFailed(message)
+		return renderOAuth2ServerLoginPage(e, http.StatusBadRequest, collection, client, params, identity, message)
 	}
 
 	if collection.AuthAlert.Enabled {
@@ -352,7 +441,7 @@ func oauth2ServerAuthorizeSubmit(e *core.RequestEvent) error {
 		}
 	}
 
-	continueURL, err := issueOAuth2ServerCode(e, collection, client, form.oauth2ServerAuthorizeParams, record)
+	continueURL, err := issueOAuth2ServerCode(e, collection, client, params, record)
 	if err != nil {
 		return e.InternalServerError("Failed to create authorization code.", err)
 	}
@@ -395,7 +484,7 @@ func oauth2ServerPasskeyOffer(e *core.RequestEvent, collection *core.Collection,
 
 func oauth2ServerAuthorizeFailure(e *core.RequestEvent, collection *core.Collection, params oauth2ServerAuthorizeParams, authErr *oauth2ServerAuthorizeError) error {
 	if authErr.redirect {
-		return e.Redirect(http.StatusSeeOther, oauth2ServerRedirectURL(params.RedirectURI, map[string]string{
+		return e.Redirect(http.StatusSeeOther, oauth2ServerReturnURL(collection, params, map[string]string{
 			"error":             authErr.code,
 			"error_description": authErr.description,
 			"state":             params.State,
@@ -517,6 +606,11 @@ func oauth2ServerToken(e *core.RequestEvent) error {
 
 	code, err := e.App.FindOAuth2CodeByCode(form.Code)
 	if err != nil {
+		return invalidGrant()
+	}
+
+	// a code that belongs to another client (or collection) must not be burned by this request
+	if code.CollectionRef() != collection.Id || code.ClientId() != client.Id {
 		return invalidGrant()
 	}
 
@@ -698,7 +792,8 @@ func oauth2ServerDiscovery(e *core.RequestEvent) error {
 // -------------------------------------------------------------------
 
 type oauth2ServerPageData struct {
-	// Mode is one of "" (sign-in form), "addPasskey"; ErrorTitle switches to an error page.
+	// Mode is one of "" (sign-in form), "chooseAccount", "addPasskey", "popupDone";
+	// ErrorTitle switches to an error page.
 	Mode string
 
 	AppName       string
@@ -725,6 +820,16 @@ type oauth2ServerPageData struct {
 	AccountEmail    string
 	AccountInitial  string
 	OtherAccountURL template.URL
+
+	// message and target origin for the "popupDone" mode
+	PopupMessage map[string]string
+	PopupOrigin  string
+
+	// FormAction is the authorize endpoint that the page forms are submitted to.
+	FormAction string
+
+	// Providers lists the enabled OAuth2 providers of the sign-in form.
+	Providers []oauth2ServerPageProvider
 
 	// ScriptNonce is the CSP nonce of the inline script.
 	ScriptNonce string
@@ -760,7 +865,9 @@ func renderOAuth2ServerLoginPage(
 		PasswordEnabled: collection.PasswordAuth.Enabled,
 		PasskeyEnabled:  collection.Passkey.Enabled,
 		PasskeyURL:      oauth2ServerCollectionAPIURL(collection) + "/request-passkey",
-		CancelURL: template.URL(oauth2ServerRedirectURL(params.RedirectURI, map[string]string{
+		FormAction:      oauth2ServerCollectionAPIURL(collection) + "/oauth2-server/authorize",
+		Providers:       oauth2ServerPageProviders(e, collection),
+		CancelURL: template.URL(oauth2ServerReturnURL(collection, params, map[string]string{
 			"error":             "access_denied",
 			"error_description": "The user canceled the sign-in.",
 			"state":             params.State,
@@ -800,6 +907,7 @@ func renderOAuth2ServerAccountChooser(
 
 	return renderOAuth2ServerPage(e, http.StatusOK, oauth2ServerPageData{
 		Mode:            "chooseAccount",
+		FormAction:      oauth2ServerCollectionAPIURL(collection) + "/oauth2-server/authorize",
 		AppName:         e.App.Settings().Meta.AppName,
 		ClientName:      oauth2ServerClientName(client),
 		Params:          params,
@@ -807,7 +915,7 @@ func renderOAuth2ServerAccountChooser(
 		AccountEmail:    email,
 		AccountInitial:  initial,
 		OtherAccountURL: template.URL(oauth2ServerCollectionAPIURL(collection) + "/oauth2-server/authorize?" + other.Encode()),
-		CancelURL: template.URL(oauth2ServerRedirectURL(params.RedirectURI, map[string]string{
+		CancelURL: template.URL(oauth2ServerReturnURL(collection, params, map[string]string{
 			"error":             "access_denied",
 			"error_description": "The user canceled the sign-in.",
 			"state":             params.State,
@@ -855,6 +963,9 @@ func renderOAuth2ServerPage(e *core.RequestEvent, status int, data oauth2ServerP
 	header.Set("Cache-Control", "no-store")
 	header.Set("X-Frame-Options", "DENY")
 	header.Set("Referrer-Policy", "no-referrer")
+	// the default same-origin policy would cut the popup from the frontend that opened it
+	// (window.opener), which the popup sign-in needs to return the code
+	header.Set("Cross-Origin-Opener-Policy", "unsafe-none")
 	header.Set("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+data.ScriptNonce+"'; connect-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'")
 
 	return e.HTML(status, buf.String())
@@ -908,11 +1019,21 @@ form.account{margin:0 0 14px}
 {{if .ErrorTitle}}
 <h1>{{.ErrorTitle}}</h1>
 <p class="sub">{{.Error}}</p>
+{{else if eq .Mode "popupDone"}}
+<h1>You can close this window</h1>
+<p class="sub">Return to the page that opened it to continue.</p>
+<script nonce="{{.ScriptNonce}}">
+(function () {
+  if (!window.opener) return;
+  window.opener.postMessage({{.PopupMessage}}, {{.PopupOrigin}});
+  window.close();
+})();
+</script>
 {{else if eq .Mode "chooseAccount"}}
 <h1>Choose an account</h1>
 <p class="sub">to continue to <strong>{{.ClientName}}</strong></p>
 {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
-<form method="post" class="account">
+<form method="post" action="{{.FormAction}}" class="account">
 {{template "params" .Params}}
 <input type="hidden" name="action" value="continue">
 <button type="submit" class="account-btn">
@@ -922,7 +1043,7 @@ form.account{margin:0 0 14px}
 </form>
 <div class="stack">
 <a class="btn secondary" href="{{.OtherAccountURL}}">Use another account</a>
-<form method="post">
+<form method="post" action="{{.FormAction}}">
 {{template "params" .Params}}
 <input type="hidden" name="action" value="signout">
 <button type="submit" class="secondary">Sign out</button>
@@ -1016,7 +1137,7 @@ form.account{margin:0 0 14px}
 {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
 <div class="error" role="alert" id="pk-error" hidden></div>
 {{if .PasskeyEnabled}}
-<form method="post" id="pk-form" hidden>
+<form method="post" action="{{.FormAction}}" id="pk-form" hidden>
 {{template "params" .Params}}
 <input type="hidden" name="passkey_session" id="pk-session">
 <input type="hidden" name="passkey_credential" id="pk-credential">
@@ -1025,7 +1146,7 @@ form.account{margin:0 0 14px}
 {{if .PasswordEnabled}}<div class="divider" id="pk-divider" hidden>or</div>{{end}}
 {{end}}
 {{if .PasswordEnabled}}
-<form method="post" autocomplete="on">
+<form method="post" action="{{.FormAction}}" autocomplete="on">
 {{template "params" .Params}}
 <label for="identity">{{.IdentityLabel}}</label>
 <input id="identity" name="identity" value="{{.Identity}}" autocomplete="username" required>
@@ -1033,6 +1154,16 @@ form.account{margin:0 0 14px}
 <input id="password" name="password" type="password" autocomplete="current-password" required>
 <button type="submit" class="{{if .PasskeyEnabled}}secondary{{end}}">Sign in</button>
 </form>
+{{end}}
+{{if .Providers}}
+{{if or .PasswordEnabled .PasskeyEnabled}}<div class="divider">or</div>{{end}}
+<div class="stack">
+{{range .Providers}}<form method="post" action="{{$.FormAction}}">
+{{template "params" $.Params}}
+<input type="hidden" name="provider" value="{{.Name}}">
+<button type="submit" class="secondary">Continue with {{.DisplayName}}</button>
+</form>
+{{end}}</div>
 {{end}}
 <a class="cancel" href="{{.CancelURL}}">Cancel</a>
 {{if .PasskeyEnabled}}

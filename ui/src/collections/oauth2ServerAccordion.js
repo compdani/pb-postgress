@@ -9,7 +9,12 @@ export function oauth2ServerAccordion(collection) {
                     codeDuration: 120,
                     sessionDuration: 2592000,
                     clients: [],
+                    popup: { enabled: false, origins: [] },
                 };
+            }
+
+            if (!collection.oauth2Server.popup) {
+                collection.oauth2Server.popup = { enabled: false, origins: [] };
             }
 
             if (!Array.isArray(collection.oauth2Server.clients)) {
@@ -160,7 +165,7 @@ export function oauth2ServerAccordion(collection) {
                                         clearClientErrors(index);
                                         data.config.clients.splice(index, 1);
 
-                                        if (data.config.clients.length == 0) {
+                                        if (data.config.clients.length == 0 && !data.config.popup.enabled) {
                                             data.config.enabled = false;
                                         }
                                     },
@@ -297,6 +302,71 @@ export function oauth2ServerAccordion(collection) {
                         + "Ends on sign out (/oauth2-server/logout), password change or expiry. 2592000 = 30 days.",
                 ),
             ),
+            t.div(
+                { className: "col-sm-12" },
+                t.div(
+                    { className: "field" },
+                    t.input({
+                        type: "checkbox",
+                        id: uniqueId + ".popup.enabled",
+                        name: "oauth2Server.popup.enabled",
+                        className: "switch",
+                        checked: () => data.config.popup.enabled,
+                        onchange: (e) => {
+                            data.config.popup.enabled = e.target.checked;
+                            if (e.target.checked) {
+                                data.config.enabled = true;
+                            }
+                        },
+                    }),
+                    t.label({
+                        htmlFor: uniqueId + ".popup.enabled",
+                        textContent: "Popup sign-in for your own frontends (no client needed)",
+                    }),
+                ),
+                t.div(
+                    { className: "field-help" },
+                    "The frontend opens this sign-in page in a popup and gets the auth token back, without handling the password: ",
+                    t.code(null, "await authWithPopup(pb, \"" + (collection.name || "COLLECTION") + "\")"),
+                    ". Import it from ",
+                    t.code(null, () => data.baseURL + "/popup.js"),
+                    ".",
+                ),
+            ),
+            () => {
+                if (!data.config.popup.enabled) {
+                    return;
+                }
+
+                return t.div(
+                    { className: "col-sm-12" },
+                    t.div(
+                        { className: "field" },
+                        t.label({
+                            htmlFor: uniqueId + ".popup.origins",
+                            textContent: "Popup sign-in allowed origins (one per line)",
+                        }),
+                        t.textarea({
+                            id: uniqueId + ".popup.origins",
+                            name: "oauth2Server.popup.origins",
+                            rows: 2,
+                            spellcheck: false,
+                            placeholder: "https://app.example.com\nhttp://localhost:5173",
+                            value: () => (data.config.popup.origins || []).join("\n"),
+                            onchange: (e) => {
+                                data.config.popup.origins = e.target.value
+                                    .split("\n")
+                                    .map((v) => v.trim())
+                                    .filter(Boolean);
+                            },
+                        }),
+                    ),
+                    t.div(
+                        { className: "field-help" },
+                        "Sites that may open the popup. Only the Application URL (and this server on localhost) is allowed implicitly, so list every other frontend origin.",
+                    ),
+                );
+            },
             () => data.config.clients.map((client, index) => clientCard(client, index)),
             t.div(
                 { className: "col-sm-12" },
