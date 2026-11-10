@@ -268,15 +268,14 @@ func oauth2ServerAuthorizePage(e *core.RequestEvent) error {
 //
 // Browsers send Sec-Fetch-Site (and Origin for posts), other clients send none of them.
 func isOAuth2ServerSameSitePost(e *core.RequestEvent) bool {
-	// an opaque origin never comes from the hosted page
-	if e.Request.Header.Get("Origin") == "null" {
-		return false
-	}
-
+	// Fetch Metadata is set by the browser and can't be forged by a page,
+	// so it decides when present (the Origin header may legitimately be "null" here)
 	if site := e.Request.Header.Get("Sec-Fetch-Site"); site != "" {
 		return site == "same-origin" || site == "none"
 	}
 
+	// older browsers: the page sends its real origin (see the same-origin referrer policy),
+	// while an opaque "null" origin comes from sandboxed or privacy stripped requests
 	if origin := e.Request.Header.Get("Origin"); origin != "" {
 		u, err := url.Parse(origin)
 		if err != nil || u.Scheme == "" || u.Host == "" {
@@ -962,7 +961,9 @@ func renderOAuth2ServerPage(e *core.RequestEvent, status int, data oauth2ServerP
 	header := e.Response.Header()
 	header.Set("Cache-Control", "no-store")
 	header.Set("X-Frame-Options", "DENY")
-	header.Set("Referrer-Policy", "no-referrer")
+	// same-origin (not no-referrer) so that the form posts of the page carry a real Origin header;
+	// nothing is sent to other sites
+	header.Set("Referrer-Policy", "same-origin")
 	// the default same-origin policy would cut the popup from the frontend that opened it
 	// (window.opener), which the popup sign-in needs to return the code
 	header.Set("Cross-Origin-Opener-Policy", "unsafe-none")

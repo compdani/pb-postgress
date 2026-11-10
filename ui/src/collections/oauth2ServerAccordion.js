@@ -30,6 +30,13 @@ export function oauth2ServerAccordion(collection) {
         },
     });
 
+    // older collections can have no code duration saved, which is required once enabled
+    function ensureDefaults() {
+        if (!data.config.codeDuration) {
+            data.config.codeDuration = 120;
+        }
+    }
+
     function clearClientErrors(index) {
         app.utils.deleteByPath(app.store.errors, "oauth2Server.clients." + index);
     }
@@ -44,6 +51,7 @@ export function oauth2ServerAccordion(collection) {
 
         if (data.config.clients.length == 1) {
             data.config.enabled = true;
+            ensureDefaults();
         }
     }
 
@@ -251,7 +259,12 @@ export function oauth2ServerAccordion(collection) {
                         name: "oauth2Server.enabled",
                         className: "switch",
                         checked: () => data.config.enabled,
-                        onchange: (e) => (data.config.enabled = e.target.checked),
+                        onchange: (e) => {
+                            data.config.enabled = e.target.checked;
+                            if (e.target.checked) {
+                                ensureDefaults();
+                            }
+                        },
                     }),
                     t.label({ htmlFor: uniqueId + ".enabled", textContent: "Enable" }),
                 ),
@@ -316,6 +329,7 @@ export function oauth2ServerAccordion(collection) {
                             data.config.popup.enabled = e.target.checked;
                             if (e.target.checked) {
                                 data.config.enabled = true;
+                                ensureDefaults();
                             }
                         },
                     }),

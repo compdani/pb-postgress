@@ -310,7 +310,9 @@ func TestOAuth2ServerProvidersCrossSitePost(t *testing.T) {
 		{"same-site (sibling) fetch metadata", map[string]string{"Sec-Fetch-Site": "same-site"}, 403},
 		{"foreign origin", map[string]string{"Origin": "https://evil.example.com"}, 403},
 		{"null origin", map[string]string{"Origin": "null"}, 403},
-		{"null origin with same-origin fetch metadata", map[string]string{"Origin": "null", "Sec-Fetch-Site": "same-origin"}, 403},
+		// a same-origin form post under a no-referrer policy sends "Origin: null" with same-origin fetch metadata
+		{"null origin with same-origin fetch metadata", map[string]string{"Origin": "null", "Sec-Fetch-Site": "same-origin"}, 303},
+		{"null origin with cross-site fetch metadata", map[string]string{"Origin": "null", "Sec-Fetch-Site": "cross-site"}, 403},
 		{"same host other scheme", map[string]string{"Origin": "https://example.com"}, 403},
 		{"same-origin fetch metadata", map[string]string{"Sec-Fetch-Site": "same-origin"}, 303},
 		{"same origin header", map[string]string{"Origin": "http://example.com"}, 303},
