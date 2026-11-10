@@ -211,18 +211,19 @@ export function joinStep(initialInstances, api, initialStage) {
 }
 
 function radio(data, key, value, label, hint) {
-    return t.label(
-        { className: "field m-b-sm", style: "display:block;cursor:pointer" },
+    const id = "installer_" + key + "_" + value;
+    return t.div(
+        { className: "field m-b-sm" },
         t.input({
             type: "radio",
+            id: id,
             name: "installer_" + key,
             checked: () => data[key] === value,
             disabled: () => data.busy,
             onchange: () => (data[key] = value),
         }),
-        " ",
-        t.strong(null, label),
-        hint ? t.div({ className: "txt-hint" }, hint) : null,
+        t.label({ htmlFor: id }, t.strong(null, label)),
+        hint ? t.div({ className: "txt-hint", style: "padding-left:28px" }, hint) : null,
     );
 }
 
@@ -416,14 +417,18 @@ function collectionRow(data, c) {
                 : null,
         () =>
             conflict && r.action === "skip" && !c.system
-                ? t.label(
-                    { className: "txt-hint", style: "display:block" },
+                ? t.div(
+                    { className: "field txt-hint" },
                     t.input({
                         type: "checkbox",
+                        id: "installer_shared_" + (c.id || c.name),
                         checked: () => !!r.shared,
                         onchange: (e) => (r.shared = e.target.checked),
                     }),
-                    " Keep the existing collection visible to this instance (shared)",
+                    t.label(
+                        { htmlFor: "installer_shared_" + (c.id || c.name) },
+                        "Keep the existing collection visible to this instance (shared)",
+                    ),
                 )
                 : null,
     );
@@ -446,14 +451,18 @@ function resolveStage(data, submit) {
         data.analysis.hasSettings
             ? t.div(
                 { className: "col-12" },
-                t.label(
-                    null,
+                t.div(
+                    { className: "field" },
                     t.input({
                         type: "checkbox",
+                        id: "installer_restore_settings",
                         checked: () => data.settings === "instance",
                         onchange: (e) => (data.settings = e.target.checked ? "instance" : "none"),
                     }),
-                    " Restore the backup's settings for this instance only",
+                    t.label(
+                        { htmlFor: "installer_restore_settings" },
+                        "Restore the backup's settings for this instance only",
+                    ),
                 ),
                 t.div(
                     { className: "txt-hint" },
