@@ -32,16 +32,21 @@ func recordAuthWithOAuth2(e *core.RequestEvent) error {
 		return err
 	}
 
-	if !collection.OAuth2.Enabled {
-		return e.ForbiddenError("The collection is not configured to allow OAuth2 authentication.", nil)
-	}
-
 	e.Set(core.RequestEventKeyInfoContext, core.RequestInfoContextOAuth2)
 
 	form := new(recordOAuth2LoginForm)
 	form.collection = collection
 	if err = e.BindBody(form); err != nil {
 		return firstApiError(err, e.BadRequestError("An error occurred while loading the submitted data.", err))
+	}
+
+	// the popup sign-in on this server hosted page (a virtual provider, see record_auth_popup.go)
+	if form.Provider == oauth2ServerSSOProvider {
+		return recordAuthWithSSO(e, collection, form)
+	}
+
+	if !collection.OAuth2.Enabled {
+		return e.ForbiddenError("The collection is not configured to allow OAuth2 authentication.", nil)
 	}
 
 	if form.RedirectUrl != "" && form.RedirectURL == "" {

@@ -56,8 +56,6 @@ func bindRecordAuthOAuth2ServerApi(sub *router.RouterGroup[*core.RequestEvent]) 
 	sub.GET("/oauth2-server/.well-known/openid-configuration", oauth2ServerDiscovery)
 	sub.GET("/oauth2-server/logout", oauth2ServerLogout)
 	sub.POST("/oauth2-server/logout", oauth2ServerLogout)
-
-	bindRecordAuthPopupApi(sub)
 }
 
 func findOAuth2ServerCollection(e *core.RequestEvent) (*core.Collection, error) {
@@ -87,6 +85,9 @@ type oauth2ServerAuthorizeParams struct {
 	CodeChallenge       string `form:"code_challenge"`
 	CodeChallengeMethod string `form:"code_challenge_method"`
 	Prompt              string `form:"prompt"`
+
+	// PopupOrigin is the frontend origin of a popup sign-in (client_id=@popup).
+	PopupOrigin string `form:"popup_origin"`
 }
 
 type oauth2ServerAuthorizeForm struct {
@@ -116,6 +117,7 @@ func oauth2ServerParamsFromQuery(q url.Values) oauth2ServerAuthorizeParams {
 		CodeChallenge:       q.Get("code_challenge"),
 		CodeChallengeMethod: q.Get("code_challenge_method"),
 		Prompt:              q.Get("prompt"),
+		PopupOrigin:         q.Get("popup_origin"),
 	}
 }
 
@@ -137,16 +139,21 @@ func (p *oauth2ServerAuthorizeParams) validate(e *core.RequestEvent, collection 
 	var client core.OAuth2ServerClient
 
 	if p.isPopup() {
-		// popup sign-in: no registered client, the redirect_uri is the frontend origin
+		// popup sign-in: no registered client; it returns to this server own OAuth2 redirect
+		// handler (which hands the code to the frontend over realtime) for the listed frontend origin
 		if !collection.OAuth2Server.Popup.Enabled {
 			return client, &oauth2ServerAuthorizeError{code: "invalid_client", description: "The popup sign-in is not enabled for this account type."}
 		}
 
-		if !isOAuth2ServerPopupOrigin(e, collection, p.RedirectURI) {
+		if !strings.EqualFold(p.RedirectURI, oauth2ServerPopupRedirectURL(e)) {
+			return client, &oauth2ServerAuthorizeError{code: "invalid_request", description: "The redirect_uri is not valid for the popup sign-in."}
+		}
+
+		if !isOAuth2ServerPopupOrigin(e, collection, p.PopupOrigin) {
 			return client, &oauth2ServerAuthorizeError{code: "invalid_request", description: "This site is not allowed to use the popup sign-in."}
 		}
 
-		client = oauth2ServerPopupClient(p.RedirectURI)
+		client = oauth2ServerPopupClient(p.PopupOrigin)
 
 		// a silent sign-in would hand the token of the remembered user to the frontend
 		// without asking, so the popup always shows the account chooser or the form
@@ -483,7 +490,7 @@ func oauth2ServerPasskeyOffer(e *core.RequestEvent, collection *core.Collection,
 
 func oauth2ServerAuthorizeFailure(e *core.RequestEvent, collection *core.Collection, params oauth2ServerAuthorizeParams, authErr *oauth2ServerAuthorizeError) error {
 	if authErr.redirect {
-		return e.Redirect(http.StatusSeeOther, oauth2ServerReturnURL(collection, params, map[string]string{
+		return e.Redirect(http.StatusSeeOther, oauth2ServerRedirectURL(params.RedirectURI, map[string]string{
 			"error":             authErr.code,
 			"error_description": authErr.description,
 			"state":             params.State,
@@ -791,7 +798,7 @@ func oauth2ServerDiscovery(e *core.RequestEvent) error {
 // -------------------------------------------------------------------
 
 type oauth2ServerPageData struct {
-	// Mode is one of "" (sign-in form), "chooseAccount", "addPasskey", "popupDone";
+	// Mode is one of "" (sign-in form), "chooseAccount", "addPasskey";
 	// ErrorTitle switches to an error page.
 	Mode string
 
@@ -819,10 +826,6 @@ type oauth2ServerPageData struct {
 	AccountEmail    string
 	AccountInitial  string
 	OtherAccountURL template.URL
-
-	// message and target origin for the "popupDone" mode
-	PopupMessage map[string]string
-	PopupOrigin  string
 
 	// FormAction is the authorize endpoint that the page forms are submitted to.
 	FormAction string
@@ -866,7 +869,7 @@ func renderOAuth2ServerLoginPage(
 		PasskeyURL:      oauth2ServerCollectionAPIURL(collection) + "/request-passkey",
 		FormAction:      oauth2ServerCollectionAPIURL(collection) + "/oauth2-server/authorize",
 		Providers:       oauth2ServerPageProviders(e, collection),
-		CancelURL: template.URL(oauth2ServerReturnURL(collection, params, map[string]string{
+		CancelURL: template.URL(oauth2ServerRedirectURL(params.RedirectURI, map[string]string{
 			"error":             "access_denied",
 			"error_description": "The user canceled the sign-in.",
 			"state":             params.State,
@@ -914,7 +917,7 @@ func renderOAuth2ServerAccountChooser(
 		AccountEmail:    email,
 		AccountInitial:  initial,
 		OtherAccountURL: template.URL(oauth2ServerCollectionAPIURL(collection) + "/oauth2-server/authorize?" + other.Encode()),
-		CancelURL: template.URL(oauth2ServerReturnURL(collection, params, map[string]string{
+		CancelURL: template.URL(oauth2ServerRedirectURL(params.RedirectURI, map[string]string{
 			"error":             "access_denied",
 			"error_description": "The user canceled the sign-in.",
 			"state":             params.State,
@@ -933,6 +936,7 @@ func oauth2ServerAuthorizeQuery(p oauth2ServerAuthorizeParams) url.Values {
 		"nonce":                 p.Nonce,
 		"code_challenge":        p.CodeChallenge,
 		"code_challenge_method": p.CodeChallengeMethod,
+		"popup_origin":          p.PopupOrigin,
 	} {
 		if v != "" {
 			q.Set(k, v)
@@ -961,6 +965,9 @@ func renderOAuth2ServerPage(e *core.RequestEvent, status int, data oauth2ServerP
 	header := e.Response.Header()
 	header.Set("Cache-Control", "no-store")
 	header.Set("X-Frame-Options", "DENY")
+	// same-origin (not no-referrer) so that the form posts of the page carry a real Origin header;
+	// nothing is sent to other sites
+	header.Set("Referrer-Policy", "same-origin")
 	// same-origin (not no-referrer) so that the form posts of the page carry a real Origin header;
 	// nothing is sent to other sites
 	header.Set("Referrer-Policy", "same-origin")
@@ -1020,16 +1027,6 @@ form.account{margin:0 0 14px}
 {{if .ErrorTitle}}
 <h1>{{.ErrorTitle}}</h1>
 <p class="sub">{{.Error}}</p>
-{{else if eq .Mode "popupDone"}}
-<h1>You can close this window</h1>
-<p class="sub">Return to the page that opened it to continue.</p>
-<script nonce="{{.ScriptNonce}}">
-(function () {
-  if (!window.opener) return;
-  window.opener.postMessage({{.PopupMessage}}, {{.PopupOrigin}});
-  window.close();
-})();
-</script>
 {{else if eq .Mode "chooseAccount"}}
 <h1>Choose an account</h1>
 <p class="sub">to continue to <strong>{{.ClientName}}</strong></p>

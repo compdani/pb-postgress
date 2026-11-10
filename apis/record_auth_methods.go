@@ -122,7 +122,15 @@ func recordAuthMethods(e *core.RequestEvent) error {
 		result.MFA.Duration = collection.MFA.Duration
 	}
 
+	// the popup sign-in of this server (listed only for the allowed frontends)
+	ssoInfo, hasSSO := oauth2ServerSSOProviderInfo(e, collection)
+
 	if !collection.OAuth2.Enabled {
+		if hasSSO {
+			result.OAuth2.Enabled = true
+			result.OAuth2.Providers = append(result.OAuth2.Providers, ssoInfo)
+		}
+
 		result.fillLegacyFields()
 
 		return e.JSON(http.StatusOK, result)
@@ -179,6 +187,10 @@ func recordAuthMethods(e *core.RequestEvent) error {
 		info.AuthUrl = info.AuthURL
 
 		result.OAuth2.Providers = append(result.OAuth2.Providers, info)
+	}
+
+	if hasSSO {
+		result.OAuth2.Providers = append(result.OAuth2.Providers, ssoInfo)
 	}
 
 	result.fillLegacyFields()

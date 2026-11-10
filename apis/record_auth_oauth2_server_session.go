@@ -150,14 +150,20 @@ func issueOAuth2ServerCode(e *core.RequestEvent, collection *core.Collection, cl
 	code.SetCode(rawCode)
 	code.SetRedirectURI(params.RedirectURI)
 	code.SetScope(params.Scope)
-	code.SetNonce(params.Nonce)
+	if params.isPopup() {
+		// the popup sign-in has no nonce; the frontend origin is kept here, and the
+		// code can be redeemed only from it (see recordAuthWithSSO)
+		code.SetNonce(params.PopupOrigin)
+	} else {
+		code.SetNonce(params.Nonce)
+	}
 	code.SetCodeChallenge(params.CodeChallenge)
 	code.SetCodeChallengeMethod(params.CodeChallengeMethod)
 	if err := e.App.Save(code); err != nil {
 		return "", err
 	}
 
-	return oauth2ServerReturnURL(collection, params, map[string]string{
+	return oauth2ServerRedirectURL(params.RedirectURI, map[string]string{
 		"code":  rawCode,
 		"state": params.State,
 		"iss":   oauth2ServerIssuer(e, collection),

@@ -3,57 +3,46 @@ package apis
 import (
 	"crypto/sha256"
 	"crypto/subtle"
-	_ "embed"
 	"encoding/base64"
-	"maps"
 	"net"
-	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/router"
+	"github.com/pocketbase/pocketbase/tools/security"
 )
 
-// Popup sign-in of an auth collection.
+// Popup sign-in ("sso" provider) of an auth collection.
 //
-// It lets the collection own frontends sign users in on the hosted
-// OAuth2 server page without registering a client (and without handling
-// any password):
+// It lets the collection own frontends sign users in on the hosted OAuth2
+// server page, with no registered client and no extra JS, through the
+// regular JS SDK call (and its popup + realtime flow):
 //
-//  1. the frontend opens "/oauth2-server/authorize" in a popup with
-//     client_id=@popup, its own origin as redirect_uri and a PKCE challenge;
-//  2. after the sign-in the popup lands on "/oauth2-server/popup-callback",
-//     which hands the single use code to the opener with window.postMessage
-//     (only to the allowed origin);
-//  3. the frontend exchanges the code and the PKCE verifier for the regular
-//     auth response at "/auth-with-popup".
+//	await pb.collection("users").authWithOAuth2({ provider: "sso" })
 //
-// "/oauth2-server/popup.js" serves a small helper for the JS SDK that does all of the above.
+//  1. "auth-methods" lists a virtual "sso" provider (when the popup sign-in is
+//     enabled and the request comes from an allowed frontend origin) whose
+//     auth url is the hosted sign-in page with a PKCE challenge;
+//  2. the SDK opens it in a popup; after the sign-in the page redirects to the
+//     regular "/api/oauth2-redirect", which pushes the code to the frontend
+//     over its realtime (SSE) connection;
+//  3. the SDK sends the code and the PKCE verifier to "auth-with-oauth2",
+//     which signs the user in (no external provider is involved).
+//
+// The code can be redeemed only by the frontend origin it was issued for
+// (the Origin header of the exchange must match the listed one).
 
 const (
 	// oauth2ServerPopupClientId is the reserved client_id of the popup sign-in
 	// (it can't collide with a registered client because of the "@").
 	oauth2ServerPopupClientId = "@popup"
 
-	oauth2ServerPopupMessageType = "pocketbase:popup"
-
-	authMethodPopup = "popup"
+	// oauth2ServerSSOProvider is the name of the virtual provider that the frontend
+	// passes to authWithOAuth2 (providers are looked up by name, and the configured
+	// ones must be registered ones, so it can't collide with them).
+	oauth2ServerSSOProvider = "sso"
 )
-
-//go:embed record_auth_popup.js
-var recordAuthPopupScript []byte
-
-func bindRecordAuthPopupApi(sub *router.RouterGroup[*core.RequestEvent]) {
-	sub.GET("/oauth2-server/popup.js", oauth2ServerPopupScript)
-	sub.GET("/oauth2-server/popup-callback", oauth2ServerPopupCallback).Bind(
-		SkipSuccessActivityLog(), // the url contains the authorization code
-	)
-	sub.POST("/auth-with-popup", recordAuthWithPopup).Bind(
-		collectionPathRateLimit("", "authWithPopup", "auth"),
-	)
-}
 
 func (p *oauth2ServerAuthorizeParams) isPopup() bool {
 	return p.ClientId == oauth2ServerPopupClientId
@@ -128,94 +117,78 @@ func isOAuth2ServerPopupOrigin(e *core.RequestEvent, collection *core.Collection
 	return false
 }
 
-// oauth2ServerReturnURL returns the url that sends the authorization
-// response (code or error) back to the client.
-//
-// The params must be already validated.
-func oauth2ServerReturnURL(collection *core.Collection, params oauth2ServerAuthorizeParams, values map[string]string) string {
-	if !params.isPopup() {
-		return oauth2ServerRedirectURL(params.RedirectURI, values)
-	}
-
-	values = maps.Clone(values)
-	values["origin"] = params.RedirectURI
-
-	return oauth2ServerRedirectURL(oauth2ServerCollectionAPIURL(collection)+"/oauth2-server/popup-callback", values)
+// oauth2ServerPopupRedirectURL is the only redirect url of the popup sign-in:
+// the regular OAuth2 redirect handler of this server, which hands the code to
+// the frontend over realtime.
+func oauth2ServerPopupRedirectURL(e *core.RequestEvent) string {
+	return oauth2ServerBaseURL(e) + "/api/oauth2-redirect"
 }
 
-func findPopupCollection(e *core.RequestEvent) (*core.Collection, error) {
-	collection, err := findOAuth2ServerCollection(e)
-	if err != nil {
-		return nil, err
+// oauth2ServerRequestOrigin returns the origin of the frontend that made the request.
+//
+// Browsers send the Origin header on cross-origin requests (and on posts); a plain
+// same-origin read (the frontend is served by this server) is told by fetch metadata.
+func oauth2ServerRequestOrigin(e *core.RequestEvent) string {
+	if origin := e.Request.Header.Get("Origin"); origin != "" {
+		return normalizedOrigin(origin)
 	}
 
-	if !collection.OAuth2Server.Popup.Enabled {
-		return nil, e.NotFoundError("The collection is not configured to allow popup sign-in.", nil)
+	if e.Request.Header.Get("Sec-Fetch-Site") == "same-origin" {
+		return normalizedOrigin(oauth2ServerBaseURL(e))
 	}
 
-	return collection, nil
+	return ""
 }
 
-// GET /api/collections/{collection}/oauth2-server/popup.js
-func oauth2ServerPopupScript(e *core.RequestEvent) error {
-	e.Response.Header().Set("Cache-Control", "max-age=3600")
-
-	return e.Blob(http.StatusOK, "text/javascript; charset=utf-8", recordAuthPopupScript)
-}
-
-// oauth2ServerPopupCallback hands the authorization response to the window that opened the popup.
-//
-// GET /api/collections/{collection}/oauth2-server/popup-callback
-//
-//	?origin=...&state=...&code=... (or &error=...&error_description=...)
-func oauth2ServerPopupCallback(e *core.RequestEvent) error {
-	collection, err := findPopupCollection(e)
-	if err != nil {
-		return err
+// oauth2ServerSSOProviderInfo returns the virtual "sso" provider listed by auth-methods
+// (or false when the popup sign-in isn't available for the requesting frontend).
+func oauth2ServerSSOProviderInfo(e *core.RequestEvent, collection *core.Collection) (providerInfo, bool) {
+	if !collection.OAuth2Server.Popup.Enabled || collection.Name == core.CollectionNameSuperusers {
+		return providerInfo{}, false
 	}
 
-	q := e.Request.URL.Query()
-
-	origin := q.Get("origin")
+	// only the allowed frontends see (and can use) the provider
+	origin := oauth2ServerRequestOrigin(e)
 	if !isOAuth2ServerPopupOrigin(e, collection, origin) {
-		return renderOAuth2ServerPage(e, http.StatusBadRequest, oauth2ServerPageData{
-			AppName:    e.App.Settings().Meta.AppName,
-			ErrorTitle: "Invalid sign-in request",
-			Error:      "This site is not allowed to use the popup sign-in.",
-		})
+		return providerInfo{}, false
 	}
 
-	return renderOAuth2ServerPage(e, http.StatusOK, oauth2ServerPageData{
-		Mode:        "popupDone",
-		AppName:     e.App.Settings().Meta.AppName,
-		PopupOrigin: origin,
-		PopupMessage: map[string]string{
-			"type":             oauth2ServerPopupMessageType,
-			"state":            q.Get("state"),
-			"code":             q.Get("code"),
-			"error":            q.Get("error"),
-			"errorDescription": q.Get("error_description"),
-		},
-	})
+	name := e.App.Settings().Meta.AppName
+	if name == "" {
+		name = "Single sign-on"
+	}
+
+	info := providerInfo{
+		Name:                oauth2ServerSSOProvider,
+		DisplayName:         name,
+		State:               security.RandomString(30),
+		CodeVerifier:        security.RandomString(43),
+		CodeChallengeMethod: "S256",
+	}
+	info.CodeChallenge = security.S256Challenge(info.CodeVerifier)
+
+	query := url.Values{}
+	query.Set("response_type", "code")
+	query.Set("client_id", oauth2ServerPopupClientId)
+	query.Set("state", info.State)
+	query.Set("popup_origin", origin)
+	query.Set("code_challenge", info.CodeChallenge)
+	query.Set("code_challenge_method", info.CodeChallengeMethod)
+
+	// the SDK appends the (encoded) redirect url
+	info.AuthURL = oauth2ServerBaseURL(e) + oauth2ServerCollectionAPIURL(collection) + "/oauth2-server/authorize?" +
+		query.Encode() + "&redirect_uri="
+	info.AuthUrl = info.AuthURL
+
+	return info, true
 }
 
-type recordAuthWithPopupForm struct {
-	Code         string `form:"code" json:"code"`
-	CodeVerifier string `form:"codeVerifier" json:"codeVerifier"`
-}
-
-// recordAuthWithPopup exchanges the code of the popup sign-in for the regular auth response.
-//
-// POST /api/collections/{collection}/auth-with-popup
-func recordAuthWithPopup(e *core.RequestEvent) error {
+// recordAuthWithSSO signs in the record of an "sso" authorization code
+// (the SDK sends it to auth-with-oauth2 like for any other provider).
+func recordAuthWithSSO(e *core.RequestEvent, collection *core.Collection, form *recordOAuth2LoginForm) error {
 	collection, err := findPopupCollection(e)
 	if err != nil {
 		return err
-	}
-
-	form := &recordAuthWithPopupForm{}
-	if err := e.BindBody(form); err != nil {
-		return e.BadRequestError("An error occurred while loading the submitted data.", err)
 	}
 
 	invalidCode := func() error {
@@ -233,13 +206,15 @@ func recordAuthWithPopup(e *core.RequestEvent) error {
 		return invalidCode()
 	}
 
-	// browsers always send the Origin header with this post, so the code can be
-	// used only by the frontend it was issued for
+	// the code was issued for the frontend origin that listed the provider, and
+	// browsers always send the Origin header with this post
+	origin := normalizedOrigin(e.Request.Header.Get("Origin"))
 	if code.CollectionRef() != collection.Id ||
 		code.ClientId() != oauth2ServerPopupClientId ||
 		code.CodeChallenge() == "" ||
 		code.HasExpired(collection.OAuth2Server.CodeDurationTime()) ||
-		e.Request.Header.Get("Origin") != code.RedirectURI() {
+		origin == "" || origin != code.Nonce() || // the origin is kept in the (otherwise unused) nonce
+		subtle.ConstantTimeCompare([]byte(code.RedirectURI()), []byte(form.RedirectURL)) != 1 {
 		return invalidCode()
 	}
 
@@ -263,5 +238,18 @@ func recordAuthWithPopup(e *core.RequestEvent) error {
 		return invalidCode()
 	}
 
-	return RecordAuthResponse(e, record, authMethodPopup, nil)
+	return RecordAuthResponse(e, record, core.MFAMethodOAuth2, map[string]any{"isNew": false})
+}
+
+func findPopupCollection(e *core.RequestEvent) (*core.Collection, error) {
+	collection, err := findOAuth2ServerCollection(e)
+	if err != nil {
+		return nil, err
+	}
+
+	if !collection.OAuth2Server.Popup.Enabled {
+		return nil, e.NotFoundError("The collection is not configured to allow popup sign-in.", nil)
+	}
+
+	return collection, nil
 }

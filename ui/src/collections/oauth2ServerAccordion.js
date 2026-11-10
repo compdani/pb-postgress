@@ -340,11 +340,13 @@ export function oauth2ServerAccordion(collection) {
                 ),
                 t.div(
                     { className: "field-help" },
-                    "The frontend opens this sign-in page in a popup and gets the auth token back, without handling the password: ",
-                    t.code(null, "await authWithPopup(pb, \"" + (collection.name || "COLLECTION") + "\")"),
-                    ". Import it from ",
-                    t.code(null, () => data.baseURL + "/popup.js"),
-                    ".",
+                    "Your frontend signs in with a popup on this page, without handling the password: ",
+                    t.code(
+                        null,
+                        "await pb.collection(\"" + (collection.name || "COLLECTION")
+                            + "\").authWithOAuth2({ provider: \"sso\" })",
+                    ),
+                    ". No extra setup, it appears as the \"sso\" provider for the allowed origins below.",
                 ),
             ),
             () => {

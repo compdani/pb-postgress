@@ -194,14 +194,53 @@ func TestOAuth2ServerProvidersPopupSignIn(t *testing.T) {
 
 	res := s.providerRedirect(url.Values{"state": {loc.Query().Get("state")}, "code": {"provider-code"}}, cookie)
 	back, _ := url.Parse(res.Header.Get("Location"))
-	if res.StatusCode != http.StatusSeeOther || back.Path != "/api/collections/users/oauth2-server/popup-callback" {
+	if res.StatusCode != http.StatusSeeOther || back.Path != "/api/oauth2-redirect" {
 		body, _ := io.ReadAll(res.Body)
-		t.Fatalf("expected a redirect to the popup callback, got %d %s: %s", res.StatusCode, back, body)
+		t.Fatalf("expected a redirect to the OAuth2 redirect handler, got %d %s: %s", res.StatusCode, back, body)
 	}
 
 	status, data := s.popupExchange(back.Query().Get("code"), oauth2TestVerifier, popupTestOrigin)
 	if status != 200 || data["token"] == nil {
-		t.Fatalf("auth-with-popup: %d %v", status, data)
+		t.Fatalf("auth-with-oauth2 (sso): %d %v", status, data)
+	}
+}
+
+func TestOAuth2ServerPageIgnoresSSOProvider(t *testing.T) {
+	t.Parallel()
+
+	s := newHostedProvidersTestServer(t)
+
+	users, _ := s.app.FindCollectionByNameOrId("users")
+	users.OAuth2Server.Popup = core.OAuth2ServerPopupConfig{Enabled: true, Origins: []string{popupTestOrigin}}
+	if err := s.app.Save(users); err != nil {
+		t.Fatal(err)
+	}
+
+	// the virtual provider is offered by auth-methods to the allowed origin...
+	if s.ssoProvider(popupTestOrigin, nil) == nil {
+		t.Fatal("expected sso in the auth methods")
+	}
+
+	// ...but never as a button of the hosted page (client or popup request)
+	for name, params := range map[string]url.Values{"client": s.authorizeParams(nil), "popup": popupTestParams(nil)} {
+		res := s.do(http.MethodGet, "/api/collections/users/oauth2-server/authorize?"+params.Encode(), nil, nil)
+		page, _ := io.ReadAll(res.Body)
+		if res.StatusCode != 200 || !strings.Contains(string(page), `name="provider" value="hostedtest"`) {
+			t.Fatalf("%s: expected the configured provider button (%d)", name, res.StatusCode)
+		}
+		if strings.Contains(string(page), `value="sso"`) {
+			t.Fatalf("%s: the page must not list sso", name)
+		}
+
+		// a forged sso button is rejected
+		form := url.Values{}
+		for k, v := range params {
+			form[k] = v
+		}
+		form.Set("provider", "sso")
+		if res := s.do(http.MethodPost, "/api/collections/users/oauth2-server/authorize", form, nil); res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%s: expected forged sso to be rejected, got %d", name, res.StatusCode)
+		}
 	}
 }
 
