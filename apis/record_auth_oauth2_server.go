@@ -150,7 +150,13 @@ func (p *oauth2ServerAuthorizeParams) validate(e *core.RequestEvent, collection 
 		}
 
 		if !isOAuth2ServerPopupOrigin(e, collection, p.PopupOrigin) {
-			return client, &oauth2ServerAuthorizeError{code: "invalid_request", description: "This site is not allowed to use the popup sign-in."}
+			e.App.Logger().Warn("[oauth2Server] popup origin rejected",
+				"origin", p.PopupOrigin,
+				"allowed", collection.OAuth2Server.Popup.Origins,
+				"appURL", e.App.Settings().Meta.AppURL,
+				"host", e.Request.Host,
+			)
+			return client, &oauth2ServerAuthorizeError{code: "invalid_request", description: "The site " + p.PopupOrigin + " is not in the popup sign-in allowed origins of this account type."}
 		}
 
 		client = oauth2ServerPopupClient(p.PopupOrigin)
