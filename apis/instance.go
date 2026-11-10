@@ -25,6 +25,25 @@ func bindInstanceAPI(app core.App, rg *router.RouterGroup[*core.RequestEvent]) {
 		}
 		return e.JSON(http.StatusOK, scope)
 	}).Bind(RequireSuperuserAuth())
+	// Lists every collection in the shared database, including the ones this
+	// instance cannot see, so the scope selector can offer them.
+	rg.GET("/instance/collections", func(e *core.RequestEvent) error {
+		all, err := e.App.FindAllCollections()
+		if err != nil {
+			return err
+		}
+		type item struct {
+			Id     string `json:"id"`
+			Name   string `json:"name"`
+			Type   string `json:"type"`
+			System bool   `json:"system"`
+		}
+		items := make([]item, 0, len(all))
+		for _, c := range all {
+			items = append(items, item{c.Id, c.Name, c.Type, c.System})
+		}
+		return e.JSON(http.StatusOK, items)
+	}).Bind(RequireSuperuserAuth())
 	rg.PUT("/instance/scope", func(e *core.RequestEvent) error {
 		var scope core.InstanceScope
 		if err := e.BindBody(&scope); err != nil {

@@ -36,3 +36,33 @@ func TestNewCollectionInAllowScope(t *testing.T) {
 		}
 	}
 }
+
+func TestRenameKeepsOtherInstanceScope(t *testing.T) {
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	if err := app.SetInstanceScope(core.InstanceScope{Mode: "allow", Collections: []string{"demo1"}}); err != nil {
+		t.Fatal(err)
+	}
+	// another instance sharing the database, which sees demo1 as well
+	if _, err := app.DB().NewQuery(`INSERT INTO _instances (id, name, url, scopeMode, scopeCollections, created_at) VALUES ('other','other','', 'deny', '["demo1"]', '2020-01-01T00:00:00Z')`).Execute(); err != nil {
+		t.Fatal(err)
+	}
+	c, err := app.FindCollectionByNameOrId("demo1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Name = "demo1_renamed"
+	if err := app.Save(c); err != nil {
+		t.Fatal(err)
+	}
+	scope, _ := app.InstanceScope()
+	if len(scope.Collections) != 1 || scope.Collections[0] != "demo1_renamed" {
+		t.Fatalf("own scope: %v", scope.Collections)
+	}
+	var raw string
+	app.DB().NewQuery(`SELECT scopeCollections FROM _instances WHERE id='other'`).Row(&raw)
+	if raw != `["demo1_renamed"]` {
+		t.Fatalf("other scope: %s", raw)
+	}
+}

@@ -10,6 +10,7 @@ export function pageInstanceCollections() {
         mode: "all",
         selected: [],
         instances: [],
+        allCollections: [],
         initSerialized: "",
         get hasChanges() {
             return data.initSerialized !== JSON.stringify({ mode: data.mode, collections: selectedNames(data) });
@@ -21,11 +22,13 @@ export function pageInstanceCollections() {
     async function load() {
         data.isLoading = true;
         try {
-            const [scope, instances] = await Promise.all([
+            const [scope, instances, allCollections] = await Promise.all([
                 app.pb.send("/api/instance/scope", { method: "GET", requestKey: "instance_scope" }),
                 app.pb.send("/api/instances", { method: "GET", requestKey: "instance_list" }),
+                app.pb.send("/api/instance/collections", { method: "GET", requestKey: "instance_collections" }),
                 app.store.loadCollections(),
             ]);
+            data.allCollections = Array.isArray(allCollections) ? allCollections : [];
             data.mode = scope?.mode || "all";
             data.selected = Array.isArray(scope?.collections) ? scope.collections.slice() : [];
             data.instances = instanceRows(instances);
@@ -46,11 +49,13 @@ export function pageInstanceCollections() {
         }
         data.isRefreshing = true;
         try {
-            const [instances] = await Promise.all([
+            const [instances, allCollections] = await Promise.all([
                 app.pb.send("/api/instances", { method: "GET", requestKey: "instance_list" }),
+                app.pb.send("/api/instance/collections", { method: "GET", requestKey: "instance_collections" }),
                 app.store.loadCollections(),
             ]);
             data.instances = instanceRows(instances);
+            data.allCollections = Array.isArray(allCollections) ? allCollections : [];
         } catch (err) {
             if (!err?.isAbort) {
                 app.checkApiError(err);
@@ -165,7 +170,7 @@ export function pageInstanceCollections() {
                         }),
                     ),
                     t.div({ className: "col-lg-12" }, () => {
-                        const collections = app.store.collections || [];
+                        const collections = data.allCollections || [];
                         if (!collections.length) {
                             return t.div({ className: "txt-hint" }, "No collections yet.");
                         }

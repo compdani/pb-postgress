@@ -1429,6 +1429,32 @@ func (app *BaseApp) registerBaseHooks() {
 		}
 		return e.Next()
 	}, Priority: -999998})
+	// Instance scopes store collection names, and every instance shares the
+	// same database, so a rename made from one instance must be carried over
+	// to the scope of all the others. Otherwise a collection hidden from
+	// (or, in allow mode, granted to) another instance loses its entry there.
+	app.OnModelUpdate().Bind(&hook.Handler[*ModelEvent]{Func: func(e *ModelEvent) error {
+		c, ok := e.Model.(*Collection)
+		if !ok || c.IsNew() {
+			return e.Next()
+		}
+		ba := asBaseApp(e.App)
+		if ba == nil || !ba.IsBootstrapped() || !ba.HasTable("_instances") {
+			return e.Next()
+		}
+		old, err := e.App.FindCollectionByNameOrId(cast.ToString(c.LastSavedPK()))
+		if err != nil {
+			return e.Next()
+		}
+		oldName := old.Name
+		if err := e.Next(); err != nil {
+			return err
+		}
+		if oldName == c.Name {
+			return nil
+		}
+		return ba.renameCollectionInScopes(oldName, c.Name)
+	}, Priority: -999998})
 	app.OnModelDelete().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
 
 	app.OnModelUpdate().BindFunc(func(e *ModelEvent) error {

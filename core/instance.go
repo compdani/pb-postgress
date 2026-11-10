@@ -140,6 +140,40 @@ func (app *BaseApp) SetInstanceScope(scope InstanceScope) error {
 	return app.writeInstanceScope(scope)
 }
 
+// renameCollectionInScopes replaces oldName with newName in the scope of every
+// instance that lists it.
+func (app *BaseApp) renameCollectionInScopes(oldName, newName string) error {
+	defer app.resetScopeCache()
+	rows := []*Instance{}
+	if err := app.DB().Select("id", "scopeCollections").From("_instances").All(&rows); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		var names []string
+		if err := json.Unmarshal([]byte(row.ScopeCollections), &names); err != nil {
+			continue
+		}
+		changed := false
+		for i, n := range names {
+			if n == oldName {
+				names[i] = newName
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		raw, err := json.Marshal(slices.Compact(names))
+		if err != nil {
+			return err
+		}
+		if _, err := app.DB().Update("_instances", dbx.Params{"scopeCollections": string(raw)}, dbx.HashExp{"id": row.ID}).Execute(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (app *BaseApp) writeInstanceScope(scope InstanceScope) error {
 	// invalidate again after the write: a read that overlapped it must not
 	// stay cached (a transaction app also invalidates the parent on completion)
