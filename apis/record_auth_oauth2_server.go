@@ -992,7 +992,8 @@ var oauth2ServerPageTemplate = template.Must(template.New("oauth2Server").Parse(
 <input type="hidden" name="scope" value="{{.Scope}}">
 <input type="hidden" name="nonce" value="{{.Nonce}}">
 <input type="hidden" name="code_challenge" value="{{.CodeChallenge}}">
-<input type="hidden" name="code_challenge_method" value="{{.CodeChallengeMethod}}">{{end}}<!doctype html>
+<input type="hidden" name="code_challenge_method" value="{{.CodeChallengeMethod}}">
+{{if .PopupOrigin}}<input type="hidden" name="popup_origin" value="{{.PopupOrigin}}">{{end}}{{end}}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">

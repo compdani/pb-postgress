@@ -2,9 +2,11 @@ package apis_test
 
 import (
 	"encoding/json"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -204,8 +206,21 @@ func TestPopupSignInFullFlow(t *testing.T) {
 		t.Fatalf("unexpected login page (%d): %s", res.StatusCode, page)
 	}
 
+	// the page form carries every authorization param (the browser posts only these)
+	submitted := url.Values{}
+	for _, m := range regexp.MustCompile(`<input type="hidden" name="([^"]+)" value="([^"]*)">`).FindAllStringSubmatch(string(page), -1) {
+		if m[1] != "provider" && m[1] != "action" { // the other forms of the page
+			submitted.Set(m[1], html.UnescapeString(m[2]))
+		}
+	}
+	for k := range authURL.Query() {
+		if submitted.Get(k) != authURL.Query().Get(k) {
+			t.Fatalf("the page form doesn't carry %q (%q, want %q)", k, submitted.Get(k), authURL.Query().Get(k))
+		}
+	}
+
 	// the sign-in returns to the regular OAuth2 redirect handler of the server
-	res, code := s.login(authURL.Query(), "test@example.com", "1234567890")
+	res, code := s.login(submitted, "test@example.com", "1234567890")
 	if code == "" {
 		body, _ := io.ReadAll(res.Body)
 		t.Fatalf("expected code redirect, got %d: %s", res.StatusCode, body)

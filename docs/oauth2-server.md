@@ -31,6 +31,69 @@ document.getElementById("login").addEventListener("click", async () => {
 
 There is nothing extra to install: `sso` is a built-in provider that `auth-methods` lists for the allowed frontends, and it uses the same popup + realtime flow as any other OAuth2 provider.
 
+### Reacting to a closed popup
+
+If the user presses **Cancel** on the sign-in page, the call rejects (`OAuth2 redirect error … access_denied`) and the popup closes, so a loading state ends in `.catch`/`.finally` on its own.
+
+If the user closes the popup window instead, the SDK isn't told and the call stays pending. To reset the button, open the popup yourself and watch it:
+
+```js
+const LOGIN_KEY = "sso-login";
+let attempt = 0;
+
+// not async: the popup must be opened directly in the click (Safari)
+loginButton.addEventListener("click", () => {
+    const current = ++attempt;
+    setLoading(true);
+
+    const popup = window.open("", "sso-login", "width=480,height=640");
+
+    // the popup can also look "closed" while the sign-in goes on: right after a successful
+    // sign-in, and while the user is on some OAuth2 provider pages. So only reset the button
+    // and keep the call pending; if the sign-in still completes, .then() runs as usual.
+    const watcher = setInterval(() => {
+        if (!popup || popup.closed) {
+            clearInterval(watcher);
+            setTimeout(() => {
+                if (current === attempt) {
+                    setLoading(false);
+                }
+            }, 3000);
+        }
+    }, 500);
+
+    pb.collection("users")
+        .authWithOAuth2({
+            provider: "sso",
+            // a new click with the same key cancels the previous pending call
+            requestKey: LOGIN_KEY,
+            urlCallback: (url) => {
+                popup.location.href = url;
+            },
+        })
+        .then((authData) => {
+            onSignedIn(authData);
+        })
+        .catch((err) => {
+            if (err.isAbort) {
+                return; // replaced by a newer click
+            }
+            showError("Sign-in was cancelled or did not complete.");
+        })
+        .finally(() => {
+            clearInterval(watcher);
+            if (current === attempt) {
+                setLoading(false);
+            }
+            try {
+                popup?.close();
+            } catch {}
+        });
+});
+```
+
+`pb.cancelRequest(LOGIN_KEY)` also ends a pending call right away (it rejects with `err.isAbort`), for example from a separate "Stop" button.
+
 **Setup.** In the dashboard, open the auth collection → **Options → OAuth2 server** and turn on **Popup sign-in**. No client, secret or OAuth2 provider is needed. List the address of every frontend that may use it (for example `https://app.example.com` or `http://localhost:5173`) in the allowed origins. Only the Application URL (and the server itself on localhost) is allowed implicitly. Set the **Application URL** to the public address of PocketBase.
 
 Notes:
