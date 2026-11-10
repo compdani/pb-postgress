@@ -56,12 +56,15 @@ const (
 )
 
 type portableManifest struct {
-	Format        string                       `json:"format"`
-	FormatVersion int                          `json:"formatVersion"`
-	Created       string                       `json:"created"`
-	SourceDriver  string                       `json:"sourceDriver"`
-	Files         bool                         `json:"files"`
-	Collections   []portableManifestCollection `json:"collections"`
+	Format        string `json:"format"`
+	FormatVersion int    `json:"formatVersion"`
+	Created       string `json:"created"`
+	SourceDriver  string `json:"sourceDriver"`
+	// InstanceID is the instance that created the backup; restoring into a
+	// new instance uses that instance's own settings row when it has one.
+	InstanceID  string                       `json:"instanceId,omitempty"`
+	Files       bool                         `json:"files"`
+	Collections []portableManifestCollection `json:"collections"`
 }
 
 type portableManifestCollection struct {
@@ -103,7 +106,7 @@ func (app *BaseApp) requireUnscopedForBackup() error {
 	if err != nil {
 		return err
 	}
-	if scope.Mode != "" && scope.Mode != "all" {
+	if scope.Mode != "" && scope.Mode != "all" && !app.InstanceSetupPending() {
 		return ErrBackupScoped
 	}
 	return nil
@@ -135,6 +138,9 @@ func (app *BaseApp) writePortableBackup(ctx context.Context, dest string) (err e
 		FormatVersion: PortableBackupFormatVersion,
 		Created:       time.Now().UTC().Format(time.RFC3339),
 		SourceDriver:  app.dialectName(),
+	}
+	if id, err := app.InstanceID(); err == nil {
+		manifest.InstanceID = id
 	}
 
 	var collections []*Collection
@@ -353,6 +359,11 @@ func openPortableSource(f *os.File, zr *zip.Reader, entries map[string]*zip.File
 	}
 
 	return src, nil
+}
+
+// SourceInstanceID returns the id of the instance that created the backup.
+func (s *portableSource) SourceInstanceID() string {
+	return s.manifest.InstanceID
 }
 
 func (s *portableSource) Kind() string {

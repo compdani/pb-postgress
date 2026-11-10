@@ -200,6 +200,10 @@ func loadAuthToken() *hook.Handler[*core.RequestEvent] {
 			if err != nil {
 				e.App.Logger().Debug("loadAuthToken failure", "error", err)
 			} else if record != nil {
+				// an auth collection hidden from this instance cannot authenticate
+				if ba := core.AsBaseApp(e.App); ba != nil && !ba.CollectionVisible(record.Collection()) {
+					return e.Next()
+				}
 				e.Auth = record
 			}
 

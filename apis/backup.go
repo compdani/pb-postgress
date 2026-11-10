@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -20,6 +21,9 @@ func bindBackupApi(app core.App, rg *router.RouterGroup[*core.RequestEvent]) {
 	sub.POST("/upload", backupUpload).Bind(BodyLimit(0), RequireSuperuserAuth())
 	sub.GET("/{key}", backupDownload) // relies on superuser file token
 	sub.DELETE("/{key}", backupDelete).Bind(RequireSuperuserAuth())
+	sub.GET("/{key}/collections", backupCollections).Bind(RequireSuperuserAuth())
+	sub.POST("/restore-files", backupRestoreFiles).Bind(RequireSuperuserAuth())
+	sub.DELETE("/restore-files", backupDiscardRestoreFiles).Bind(RequireSuperuserAuth())
 	sub.POST("/{key}/restore", backupRestore).Bind(RequireSuperuserAuth())
 }
 
@@ -112,6 +116,15 @@ func backupDelete(e *core.RequestEvent) error {
 	if key != "" && cast.ToString(e.App.Store().Get(core.StoreKeyActiveBackup)) == key {
 		return e.BadRequestError("The backup is currently being used and cannot be deleted.", nil)
 	}
+	if ba := core.AsBaseApp(e.App); ba != nil && key != "" {
+		pending, ok, err := ba.PendingRestoreFilesBackup()
+		if err != nil {
+			return e.InternalServerError("Could not check the pending restore state.", err)
+		}
+		if ok && pending == key {
+			return e.BadRequestError("The backup still has files to copy after a restore. Copy or discard them first.", nil)
+		}
+	}
 
 	if err := fsys.Delete(key); err != nil {
 		return e.BadRequestError("Invalid or already deleted backup file. Raw error: \n"+err.Error(), nil)
@@ -148,7 +161,39 @@ func backupRestore(e *core.RequestEvent) error {
 	ctx, cancelRestore := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancelRestore()
 
-	if err := e.App.RestoreBackup(ctx, key); err != nil {
+	opts := core.DefaultRestoreOptions()
+	if v := e.Request.URL.Query().Get("dropCollections"); v != "" {
+		drop, err := strconv.ParseBool(v)
+		if err != nil {
+			return e.BadRequestError("Invalid dropCollections value.", err)
+		}
+		opts.DropCollections = drop
+	}
+
+	opts.ExcludeCollections = e.Request.URL.Query()["excludeCollections"]
+
+	// optional JSON body for the options that don't fit in a query string
+	if e.Request.ContentLength != 0 {
+		body := struct {
+			DropCollections    *bool                                `json:"dropCollections"`
+			ExcludeCollections []string                             `json:"excludeCollections"`
+			Resolutions        map[string]core.CollectionResolution `json:"resolutions"`
+			RequireResolution  bool                                 `json:"requireResolution"`
+			Settings           string                               `json:"settings"`
+		}{}
+		if err := e.BindBody(&body); err != nil {
+			return e.BadRequestError("Invalid restore options.", err)
+		}
+		if body.DropCollections != nil {
+			opts.DropCollections = *body.DropCollections
+		}
+		opts.ExcludeCollections = append(opts.ExcludeCollections, body.ExcludeCollections...)
+		opts.Resolutions = body.Resolutions
+		opts.RequireResolution = body.RequireResolution
+		opts.Settings = body.Settings
+	}
+
+	if err := e.App.RestoreBackupWithOptions(ctx, key, opts); err != nil {
 		return e.BadRequestError("Failed to restore the backup: "+err.Error(), nil)
 	}
 
@@ -159,4 +204,35 @@ func backupRestore(e *core.RequestEvent) error {
 	}
 
 	return e.JSON(http.StatusOK, report)
+}
+
+func backupCollections(e *core.RequestEvent) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	list, err := e.App.AnalyzeBackup(ctx, e.Request.PathValue("key"))
+	if err != nil {
+		return e.BadRequestError("Failed to read the backup collections: "+err.Error(), nil)
+	}
+
+	return e.JSON(http.StatusOK, list)
+}
+
+// backupRestoreFiles retries copying the files of a restore whose database
+// part committed.
+func backupRestoreFiles(e *core.RequestEvent) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+	defer cancel()
+
+	if err := e.App.RetryRestoreFiles(ctx); err != nil {
+		return e.BadRequestError("Failed to copy the files: "+err.Error(), nil)
+	}
+	return e.NoContent(http.StatusNoContent)
+}
+
+func backupDiscardRestoreFiles(e *core.RequestEvent) error {
+	if err := e.App.DiscardRestoreFiles(); err != nil {
+		return e.BadRequestError("Failed to discard the pending files: "+err.Error(), nil)
+	}
+	return e.NoContent(http.StatusNoContent)
 }

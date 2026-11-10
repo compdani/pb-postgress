@@ -477,3 +477,413 @@ func TestRestorePocketBaseTranslatesViews(t *testing.T) {
 		t.Fatalf("expected the rest to be restored: %v", err)
 	}
 }
+
+func TestRestoreKeepsMissingCollections(t *testing.T) {
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	if err := app.CreateBackup(context.Background(), "keep.zip"); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Save(core.NewBaseCollection("after_backup")); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := core.RestoreOptions{DropCollections: false}
+	if err := app.RestoreBackupWithOptions(context.Background(), "keep.zip", opts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.FindCollectionByNameOrId("after_backup"); err != nil {
+		t.Fatalf("expected the collection to be kept: %v", err)
+	}
+
+	if err := app.RestoreBackup(context.Background(), "keep.zip"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.FindCollectionByNameOrId("after_backup"); err == nil {
+		t.Fatal("expected the collection to be dropped by the default restore")
+	}
+}
+
+func TestRestoreExcludesCollections(t *testing.T) {
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	if err := app.CreateBackup(context.Background(), "excl.zip"); err != nil {
+		t.Fatal(err)
+	}
+	analysis, err := app.AnalyzeBackup(context.Background(), "excl.zip")
+	if err != nil || len(analysis.Collections) == 0 {
+		t.Fatalf("analyze: %v %v", analysis, err)
+	}
+
+	if _, err := app.DB().NewQuery("DELETE FROM {{demo1}}").Execute(); err != nil {
+		t.Fatal(err)
+	}
+	opts := core.RestoreOptions{DropCollections: true, ExcludeCollections: []string{"demo1"}}
+	if err := app.RestoreBackupWithOptions(context.Background(), "excl.zip", opts); err != nil {
+		t.Fatal(err)
+	}
+	if n := recordCounts(t, app)["demo1"]; n != 0 {
+		t.Fatalf("expected demo1 to be untouched (0 records), got %d", n)
+	}
+	if n := recordCounts(t, app)["demo2"]; n == 0 {
+		t.Fatal("expected demo2 to be restored")
+	}
+}
+
+func TestRestoreExcludesSystemCollections(t *testing.T) {
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	if err := app.CreateBackup(context.Background(), "sys.zip"); err != nil {
+		t.Fatal(err)
+	}
+	extra := core.NewAuthCollection("extra_users")
+	_ = extra
+	if _, err := app.DB().NewQuery("DELETE FROM {{" + core.CollectionNameSuperusers + "}}").Execute(); err != nil {
+		t.Fatal(err)
+	}
+	opts := core.RestoreOptions{DropCollections: true, ExcludeCollections: []string{core.CollectionNameSuperusers}}
+	if err := app.RestoreBackupWithOptions(context.Background(), "sys.zip", opts); err != nil {
+		t.Fatal(err)
+	}
+	if n := recordCounts(t, app)[core.CollectionNameSuperusers]; n != 0 {
+		t.Fatalf("expected superusers untouched, got %d", n)
+	}
+}
+
+func TestRestoreRenamesConflictingCollection(t *testing.T) {
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	// the collection that owns the fixture file
+	fileOwnerID, rest, _ := strings.Cut(backupTestFile, "/")
+	owner, err := app.FindCollectionByNameOrId(fileOwnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before := recordCounts(t, app)
+	if err := app.CreateBackup(context.Background(), "rename.zip"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.DB().NewQuery("DELETE FROM {{" + owner.Name + "}}").Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := core.DefaultRestoreOptions()
+	opts.Resolutions = map[string]core.CollectionResolution{
+		owner.Name: {Action: core.ResolutionRename, NewName: owner.Name + "_copy"},
+		// the fixture views read collections by name
+		"view1": {Action: core.ResolutionSkip},
+		"view2": {Action: core.ResolutionSkip},
+	}
+	if err := app.RestoreBackupWithOptions(context.Background(), "rename.zip", opts); err != nil {
+		t.Fatal(err)
+	}
+
+	copied, err := app.FindCollectionByNameOrId(owner.Name + "_copy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := app.FindCollectionByNameOrId(owner.Name)
+	if err != nil {
+		t.Fatalf("expected the local collection to be kept: %v", err)
+	}
+	if copied.Id == original.Id {
+		t.Fatal("expected a new collection id")
+	}
+	counts := recordCounts(t, app)
+	if counts[owner.Name] != 0 {
+		t.Fatalf("expected the local collection to stay untouched, got %d records", counts[owner.Name])
+	}
+	if counts[copied.Name] != before[owner.Name] {
+		t.Fatalf("expected %d records in the copy, got %d", before[owner.Name], counts[copied.Name])
+	}
+
+	fsys, err := app.NewFilesystemForCollection(copied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+	if ok, _ := fsys.Exists(copied.Id + "/" + rest); !ok {
+		t.Fatal("expected the files to be copied under the new collection id")
+	}
+}
+
+func TestRestoreRequiresResolution(t *testing.T) {
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	if err := app.CreateBackup(context.Background(), "req.zip"); err != nil {
+		t.Fatal(err)
+	}
+	opts := core.RestoreOptions{DropCollections: false, RequireResolution: true}
+	if err := app.RestoreBackupWithOptions(context.Background(), "req.zip", opts); err == nil {
+		t.Fatal("expected unresolved conflicts to fail")
+	}
+
+	analysis, err := app.AnalyzeBackup(context.Background(), "req.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts.Resolutions = map[string]core.CollectionResolution{}
+	for _, c := range analysis.Collections {
+		if c.Conflict == nil {
+			t.Fatalf("expected %s to conflict with itself", c.Name)
+		}
+		opts.Resolutions[c.Id] = core.CollectionResolution{Action: core.ResolutionSkip}
+	}
+	if err := app.RestoreBackupWithOptions(context.Background(), "req.zip", opts); err != nil {
+		t.Fatalf("expected skipping every conflict to succeed: %v", err)
+	}
+}
+
+func TestRestoreScopesInstanceToImported(t *testing.T) {
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	if err := app.CreateBackup(context.Background(), "scope.zip"); err != nil {
+		t.Fatal(err)
+	}
+	opts := core.RestoreOptions{
+		RequireResolution: true,
+		ScopeToImported:   true,
+		Settings:          "instance",
+		Resolutions:       map[string]core.CollectionResolution{},
+	}
+	analysis, err := app.AnalyzeBackup(context.Background(), "scope.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range analysis.Collections {
+		switch c.Name {
+		case "demo1":
+			opts.Resolutions[c.Id] = core.CollectionResolution{Action: core.ResolutionRename, NewName: "ev_demo1"}
+		default:
+			opts.Resolutions[c.Id] = core.CollectionResolution{Action: core.ResolutionSkip}
+		}
+	}
+	if err := app.RestoreBackupWithOptions(context.Background(), "scope.zip", opts); err != nil {
+		t.Fatal(err)
+	}
+
+	scope, err := app.InstanceScope()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scope.Mode != "allow" || len(scope.Collections) != 1 || scope.Collections[0] != "ev_demo1" {
+		t.Fatalf("unexpected scope %+v", scope)
+	}
+	demo2, _ := app.FindCollectionByNameOrId("demo2")
+	if app.CollectionVisible(demo2) {
+		t.Fatal("expected skipped collections to be hidden from the instance")
+	}
+}
+
+func TestRestoreRenameKeepsIndexesUnique(t *testing.T) {
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	users, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(users.Indexes) == 0 {
+		t.Skip("fixture users has no indexes")
+	}
+	if err := app.CreateBackup(context.Background(), "idx.zip"); err != nil {
+		t.Fatal(err)
+	}
+	opts := core.DefaultRestoreOptions()
+	opts.Resolutions = map[string]core.CollectionResolution{"users": {Action: core.ResolutionRename, NewName: "users_copy"}}
+	if err := app.RestoreBackupWithOptions(context.Background(), "idx.zip", opts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.FindCollectionByNameOrId("users_copy"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRestoreWithOtherInstancesSkipsByDefault(t *testing.T) {
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	if err := app.CreateBackup(context.Background(), "multi.zip"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.DB().Insert("_instances", dbx.Params{
+		"id": "other", "name": "other", "url": "", "scopeMode": "all", "scopeCollections": "[]", "created_at": "2026-01-01T00:00:00Z",
+	}).Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.DB().NewQuery("DELETE FROM {{demo1}}").Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	// dropping is refused while other instances share the database
+	if err := app.RestoreBackupWithOptions(context.Background(), "multi.zip", core.DefaultRestoreOptions()); err == nil {
+		t.Fatal("expected dropping collections to be refused")
+	}
+
+	// without explicit resolutions nothing is replaced
+	if err := app.RestoreBackupWithOptions(context.Background(), "multi.zip", core.RestoreOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if n := recordCounts(t, app)["demo1"]; n != 0 {
+		t.Fatalf("expected demo1 to be left alone, got %d records", n)
+	}
+
+	// an explicit replace still works for non-system collections
+	opts := core.RestoreOptions{Resolutions: map[string]core.CollectionResolution{"demo1": {Action: core.ResolutionReplace}}}
+	if err := app.RestoreBackupWithOptions(context.Background(), "multi.zip", opts); err != nil {
+		t.Fatal(err)
+	}
+	if n := recordCounts(t, app)["demo1"]; n == 0 {
+		t.Fatal("expected demo1 to be replaced")
+	}
+}
+
+func TestRestoreUsesSourceInstanceSettings(t *testing.T) {
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	shared := app.Settings().Meta.AppName
+	if err := app.EnableInstanceSettings(""); err != nil {
+		t.Fatal(err)
+	}
+	app.Settings().Meta.AppName = "source-private"
+	if err := app.Save(app.Settings()); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.CreateBackup(context.Background(), "src.zip"); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.DisableInstanceSettings(); err != nil {
+		t.Fatal(err)
+	}
+	if app.Settings().Meta.AppName != shared {
+		t.Fatal("expected the shared settings after disabling the instance row")
+	}
+
+	opts := core.DefaultRestoreOptions()
+	opts.Settings = "instance"
+	if err := app.RestoreBackupWithOptions(context.Background(), "src.zip", opts); err != nil {
+		t.Fatal(err)
+	}
+	if got := app.Settings().Meta.AppName; got != "source-private" {
+		t.Fatalf("expected the source instance settings, got %q", got)
+	}
+}
+
+func TestRetryRestoreFilesAfterCopyFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permissions are not enforced for root")
+	}
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	if err := app.CreateBackup(context.Background(), "files.zip"); err != nil {
+		t.Fatal(err)
+	}
+	demo1, err := app.FindCollectionByNameOrId("demo1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fsys, err := app.NewFilesystemForCollection(demo1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.Delete(backupTestFile); err != nil {
+		t.Fatal(err)
+	}
+	fsys.Close()
+
+	// make the record directory read-only so the file copy fails
+	dir := filepath.Join(app.DataDir(), "storage", filepath.Dir(backupTestFile))
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Skipf("cannot change permissions: %v", err)
+	}
+	defer os.Chmod(dir, 0o700)
+
+	err = app.RestoreBackup(context.Background(), "files.zip")
+	if err == nil || !strings.Contains(err.Error(), core.ErrRestoreFiles.Error()) {
+		t.Fatalf("expected a file copy failure, got %v", err)
+	}
+	if !app.HasPendingRestoreFiles() {
+		t.Fatal("expected the restore state to be kept")
+	}
+	// records were restored, and a new restore is refused until the files are done
+	if n := recordCounts(t, app)["demo1"]; n == 0 {
+		t.Fatal("expected the records to be restored")
+	}
+	if err := app.RestoreBackup(context.Background(), "files.zip"); err == nil {
+		t.Fatal("expected a new restore to be refused while files are pending")
+	}
+
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.RetryRestoreFiles(context.Background()); err != nil {
+		t.Fatalf("retry failed: %v", err)
+	}
+	if app.HasPendingRestoreFiles() {
+		t.Fatal("expected the restore state to be cleared")
+	}
+	fsys, _ = app.NewFilesystemForCollection(demo1)
+	defer fsys.Close()
+	if ok, _ := fsys.Exists(backupTestFile); !ok {
+		t.Fatal("expected the file to be copied by the retry")
+	}
+}
+
+func TestDiscardRestoreFilesAllowsRestoreAgain(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permissions are not enforced for root")
+	}
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	if err := app.CreateBackup(context.Background(), "discard.zip"); err != nil {
+		t.Fatal(err)
+	}
+	demo1, _ := app.FindCollectionByNameOrId("demo1")
+	fsys, err := app.NewFilesystemForCollection(demo1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.Delete(backupTestFile); err != nil {
+		t.Fatal(err)
+	}
+	fsys.Close()
+
+	dir := filepath.Join(app.DataDir(), "storage", filepath.Dir(backupTestFile))
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Skipf("cannot change permissions: %v", err)
+	}
+	defer os.Chmod(dir, 0o700)
+
+	if err := app.RestoreBackup(context.Background(), "discard.zip"); err == nil {
+		t.Fatal("expected a file copy failure")
+	}
+	if _, ok, _ := app.PendingRestoreFilesBackup(); !ok {
+		t.Fatal("expected a pending backup name")
+	}
+	if err := app.CreateBackup(context.Background(), "blocked.zip"); err == nil {
+		t.Fatal("expected creating a backup to be refused while files are pending")
+	}
+
+	if err := app.DiscardRestoreFiles(); err != nil {
+		t.Fatal(err)
+	}
+	if app.HasPendingRestoreFiles() {
+		t.Fatal("expected no pending files after discarding")
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.RestoreBackup(context.Background(), "discard.zip"); err != nil {
+		t.Fatalf("expected a restore to be allowed after discarding: %v", err)
+	}
+}

@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"sort"
+	"unicode/utf8"
 
 	"github.com/pocketbase/pocketbase/tools/types"
 )
@@ -15,8 +16,10 @@ var (
 const LogsTableName = "_logs"
 
 const (
-	defaultMaxLogDataSize    = 16 << 10 // ~16kb
-	defaultMaxLogMessageSize = 8000
+	defaultMaxLogDataSize = 16 << 10 // ~16kb
+	// the _logs.message column is VARCHAR(255) on PostgreSQL/MySQL; a longer
+	// value fails the insert and aborts the whole batch transaction
+	defaultMaxLogMessageSize = 255 // characters
 )
 
 type Log struct {
@@ -43,11 +46,10 @@ func (m *Log) DBExport(app App) (map[string]any, error) {
 		"level":   m.Level,
 	}
 
-	// truncate the raw message bytes
-	if len(m.Message) > defaultMaxLogMessageSize {
-		result["message"] = m.Message[:defaultMaxLogMessageSize]
-	} else {
-		result["message"] = m.Message
+	// truncate the message (by characters, to not split multi-byte runes)
+	result["message"] = m.Message
+	if utf8.RuneCountInString(m.Message) > defaultMaxLogMessageSize {
+		result["message"] = string([]rune(m.Message)[:defaultMaxLogMessageSize])
 	}
 
 	if len(m.Data) == 0 {

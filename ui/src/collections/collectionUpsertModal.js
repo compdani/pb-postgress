@@ -65,8 +65,6 @@ function collectionUpsertModal(rawCollection, modalSettings) {
         collection: {},
         selectedTab: "",
         errorTabs: {},
-        postgresConfigured: false,
-        isLoadingPostgresStatus: false,
         get activeTab() {
             if (!app.collectionTypes[data.collection.type]?.tabs) {
                 return data.selectedTab;
@@ -130,25 +128,6 @@ function collectionUpsertModal(rawCollection, modalSettings) {
 
         data.originalCollection = JSON.parse(JSON.stringify(collection));
         data.collection = JSON.parse(JSON.stringify(collection));
-    }
-
-    async function loadPostgresStatus() {
-        data.isLoadingPostgresStatus = true;
-
-        try {
-            const result = await app.pb.send("/api/collections/postgres/status", {
-                method: "GET",
-                requestKey: uniqueId + "_postgres_status",
-            });
-
-            data.postgresConfigured = !!result?.configured;
-            data.isLoadingPostgresStatus = false;
-        } catch (err) {
-            if (!err.isAbort) {
-                data.postgresConfigured = false;
-                data.isLoadingPostgresStatus = false;
-            }
-        }
     }
 
     async function confirmSave(close = true) {
@@ -332,7 +311,6 @@ function collectionUpsertModal(rawCollection, modalSettings) {
             },
             onbeforeopen: () => {
                 initCollection(rawCollection);
-                loadPostgresStatus();
 
                 return modalSettings.onbeforeopen?.(el);
             },
@@ -672,31 +650,6 @@ function collectionUpsertModal(rawCollection, modalSettings) {
                             );
                         }
 
-                        if (data.isNew && data.postgresConfigured) {
-                            return t.div(
-                                { className: "collection-postgres-options" },
-                                t.label({ className: "inline-flex" }, () => {
-                                    return t.input({
-                                        type: "checkbox",
-                                        checked: () => !!data.collection.postgresRecords,
-                                        onchange: (e) => {
-                                            data.collection.postgresRecords = e.target.checked;
-                                            if (e.target.checked && perCollection && s3Enabled) {
-                                                data.collection.s3Files = true;
-                                            } else if (!e.target.checked) {
-                                                delete data.collection.s3Files;
-                                            }
-                                        },
-                                    });
-                                }, " Store records in PostgreSQL"),
-                                t.p(
-                                    { className: "txt-hint m-t-xs" },
-                                    "Creates a new PostgreSQL table managed by PocketBase. This cannot be changed after creation.",
-                                ),
-                                () => (data.collection.postgresRecords ? s3FilesToggle() : null),
-                            );
-                        }
-
                         if (!data.isNew && data.collection.postgresRecords) {
                             return t.div(
                                 { className: "collection-postgres-options" },
@@ -713,51 +666,6 @@ function collectionUpsertModal(rawCollection, modalSettings) {
                                         },
                                     }),
                                     s3FilesToggle(),
-                                ),
-                            );
-                        }
-
-                        if (!data.isNew && data.postgresConfigured) {
-                            return t.div(
-                                { className: "collection-postgres-options" },
-                                t.div(
-                                    { className: "field" },
-                                    t.label(null, "Record storage"),
-                                    t.input({
-                                        type: "text",
-                                        disabled: true,
-                                        value: "Local database",
-                                    }),
-                                ),
-                                t.p(
-                                    { className: "txt-hint m-t-xs" },
-                                    "This collection stores records in the instance database. Migrate to PostgreSQL to move record data while keeping the same collection name, schema, and record IDs.",
-                                ),
-                                t.div(
-                                    { className: "flex m-t-sm" },
-                                    t.button(
-                                        {
-                                            type: "button",
-                                            className: "btn btn-outline btn-sm",
-                                            disabled: () => data.isSaving,
-                                            onclick: () => {
-                                                app.modals.openPostgresMigrateReview({
-                                                    collection: data.collection,
-                                                    onsubmit: async () => {
-                                                        await app.store.loadCollections();
-                                                        const updated = app.store.collections.find(
-                                                            (c) => c.id == data.collection.id,
-                                                        );
-                                                        if (updated) {
-                                                            await initCollection(updated);
-                                                        }
-                                                    },
-                                                });
-                                            },
-                                        },
-                                        t.i({ className: "ri-database-2-line" }),
-                                        t.span({ className: "txt" }, "Migrate to PostgreSQL"),
-                                    ),
                                 ),
                             );
                         }

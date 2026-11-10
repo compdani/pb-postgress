@@ -12,14 +12,66 @@ function backupRestoreModal(key) {
     const data = store({
         key: key,
         keyConfirm: "",
+        dropCollections: true,
+        collections: [],
+        resolutions: {},
+        hasSettings: false,
+        settings: "",
+        loadingCollections: true,
+        analysisOk: false,
+        filesError: "",
+        otherInstances: 0,
         isSubmitting: false,
         report: null,
         get canSubmit() {
-            return data.key && data.key == data.keyConfirm;
+            return data.key && data.key == data.keyConfirm && data.analysisOk;
         },
     });
 
     let reloadTimeoutId;
+
+    async function filesAction(discard) {
+        if (data.isSubmitting) {
+            return;
+        }
+        data.isSubmitting = true;
+        try {
+            await app.pb.send("/api/backups/restore-files", { method: discard ? "DELETE" : "POST" });
+            app.toasts.success(discard ? "Discarded the pending files." : "Copied the files.");
+            window.location.reload();
+        } catch (err) {
+            data.isSubmitting = false;
+            app.checkApiError(err);
+        }
+    }
+
+    app.pb
+        .send("/api/backups/" + encodeURIComponent(key) + "/collections", { method: "GET" })
+        .then((analysis) => {
+            const list = analysis?.collections || [];
+            const resolutions = {};
+            for (const c of list) {
+                resolutions[c.id] = {
+                    // same behavior as before for conflicts: the backup replaces them
+                    // with other instances on this database nothing is replaced by default
+                    action: c.conflict ? (analysis.otherInstances ? "skip" : "replace") : "import",
+                    newName: "",
+                    shared: false,
+                };
+            }
+            data.resolutions = resolutions;
+            data.collections = list;
+            data.hasSettings = !!analysis?.hasSettings;
+            data.otherInstances = analysis?.otherInstances || 0;
+            if (analysis?.otherInstances) {
+                data.dropCollections = false;
+            }
+            data.analysisOk = true;
+        })
+        .catch(() => {})
+        .finally(() => {
+            data.loadingCollections = false;
+        });
 
     async function submit() {
         if (data.isSubmitting || !data.canSubmit) {
@@ -31,9 +83,32 @@ function backupRestoreModal(key) {
         data.isSubmitting = true;
 
         try {
+            const resolutions = {};
+            for (const c of data.collections) {
+                const r = data.resolutions[c.id];
+                if (!r || (!c.conflict && r.action === "import")) {
+                    continue;
+                }
+                if (r.action === "rename" && !r.newName.trim()) {
+                    throw new Error('Enter a new name for "' + c.name + '".');
+                }
+                resolutions[c.id] = {
+                    action: r.action === "import" ? "skip" : r.action,
+                    newName: r.action === "rename" ? r.newName.trim() : "",
+                    shared: r.action === "skip" && !!r.shared,
+                };
+            }
             const report = await app.pb.send(
                 "/api/backups/" + encodeURIComponent(data.keyConfirm) + "/restore",
-                { method: "POST" },
+                {
+                    method: "POST",
+                    body: {
+                        dropCollections: data.dropCollections,
+                        resolutions: resolutions,
+                        requireResolution: true,
+                        settings: data.settings,
+                    },
+                },
             );
 
             app.toasts.success("Successfully restored the backup.");
@@ -52,6 +127,14 @@ function backupRestoreModal(key) {
             }, 1000);
         } catch (err) {
             clearTimeout(reloadTimeoutId);
+
+            // the database was restored (or is waiting on) but the files were not copied
+            const message = err?.response?.message || "";
+            if (/cop(y|ying) (the|its) files/i.test(message)) {
+                data.filesError = message;
+                data.isSubmitting = false;
+                return;
+            }
 
             if (!err?.isAbort) {
                 data.isSubmitting = false;
@@ -83,6 +166,42 @@ function backupRestoreModal(key) {
                 { className: "m-auto txt-center" },
                 "Restore ",
                 t.strong(null, () => data.key),
+            ),
+        ),
+        t.div(
+            { className: "modal-content", hidden: () => !data.filesError },
+            t.div(
+                { className: "alert warning" },
+                t.div(
+                    { className: "content" },
+                    t.p({ className: "txt-bold" }, "The restore changed the database but the files are not all copied."),
+                    t.p(null, () => data.filesError),
+                    t.div(
+                        { className: "flex m-t-sm" },
+                        t.button(
+                            {
+                                type: "button",
+                                className: "btn transparent",
+                                disabled: () => data.isSubmitting,
+                                onclick: () => {
+                                    if (window.confirm("Discard the missing files?")) {
+                                        filesAction(true);
+                                    }
+                                },
+                            },
+                            t.span({ className: "txt" }, "Discard"),
+                        ),
+                        t.button(
+                            {
+                                type: "button",
+                                className: () => `btn m-l-auto ${data.isSubmitting ? "loading" : ""}`,
+                                disabled: () => data.isSubmitting,
+                                onclick: () => filesAction(false),
+                            },
+                            t.span({ className: "txt" }, "Retry copying files"),
+                        ),
+                    ),
+                ),
             ),
         ),
         t.div({ className: "modal-content", hidden: () => !data.report }, () => {
@@ -131,7 +250,7 @@ function backupRestoreModal(key) {
         t.form(
             {
                 id: uniqueId,
-                hidden: () => !!data.report,
+                hidden: () => !!data.report || !!data.filesError,
                 className: "modal-content backup-restore-form",
                 autocomplete: "off",
                 onsubmit: (e) => {
@@ -180,6 +299,95 @@ function backupRestoreModal(key) {
                                 "On MySQL, schema changes cannot be rolled back if a later step fails. Take a database snapshot first.",
                             ),
                         ),
+                    ),
+                ),
+                t.div(
+                    { className: "col-lg-12" },
+                    t.div(
+                        { className: "field" },
+                        t.input({
+                            id: uniqueId + "_drop",
+                            type: "checkbox",
+                            checked: () => data.dropCollections,
+                            onchange: (e) => (data.dropCollections = e.target.checked),
+                        }),
+                        t.label(
+                            { htmlFor: uniqueId + "_drop" },
+                            "Drop collections that are not in the backup",
+                        ),
+                    ),
+                    t.div(
+                        { className: "m-t-sm", hidden: () => !data.collections.length },
+                        t.div(
+                            { className: "txt-bold m-b-xs" },
+                            "Collections in the backup:",
+                        ),
+                        () =>
+                            data.collections.map((c) => {
+                                const r = data.resolutions[c.id];
+                                const conflict = c.conflict;
+                                return t.div(
+                                    { className: "field" },
+                                    t.label(
+                                        null,
+                                        c.name,
+                                        " ",
+                                        t.small({ className: "txt-hint" }, c.system ? c.type + ", system" : c.type),
+                                    ),
+                                    conflict
+                                        ? t.div(
+                                            { className: "txt-hint" },
+                                            "Exists here (" + conflict.localRecords + " records)" +
+                                                (conflict.localReferencedBy?.length
+                                                    ? ", used by " +
+                                                        conflict.localReferencedBy.map((x) => x.collection + "." + x.field).join(", ")
+                                                    : ""),
+                                        )
+                                        : null,
+                                    t.select(
+                                        { value: () => r.action, onchange: (e) => (r.action = e.target.value) },
+                                        conflict ? null : t.option({ value: "import" }, "Import"),
+                                        t.option(
+                                            { value: "skip" },
+                                            conflict ? "Skip (keep existing)" : "Don't import",
+                                        ),
+                                        conflict && (!c.system || !data.otherInstances) ? t.option({ value: "replace" }, "Replace existing") : null,
+                                        conflict && !c.system
+                                            ? t.option({ value: "rename" }, "Import under a new name")
+                                            : null,
+                                    ),
+                                    () =>
+                                        r.action === "rename"
+                                            ? t.input({
+                                                type: "text",
+                                                placeholder: "New collection name",
+                                                value: () => r.newName,
+                                                oninput: (e) => (r.newName = e.target.value),
+                                            })
+                                            : null,
+                                );
+                            }),
+                        () =>
+                            data.hasSettings
+                                ? t.div(
+                                    { className: "field m-t-sm" },
+                                    t.label(null, "Settings"),
+                                    t.select(
+                                        { value: () => data.settings, onchange: (e) => (data.settings = e.target.value) },
+                                        t.option({ value: "" }, "Restore the backup's settings"),
+                                        t.option({ value: "none" }, "Keep the current settings"),
+                                        t.option({ value: "instance" }, "Restore for this instance only"),
+                                    ),
+                                )
+                                : null,
+                        t.div(
+                            { className: "txt-hint" },
+                            "Skipped collections keep their current schema and records. Collections used by other collections are re-pointed automatically; a renamed collection gets a new id.",
+                        ),
+                    ),
+                    t.div(
+                        { className: "txt-hint" },
+                        "Unchecked, collections missing from the backup (and their records) are kept as they are.",
                     ),
                 ),
                 t.div(
@@ -234,7 +442,7 @@ function backupRestoreModal(key) {
                 {
                     "html-form": uniqueId,
                     type: "submit",
-                    hidden: () => !!data.report,
+                    hidden: () => !!data.report || !!data.filesError,
                     className: () => `btn ${data.isSubmitting ? "loading" : ""}`,
                     disabled: () => data.isSubmitting || !data.canSubmit,
                 },

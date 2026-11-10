@@ -239,3 +239,30 @@ The SQL API executes multiple statements individually in a transaction and
 returns the final statement's result. PostgreSQL DDL rollback is verified;
 MySQL's implicit DDL commits remain an engine limitation. Notify files remain
 present until cleanup so macOS cannot coalesce a create/delete pair away.
+
+## App migrations review
+
+System migrations always run at bootstrap. App migrations (`pb_migrations`,
+Go `core.AppMigrations`) run on their own only on a fresh install, while no
+superuser exists (`serve`, or the installer's `complete` step). Afterwards new
+ones stay pending until a superuser reviews them in the dashboard popup, or
+`migrate up` is run.
+
+* `GET /api/migrations/pending`: `{files}`; nothing is executed.
+* `POST /api/migrations/preview`: on PostgreSQL the pending migrations run in
+  a transaction that is rolled back, and each one's collection changes
+  (created, updated, deleted, with field/rule/index details) are returned.
+  Record and raw SQL changes are not listed. MySQL cannot roll back schema
+  changes, so it only lists the files (`preview:false`).
+* `POST /api/migrations/apply`: `{ignore:{"<file>":["<collection id or name>"]}}`.
+  Writes to an ignored collection (create, update, delete through the app) are
+  skipped while that migration runs. If a migration then fails, for example
+  because it depends on a skipped change, everything is rolled back.
+
+App migration history is kept per migration group. Rows of the shared group
+are stored as before; an instance set up as "new" in the installer gets its
+own group (`_params` row `migrationGroup:<instanceId>`) and its rows are stored
+as `<group>/<file>`. A replica uses the group of the instance it copies. A
+restore writes the history of the instance that made the backup into the
+restoring instance's group, so only migrations newer than the backup are
+pending afterwards: restore first, then review.

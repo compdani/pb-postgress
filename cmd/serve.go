@@ -36,7 +36,7 @@ func NewServeCommand(app core.App, showStartBanner bool) *cobra.Command {
 				}
 			}
 
-			if !app.IsBootstrapped() {
+			if !app.IsBootstrapped() || app.InstanceSetupPending() {
 				// Serves only setup; returns once the database is set up so the
 				// full server (cron, hooks, TLS) below starts in this process.
 				if err := apis.ServeInstaller(app, httpAddr); err != nil {

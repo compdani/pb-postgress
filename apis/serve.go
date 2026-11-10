@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 	"github.com/pocketbase/pocketbase/tools/list"
@@ -63,10 +64,25 @@ func Serve(app core.App, config ServeConfig) error {
 		config.AllowedOrigins = []string{"*"}
 	}
 
-	// ensure that the latest migrations are applied before starting the server
-	err := app.RunAllMigrations()
+	// System migrations always run. App migrations run on their own only on
+	// a fresh install; afterwards they wait for a superuser to review them in
+	// the dashboard (or for "migrate up").
+	err := app.RunSystemMigrations()
 	if err != nil {
 		return err
+	}
+	superusers, err := app.CountRecords(core.CollectionNameSuperusers, dbx.Not(dbx.HashExp{"email": core.DefaultInstallerEmail}))
+	if err != nil {
+		return err
+	}
+	if superusers == 0 {
+		if err := app.RunAppMigrations(); err != nil {
+			return err
+		}
+	} else if ba := core.AsBaseApp(app); ba != nil {
+		if pending, err := ba.PendingAppMigrations(); err == nil && len(pending) > 0 {
+			color.Yellow("%d new migration(s) wait for review in the dashboard (or run \"migrate up\").", len(pending))
+		}
 	}
 
 	pbRouter, err := NewRouter(app)

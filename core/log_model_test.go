@@ -30,8 +30,8 @@ func TestLogDBExportTruncatesData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if l := len(export["message"].(string)); l != 8000 {
-		t.Fatalf("expected message truncated to 8000, got %d", l)
+	if l := len(export["message"].(string)); l != 255 {
+		t.Fatalf("expected message truncated to 255, got %d", l)
 	}
 
 	raw := export["data"].(types.JSONRaw)

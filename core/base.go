@@ -76,6 +76,13 @@ var _ App = (*BaseApp)(nil)
 
 // BaseApp implements core.App and defines the base PocketBase app structure.
 type BaseApp struct {
+	// cached scope of this instance (see instance.go)
+	scopeCache *scopeCache
+
+	// collections (id or name) whose writes are skipped; set only on the
+	// app clone a reviewed migration runs with (see migrations_review.go)
+	ignoredCollections map[string]bool
+
 	config                  *BaseAppConfig
 	txInfo                  *TxAppInfo
 	store                   *store.Store[string, any]
@@ -206,6 +213,7 @@ type BaseApp struct {
 func NewBaseApp(config BaseAppConfig) *BaseApp {
 	app := &BaseApp{
 		settings:            newDefaultSettings(),
+		scopeCache:          &scopeCache{},
 		store:               store.New[string, any](nil),
 		cron:                cron.New(),
 		subscriptionsBroker: subscriptions.NewBroker(),

@@ -52,6 +52,7 @@ func NewRouter(app core.App) (*router.Router[*core.RequestEvent], error) {
 	bindRecordAuthApi(app, apiGroup)
 	bindLogsApi(app, apiGroup)
 	bindBackupApi(app, apiGroup)
+	bindMigrationsApi(app, apiGroup)
 	bindCronApi(app, apiGroup)
 	bindFileApi(app, apiGroup)
 	bindBatchApi(app, apiGroup)

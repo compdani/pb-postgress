@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -24,6 +25,7 @@ type Instance struct {
 }
 
 func (app *BaseApp) initInstance() error {
+	app.resetScopeCache()
 	id, err := app.InstanceID()
 	if err != nil {
 		return err
@@ -35,6 +37,9 @@ func (app *BaseApp) initInstance() error {
 	if count == 0 {
 		_, err = app.DB().Insert("_instances", dbx.Params{"id": id, "name": id, "url": "", "scopeMode": "all", "scopeCollections": "[]", "created_at": time.Now().UTC().Format(time.RFC3339)}).Execute()
 	}
+	if err == nil {
+		_, _ = app.InstanceScope() // warm the cache
+	}
 	return err
 }
 func (app *BaseApp) Instances() ([]*Instance, error) {
@@ -43,6 +48,18 @@ func (app *BaseApp) Instances() ([]*Instance, error) {
 	return rows, err
 }
 func (app *BaseApp) InstanceScope() (InstanceScope, error) {
+	if scope, ok := app.cachedScope(); ok {
+		return scope, nil
+	}
+	gen := app.scopeGeneration()
+	scope, err := app.loadInstanceScope()
+	if err == nil {
+		app.setCachedScope(scope, gen)
+	}
+	return scope, err
+}
+
+func (app *BaseApp) loadInstanceScope() (InstanceScope, error) {
 	id, err := app.InstanceID()
 	if err != nil {
 		return InstanceScope{}, err
@@ -56,7 +73,7 @@ func (app *BaseApp) InstanceScope() (InstanceScope, error) {
 	return scope, err
 }
 func scopeVisible(scope InstanceScope, c *Collection) bool {
-	if c.System || c.IsAuth() {
+	if c.System {
 		return true
 	}
 	switch scope.Mode {
@@ -72,8 +89,11 @@ func (app *BaseApp) CollectionVisible(c *Collection) bool {
 	if c == nil {
 		return false
 	}
-	if c.System || c.IsAuth() {
+	if c.System {
 		return true
+	}
+	if scope, ok := app.cachedScope(); ok {
+		return scopeVisible(scope, c)
 	}
 	if !app.IsBootstrapped() || !app.HasTable("_instances") {
 		return true
@@ -100,8 +120,8 @@ func (app *BaseApp) SetInstanceScope(scope InstanceScope) error {
 		if c == nil {
 			return fmt.Errorf("unknown collection %q", name)
 		}
-		if scope.Mode == "deny" && (c.System || c.IsAuth()) {
-			return fmt.Errorf("system and auth collections cannot be hidden: %s", name)
+		if scope.Mode == "deny" && c.System {
+			return fmt.Errorf("system collections cannot be hidden: %s", name)
 		}
 	}
 	for _, c := range collections {
@@ -117,9 +137,19 @@ func (app *BaseApp) SetInstanceScope(scope InstanceScope) error {
 			}
 		}
 	}
+	return app.writeInstanceScope(scope)
+}
+
+func (app *BaseApp) writeInstanceScope(scope InstanceScope) error {
+	// invalidate again after the write: a read that overlapped it must not
+	// stay cached (a transaction app also invalidates the parent on completion)
+	defer app.resetScopeCache()
 	id, err := app.InstanceID()
 	if err != nil {
 		return err
+	}
+	if scope.Collections == nil {
+		scope.Collections = []string{}
 	}
 	raw, err := json.Marshal(scope.Collections)
 	if err != nil {
@@ -127,4 +157,151 @@ func (app *BaseApp) SetInstanceScope(scope InstanceScope) error {
 	}
 	_, err = app.DB().Update("_instances", dbx.Params{"scopeMode": scope.Mode, "scopeCollections": string(raw)}, dbx.HashExp{"id": id}).Execute()
 	return err
+}
+
+// SetInstanceInfo sets the display name and public URL of this instance.
+func (app *BaseApp) SetInstanceInfo(name, url string) error {
+	id, err := app.InstanceID()
+	if err != nil {
+		return err
+	}
+	params := dbx.Params{}
+	if name != "" {
+		params["name"] = name
+	}
+	if url != "" {
+		params["url"] = url
+	}
+	if len(params) == 0 {
+		return nil
+	}
+	_, err = app.DB().Update("_instances", params, dbx.HashExp{"id": id}).Execute()
+	return err
+}
+
+// ConfigureReplicaInstance makes this instance a replica of the instance
+// fromID: same collection scope, and its own copy of its settings (S3 and
+// backups settings stay shared).
+func (app *BaseApp) ConfigureReplicaInstance(fromID, name, url string) error {
+	id, err := app.InstanceID()
+	if err != nil {
+		return err
+	}
+	if fromID == id {
+		return errors.New("an instance cannot replicate itself")
+	}
+	source := Instance{}
+	if err := app.DB().Select("*").From("_instances").Where(dbx.HashExp{"id": fromID}).One(&source); err != nil {
+		return fmt.Errorf("unknown instance %q", fromID)
+	}
+	scope := InstanceScope{Mode: source.ScopeMode}
+	if err := json.Unmarshal([]byte(source.ScopeCollections), &scope.Collections); err != nil {
+		return err
+	}
+	if err := app.writeInstanceScope(scope); err != nil {
+		return err
+	}
+	if err := app.EnableInstanceSettings(fromID); err != nil {
+		return err
+	}
+	// a replica runs the same migrations, so it shares their history
+	if err := app.SetMigrationGroup(app.migrationGroupOf(fromID)); err != nil {
+		return err
+	}
+	if err := app.SetInstanceInfo(name, url); err != nil {
+		return err
+	}
+	return app.setInstanceAppURL(url)
+}
+
+// ConfigureCleanInstance makes this instance a new one that sees no
+// collections except the system ones, with its own settings.
+func (app *BaseApp) ConfigureCleanInstance(name, url string) error {
+	if err := app.writeInstanceScope(InstanceScope{Mode: "allow"}); err != nil {
+		return err
+	}
+	if err := app.EnableInstanceSettings(""); err != nil {
+		return err
+	}
+	// a new instance has its own migrations and their history
+	if err := app.UseOwnMigrationGroup(); err != nil {
+		return err
+	}
+	if err := app.SetInstanceInfo(name, url); err != nil {
+		return err
+	}
+	return app.setInstanceAppURL(url)
+}
+
+// SetInstanceURLSetting sets the app URL of this instance's settings.
+func (app *BaseApp) SetInstanceURLSetting(url string) error {
+	return app.setInstanceAppURL(url)
+}
+
+func (app *BaseApp) setInstanceAppURL(url string) error {
+	if url == "" {
+		return nil
+	}
+	s, err := app.Settings().Clone()
+	if err != nil {
+		return err
+	}
+	s.Meta.AppURL = url
+	return app.SaveNoValidate(s)
+}
+
+// The scope of this instance is read on every collection visibility check, so
+// it is cached. Writers invalidate the cache after the write (and a
+// generation counter keeps a read that overlapped the write from being cached
+// afterwards). Transaction apps get their own cache and invalidate the
+// parent's when the transaction ends, so a rolled back scope is never kept.
+type scopeCache struct {
+	mu       sync.RWMutex
+	gen      uint64
+	scope    *InstanceScope
+	at       uint64 // generation the cached scope was loaded in
+	loadedAt time.Time
+}
+
+// scopeCacheTTL bounds how long another process that changed this instance's
+// scope (same instance id, separate cache) can go unnoticed.
+const scopeCacheTTL = 5 * time.Second
+
+func (app *BaseApp) cachedScope() (InstanceScope, bool) {
+	c := app.scopeCache
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.scope == nil || c.at != c.gen || time.Since(c.loadedAt) > scopeCacheTTL {
+		return InstanceScope{}, false
+	}
+	return *c.scope, true
+}
+
+func (c *scopeCache) generation() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.gen
+}
+
+func (app *BaseApp) scopeGeneration() uint64 {
+	return app.scopeCache.generation()
+}
+
+// setCachedScope stores a scope that was loaded while the cache was in gen.
+func (app *BaseApp) setCachedScope(scope InstanceScope, gen uint64) {
+	c := app.scopeCache
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.gen != gen {
+		return // a write happened meanwhile
+	}
+	c.scope, c.at, c.loadedAt = &scope, gen, time.Now()
+}
+
+func (app *BaseApp) resetScopeCache() {
+	c := app.scopeCache
+	c.mu.Lock()
+	c.gen++
+	c.scope = nil
+	c.mu.Unlock()
 }

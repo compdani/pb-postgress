@@ -119,6 +119,29 @@ type App interface {
 	// ReloadSettings reinitializes and reloads the stored application settings.
 	ReloadSettings() error
 
+	// HasPendingRestoreFiles reports whether a restore committed but did not finish copying its files.
+	HasPendingRestoreFiles() bool
+
+	// CopyPendingRestoreFiles copies the pending files and keeps the saved retry state.
+	CopyPendingRestoreFiles(ctx context.Context) error
+
+	// RetryRestoreFiles copies the files of a restore whose database part committed.
+	RetryRestoreFiles(ctx context.Context) error
+
+	// DiscardRestoreFiles forgets a pending files-only retry.
+	DiscardRestoreFiles() error
+
+	// InstanceSetupPending reports whether this instance still has to choose how it joins an already set up database.
+	InstanceSetupPending() bool
+
+	// EnableInstanceSettings gives the current instance its own settings
+	// (copied from fromInstanceID, or the current ones when empty).
+	// S3 and backups settings stay shared.
+	EnableInstanceSettings(fromInstanceID string) error
+
+	// DisableInstanceSettings makes the current instance use the shared settings again.
+	DisableInstanceSettings() error
+
 	// CreateBackup creates a new backup of the current app pb_data directory.
 	//
 	// Backups can be stored on S3 if it is configured in app.Settings().Backups.
@@ -138,6 +161,14 @@ type App interface {
 	//
 	// NB! This feature is experimental and currently is expected to work only on UNIX based systems.
 	RestoreBackup(ctx context.Context, name string) error
+
+	// RestoreBackupWithOptions is the same as RestoreBackup but allows
+	// controlling the restore behavior (see [RestoreOptions]).
+	RestoreBackupWithOptions(ctx context.Context, name string, opts RestoreOptions) error
+
+	// AnalyzeBackup reports the collections of the named backup, their
+	// conflicts with this database and their references. It changes nothing.
+	AnalyzeBackup(ctx context.Context, name string) (*BackupAnalysis, error)
 
 	// Restart restarts (aka. replaces) the current running application process.
 	//

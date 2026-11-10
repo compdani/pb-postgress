@@ -1,6 +1,7 @@
 package apis
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/pocketbase/dbx"
@@ -28,8 +29,19 @@ var logFilterFields = []string{
 	`^data\.[\w\.\:]*\w+$`,
 }
 
+// logFieldResolver adds a portable "@rowid" sort for the logs table
+// (PostgreSQL and MySQL have no SQLite-style _rowid_ column).
+type logFieldResolver struct {
+	*search.SimpleFieldResolver
+}
+
+// RowidSortExpr implements [search.RowidSortResolver].
+func (r *logFieldResolver) RowidSortExpr(direction string) (string, error) {
+	return fmt.Sprintf("[[created]] %s, [[id]] %s", direction, direction), nil
+}
+
 func logsList(e *core.RequestEvent) error {
-	fieldResolver := search.NewSimpleFieldResolver(logFilterFields...)
+	fieldResolver := &logFieldResolver{search.NewSimpleFieldResolver(logFilterFields...)}
 	if e.App.SQLDialect() == core.DialectMySQL {
 		fieldResolver.JSONExtract = dbutils.JSONExtractMySQL
 	}

@@ -1,5 +1,7 @@
 // The route token is the one-time installer token printed by the server.
 // Every installer request sends it in the X-Installer-Token header.
+import { joinStep } from "./installerJoin";
+
 let installerToken = "";
 
 export function pageInstaller(route) {
@@ -34,6 +36,8 @@ export function pageInstaller(route) {
             secret: "",
             forcePathStyle: false,
         },
+        instances: [],
+        filesPending: false,
         isTestingDb: false,
         isConnecting: false,
         isTestingS3: false,
@@ -60,7 +64,11 @@ export function pageInstaller(route) {
                 window.location.hash = "#/login";
                 return;
             }
-            if (status?.dbConnected) {
+            if (status?.joinPending) {
+                data.instances = status.instances || [];
+                data.step = "join";
+                data.filesPending = !!status.filesPending;
+            } else if (status?.dbConnected) {
                 data.step = 2;
             }
             if (status?.fileMode === "local" || status?.fileMode === "fileServer" || status?.fileMode === "s3") {
@@ -113,10 +121,17 @@ export function pageInstaller(route) {
                 driver: data.driver,
                 dsn: data.dsn,
             });
-            if (result?.installed) {
-                // Another instance already set this database up; the server
-                // is restarting into the full API.
-                await reloadIntoLogin();
+            if (result?.existing) {
+                // Another instance already set this database up: pick this
+                // instance's role instead of creating a superuser.
+                const status = await app.pb.send("/api/installer/status", {
+                    method: "GET",
+                    headers: { "X-Installer-Token": installerToken },
+                    requestKey: "installer_status",
+                });
+                data.instances = status?.instances || [];
+                data.step = "join";
+                data.isConnecting = false;
                 return;
             }
             data.step = 2;
@@ -217,7 +232,8 @@ export function pageInstaller(route) {
             { className: "txt-center m-b-base" },
             t.img({ className: "main-logo", src: () => app.store.mainLogo, ariaHidden: true, alt: "App logo" }),
             t.h5({ className: "m-t-10" }, () => app.store.title),
-            t.div({ className: "txt-hint m-t-5" }, () => `Step ${data.step} of 3`),
+            t.div({ className: "txt-hint m-t-5" }, () =>
+                data.step === "join" ? "Join an existing database" : `Step ${data.step} of 3`),
         ),
         () => {
             if (!data.ready) {
@@ -225,6 +241,29 @@ export function pageInstaller(route) {
             }
             if (data.step === 1) {
                 return databaseStep(data, testDb, connectDb);
+            }
+            if (data.step === "join") {
+                return joinStep(data.instances, {
+                    post: (path, body) => installerPost(path, body),
+                    get: (path) =>
+                        app.pb.send(path, {
+                            method: "GET",
+                            headers: { "X-Installer-Token": installerToken },
+                            requestKey: "installer_" + path,
+                        }),
+                    upload: (file) => {
+                        const form = new FormData();
+                        form.append("file", file);
+                        return app.pb.send("/api/installer/backup/upload", {
+                            method: "POST",
+                            headers: { "X-Installer-Token": installerToken },
+                            body: form,
+                            requestKey: null,
+                        });
+                    },
+                    error: apiErrorMessage,
+                    done: reloadIntoLogin,
+                }, data.filesPending ? "files" : "role");
             }
             if (data.step === 2) {
                 return superuserStep(data, continueToFiles);

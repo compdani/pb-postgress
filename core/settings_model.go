@@ -26,9 +26,18 @@ const (
 	paramsTable = "_params"
 
 	paramsKeySettings = "settings"
+	// paramsKeyInstanceSettingsPrefix prefixes the key of an instance's own
+	// settings row ("settings:<instanceId>"). Without such a row an instance
+	// uses the shared paramsKeySettings one.
+	paramsKeyInstanceSettingsPrefix = "settings:"
 
 	systemHookIdSettings = "__pbSettingsSystemHook__"
 )
+
+func isSettingsKey(pk any) bool {
+	k, _ := pk.(string)
+	return k == paramsKeySettings || strings.HasPrefix(k, paramsKeyInstanceSettingsPrefix)
+}
 
 func (app *BaseApp) registerSettingsHooks() {
 	saveFunc := func(me *ModelEvent) error {
@@ -36,7 +45,12 @@ func (app *BaseApp) registerSettingsHooks() {
 			return err
 		}
 
-		if me.Model.PK() == paramsKeySettings {
+		if isSettingsKey(me.Model.PK()) {
+			// S3 and backups settings stay shared by all instances
+			if err := syncSharedSettings(me.App, me.Model); err != nil {
+				return err
+			}
+
 			// auto reload the app settings because we don't know whether
 			// the Settings model is the app one or a different one
 			return errors.Join(
@@ -139,6 +153,23 @@ type Settings struct {
 
 	mu    sync.RWMutex
 	isNew bool
+	// key is the _params id; empty means the shared paramsKeySettings.
+	key string
+	// the shared S3/backups values this instance last loaded, so a save only
+	// writes them back to the shared row when this instance changed them
+	loadedS3      S3Config
+	loadedBackups BackupsConfig
+	loadedInit    bool
+}
+
+func (s *Settings) paramKey() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.key == "" {
+		return paramsKeySettings
+	}
+	return s.key
 }
 
 func newDefaultSettings() *Settings {
@@ -190,12 +221,12 @@ func (s *Settings) TableName() string {
 
 // PK implements [Model.LastSavedPK] interface method.
 func (s *Settings) LastSavedPK() any {
-	return paramsKeySettings
+	return s.paramKey()
 }
 
 // PK implements [Model.PK] interface method.
 func (s *Settings) PK() any {
-	return paramsKeySettings
+	return s.paramKey()
 }
 
 // IsNew implements [Model.IsNew] interface method.
@@ -317,11 +348,22 @@ func (s *Settings) Merge(other *Settings) error {
 
 // Clone creates a new deep copy of the current settings.
 func (s *Settings) Clone() (*Settings, error) {
+	// read the settings and the shared-values snapshot under one lock
+	s.mu.RLock()
 	clone := &Settings{
-		isNew: s.isNew,
+		isNew:         s.isNew,
+		key:           s.key,
+		loadedS3:      s.loadedS3,
+		loadedBackups: s.loadedBackups,
+		loadedInit:    s.loadedInit,
+	}
+	raw, err := json.Marshal(s.settings)
+	s.mu.RUnlock()
+	if err != nil {
+		return nil, err
 	}
 
-	if err := clone.Merge(s); err != nil {
+	if err := json.Unmarshal(raw, &clone.settings); err != nil {
 		return nil, err
 	}
 

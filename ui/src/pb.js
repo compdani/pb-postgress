@@ -1,4 +1,5 @@
 import PocketBase, { isTokenExpired, LocalAuthStore } from "pocketbase";
+import { checkPendingMigrations } from "./base/migrationsReviewModal";
 
 const LOGIN_PATH = "#/login";
 
@@ -51,6 +52,7 @@ app.pb.authStore.onChange((_, record) => {
         app.store.loadCollections();
         app.store.loadSettings();
         app.store.loadOAuth2Providers();
+        checkPendingMigrations();
     }
 });
 

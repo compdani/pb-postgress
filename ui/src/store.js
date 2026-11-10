@@ -119,16 +119,6 @@ window.app.store = store({
                 icon: "ri-install-line",
                 label: "Import collections",
             },
-            {
-                href: "#/settings/import-postgres",
-                icon: "ri-database-2-line",
-                label: "Import from PostgreSQL",
-            },
-            {
-                href: "#/settings/migrate-postgres",
-                icon: "ri-upload-cloud-2-line",
-                label: "Migrate to PostgreSQL",
-            },
         ],
         Debug: [
             {

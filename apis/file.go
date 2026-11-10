@@ -115,6 +115,11 @@ func (api *fileApi) download(e *core.RequestEvent) error {
 		token := e.Request.URL.Query().Get("token")
 		authRecord, _ := e.App.FindAuthRecordByToken(token, core.TokenTypeFile)
 
+		// an auth collection hidden from this instance cannot authenticate
+		if ba := core.AsBaseApp(e.App); ba != nil && authRecord != nil && !ba.CollectionVisible(authRecord.Collection()) {
+			authRecord = nil
+		}
+
 		// reset the auth state if it is superuser and it is not whitelisted
 		// (not critical because file tokens are short-lived but checked nonetheless as an extra precaution)
 		if authRecord != nil && authRecord.IsSuperuser() {

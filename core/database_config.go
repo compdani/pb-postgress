@@ -7,7 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/go-sql-driver/mysql"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,8 +22,12 @@ var ErrDatabaseUnconfigured = errors.New("database configuration required")
 // DatabaseConfig is the local bootstrap configuration. The DSN is a secret.
 type DatabaseConfig struct {
 	InstanceID string `json:"instanceId,omitempty"`
-	Driver     string `json:"driver"`
-	DSN        string `json:"dsn"`
+	// SetupPending is set while this instance has connected to a database
+	// that was already set up, and its role (replica or new instance) has not
+	// been chosen yet. The installer keeps being served until it is cleared.
+	SetupPending bool   `json:"setupPending,omitempty"`
+	Driver       string `json:"driver"`
+	DSN          string `json:"dsn"`
 }
 
 func (c DatabaseConfig) Validate() error {
@@ -47,7 +52,19 @@ func ConnectDatabase(driver, dsn string) (*dbx.DB, error) {
 	var db *dbx.DB
 	var err error
 	if driver == "postgres" {
-		db, err = dbx.Open(sqlDriver, dsn)
+		var cfg *pgx.ConnConfig
+		cfg, err = pgx.ParseConfig(dsn)
+		if err == nil {
+			// Server-side cached statements break "SELECT table.*" queries
+			// after a column is dropped or added ("cached plan must not
+			// change result type"), and collection schema changes do that
+			// by design. Describe each query on execution instead of caching,
+			// unless the DSN explicitly sets the mode.
+			if !strings.Contains(dsn, "default_query_exec_mode") {
+				cfg.DefaultQueryExecMode = pgx.QueryExecModeDescribeExec
+			}
+			db = dbx.NewFromDB(stdlib.OpenDB(*cfg), sqlDriver)
+		}
 	} else {
 		var cfg *mysql.Config
 		cfg, err = mysql.ParseDSN(dsn)
@@ -136,4 +153,29 @@ func SaveDatabaseConfig(dataDir string, c DatabaseConfig) error {
 		return err
 	}
 	return os.Rename(f.Name(), filepath.Join(dataDir, "db.json"))
+}
+
+// InstanceSetupPending reports whether this instance still has to choose
+// how it joins an already set up database (see [DatabaseConfig.SetupPending]).
+func (app *BaseApp) InstanceSetupPending() bool {
+	data, err := os.ReadFile(filepath.Join(app.DataDir(), "db.json"))
+	if err != nil {
+		return false
+	}
+	var c DatabaseConfig
+	return json.Unmarshal(data, &c) == nil && c.SetupPending
+}
+
+// SetInstanceSetupPending sets or clears [DatabaseConfig.SetupPending].
+func (app *BaseApp) SetInstanceSetupPending(pending bool) error {
+	data, err := os.ReadFile(filepath.Join(app.DataDir(), "db.json"))
+	if err != nil {
+		return err
+	}
+	var c DatabaseConfig
+	if err := json.Unmarshal(data, &c); err != nil {
+		return err
+	}
+	c.SetupPending = pending
+	return SaveDatabaseConfig(app.DataDir(), c)
 }

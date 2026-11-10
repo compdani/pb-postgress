@@ -73,7 +73,7 @@ func (p *plugin) automigrateOnCollectionChange(e *core.CollectionRequestEvent) e
 	return p.app.RunInTransaction(func(txApp core.App) error {
 		// insert the migration entry
 		_, err := txApp.DB().Insert(core.DefaultMigrationsTable, dbx.Params{
-			"file": name,
+			"file": core.MigrationKey(txApp, name),
 			// use microseconds for more granular applied time in case
 			// multiple collection changes happens at the ~exact time
 			"applied": time.Now().UnixMicro(),

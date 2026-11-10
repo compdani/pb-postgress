@@ -62,6 +62,18 @@ func (app *BaseApp) createTxApp(tx *dbx.Tx, isForAuxDB bool) *BaseApp {
 		isForAuxDB: isForAuxDB,
 	}
 
+	// the transaction reads the scope itself and never shares its cache with
+	// the parent; the parent's cache is dropped once the transaction ends
+	txCache := &scopeCache{}
+	clone.scopeCache = txCache
+	clone.txInfo.OnComplete(func(error) error {
+		// only when the transaction wrote the scope (its generation moved)
+		if txCache.generation() > 0 {
+			app.resetScopeCache()
+		}
+		return nil
+	})
+
 	return &clone
 }
 

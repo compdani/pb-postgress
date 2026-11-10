@@ -108,6 +108,10 @@ func (app *BaseApp) AuxDeleteWithContext(ctx context.Context, model Model) error
 }
 
 func (app *BaseApp) delete(ctx context.Context, model Model, isForAuxDB bool) error {
+	if app.ignoresCollectionChange(model) {
+		return nil // skipped by the migrations review
+	}
+
 	event := new(ModelEvent)
 	event.App = app
 	event.Type = ModelEventTypeDelete
@@ -266,6 +270,10 @@ func (app *BaseApp) save(ctx context.Context, model Model, withValidations bool,
 }
 
 func (app *BaseApp) create(ctx context.Context, model Model, withValidations bool, isForAuxDB bool) error {
+	if app.ignoresCollectionChange(model) {
+		return nil // skipped by the migrations review
+	}
+
 	event := new(ModelEvent)
 	event.App = app
 	event.Context = ctx
@@ -356,6 +364,10 @@ func (app *BaseApp) create(ctx context.Context, model Model, withValidations boo
 }
 
 func (app *BaseApp) update(ctx context.Context, model Model, withValidations bool, isForAuxDB bool) error {
+	if app.ignoresCollectionChange(model) {
+		return nil // skipped by the migrations review
+	}
+
 	event := new(ModelEvent)
 	event.App = app
 	event.Context = ctx

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -22,15 +23,53 @@ type MigrationsRunner struct {
 	tableName      string
 	migrationsList MigrationsList
 	inited         bool
+	// group scopes the applied state of app migrations to the instances that
+	// share it (see [BaseApp.MigrationGroup]); system migrations are global.
+	group string
 }
 
 // NewMigrationsRunner creates and initializes a new db migrations MigrationsRunner instance.
 func NewMigrationsRunner(app App, migrationsList MigrationsList) *MigrationsRunner {
-	return &MigrationsRunner{
+	r := &MigrationsRunner{
 		app:            app,
 		migrationsList: migrationsList,
 		tableName:      DefaultMigrationsTable,
 	}
+	if ba := asBaseApp(app); ba != nil {
+		r.group = ba.MigrationGroup()
+	}
+	return r
+}
+
+// key returns the stored name of a migration file: app migrations of an
+// instance with its own migration group are stored as "<group>/<file>".
+func (r *MigrationsRunner) key(file string) string {
+	return migrationKey(r.group, file)
+}
+
+func migrationKey(group, file string) string {
+	if group == "" || isSystemMigration(file) {
+		return file
+	}
+	return group + "/" + file
+}
+
+func isSystemMigration(file string) bool {
+	for _, m := range SystemMigrations.Items() {
+		if m.File == file {
+			return true
+		}
+	}
+	return false
+}
+
+// MigrationKey returns the name under which the migration file is stored in
+// the migrations table for the instance of app.
+func MigrationKey(app App, file string) string {
+	if ba := asBaseApp(app); ba != nil {
+		return migrationKey(ba.MigrationGroup(), file)
+	}
+	return file
 }
 
 // Run interactively executes the current runner with the provided args.
@@ -120,6 +159,14 @@ func (r *MigrationsRunner) Run(args ...string) error {
 //
 // On success returns list with the applied migrations file names.
 func (r *MigrationsRunner) Up() ([]string, error) {
+	return r.upWith(false, nil)
+}
+
+var errMigrationsDryRun = errors.New("migrations dry run")
+
+// upWith is Up with two extras: dryRun rolls everything back at the end, and
+// each (when set) wraps the execution of every migration (run applies it).
+func (r *MigrationsRunner) upWith(dryRun bool, each func(txApp App, m *Migration, run func(App) error) error) ([]string, error) {
 	if err := r.initMigrationsTable(); err != nil {
 		return nil, err
 	}
@@ -148,11 +195,21 @@ func (r *MigrationsRunner) Up() ([]string, error) {
 					r.saveRevertedMigration(txApp, m.File)
 				}
 
-				// ignore empty Up action
-				if m.Up != nil {
-					if err := m.Up(txApp); err != nil {
-						return fmt.Errorf("failed to apply migration %s: %w", m.File, err)
+				run := func(a App) error {
+					// ignore empty Up action
+					if m.Up != nil {
+						if err := m.Up(a); err != nil {
+							return fmt.Errorf("failed to apply migration %s: %w", m.File, err)
+						}
 					}
+					return nil
+				}
+				if each != nil {
+					if err := each(txApp, m, run); err != nil {
+						return err
+					}
+				} else if err := run(txApp); err != nil {
+					return err
 				}
 
 				if err := r.saveAppliedMigration(txApp, m.File); err != nil {
@@ -162,14 +219,41 @@ func (r *MigrationsRunner) Up() ([]string, error) {
 				applied = append(applied, m.File)
 			}
 
+			if dryRun {
+				return errMigrationsDryRun
+			}
 			return nil
 		})
 	})
 
-	if err != nil {
-		return nil, err
+	if err != nil && !(dryRun && errors.Is(err, errMigrationsDryRun)) {
+		return applied, err
 	}
 	return applied, nil
+}
+
+// Pending returns the migrations Up would run, without running them.
+func (r *MigrationsRunner) Pending() ([]string, error) {
+	if err := r.initMigrationsTable(); err != nil {
+		return nil, err
+	}
+	pending := []string{}
+	for _, m := range r.migrationsList.Items() {
+		if r.isMigrationApplied(r.app, m.File) {
+			if m.ReapplyCondition == nil {
+				continue
+			}
+			again, err := m.ReapplyCondition(r.app, r, m.File)
+			if err != nil {
+				return nil, err
+			}
+			if !again {
+				continue
+			}
+		}
+		pending = append(pending, m.File)
+	}
+	return pending, nil
 }
 
 // Down reverts the last `toRevertCount` applied migrations
@@ -233,12 +317,19 @@ func (r *MigrationsRunner) RemoveMissingAppliedMigrations() error {
 
 	names := make([]any, len(loadedMigrations))
 	for i, migration := range loadedMigrations {
-		names[i] = migration.File
+		names[i] = r.key(migration.File)
 	}
 
-	_, err := r.app.DB().Delete(r.tableName, dbx.Not(dbx.HashExp{
+	// only the entries of this instance's migration group (and the global
+	// ones for the shared group); other groups belong to other instances
+	var own dbx.Expression = dbx.Not(dbx.Like("file", "/"))
+	if r.group != "" {
+		own = dbx.NewExp("[[file]] LIKE {:prefix}", dbx.Params{"prefix": escapeLike(r.group) + "/%"})
+	}
+
+	_, err := r.app.DB().Delete(r.tableName, dbx.And(own, dbx.Not(dbx.HashExp{
 		"file": names,
-	})).Execute()
+	}))).Execute()
 
 	return err
 }
@@ -267,7 +358,7 @@ func (r *MigrationsRunner) isMigrationApplied(txApp App, file string) bool {
 
 	err := txApp.DB().Select("(1)").
 		From(r.tableName).
-		Where(dbx.HashExp{"file": file}).
+		Where(dbx.HashExp{"file": r.key(file)}).
 		Limit(1).
 		Row(&exists)
 
@@ -276,7 +367,7 @@ func (r *MigrationsRunner) isMigrationApplied(txApp App, file string) bool {
 
 func (r *MigrationsRunner) saveAppliedMigration(txApp App, file string) error {
 	_, err := txApp.DB().Insert(r.tableName, dbx.Params{
-		"file":    file,
+		"file":    r.key(file),
 		"applied": time.Now().UnixMicro(),
 	}).Execute()
 
@@ -284,7 +375,7 @@ func (r *MigrationsRunner) saveAppliedMigration(txApp App, file string) error {
 }
 
 func (r *MigrationsRunner) saveRevertedMigration(txApp App, file string) error {
-	_, err := txApp.DB().Delete(r.tableName, dbx.HashExp{"file": file}).Execute()
+	_, err := txApp.DB().Delete(r.tableName, dbx.HashExp{"file": r.key(file)}).Execute()
 
 	return err
 }
@@ -296,7 +387,7 @@ func (r *MigrationsRunner) lastAppliedMigrations(limit int) ([]string, error) {
 
 	names := make([]any, len(loadedMigrations))
 	for i, migration := range loadedMigrations {
-		names[i] = migration.File
+		names[i] = r.key(migration.File)
 	}
 
 	err := r.app.DB().Select("file").
@@ -313,5 +404,16 @@ func (r *MigrationsRunner) lastAppliedMigrations(limit int) ([]string, error) {
 		return nil, err
 	}
 
+	// stored keys back to file names
+	if r.group != "" {
+		for i, f := range files {
+			files[i] = strings.TrimPrefix(f, r.group+"/")
+		}
+	}
+
 	return files, nil
+}
+
+func escapeLike(v string) string {
+	return strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(v)
 }

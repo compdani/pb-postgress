@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/pocketbase/pocketbase/tools/filesystem"
@@ -31,12 +32,15 @@ var ErrBackupScoped = errors.New("backups need an instance with the \"all\" coll
 // Backups are created on demand only. Scheduled protection belongs to the
 // PostgreSQL/MySQL server (base backups, PITR, binlogs, managed snapshots).
 func (app *BaseApp) CreateBackup(ctx context.Context, name string) error {
-	if app.Store().Has(StoreKeyActiveBackup) {
-		return errors.New("try again later - another backup/restore operation has already been started")
+	release, err := app.acquireBackupOp(name)
+	if err != nil {
+		return err
 	}
+	defer release()
 
-	app.Store().Set(StoreKeyActiveBackup, name)
-	defer app.Store().Remove(StoreKeyActiveBackup)
+	if app.HasPendingRestoreFiles() {
+		return errors.New("a previous restore did not finish copying its files: retry copying them (or discard them) before creating a backup")
+	}
 
 	event := new(BackupEvent)
 	event.App = app
@@ -84,6 +88,19 @@ func (app *BaseApp) CreateBackup(ctx context.Context, name string) error {
 	})
 }
 
+var backupOpMu sync.Mutex
+
+// acquireBackupOp marks a backup/restore operation as active atomically.
+func (app *BaseApp) acquireBackupOp(name string) (release func(), err error) {
+	backupOpMu.Lock()
+	defer backupOpMu.Unlock()
+	if app.Store().Has(StoreKeyActiveBackup) {
+		return nil, errors.New("try again later - another backup/restore operation has already been started")
+	}
+	app.Store().Set(StoreKeyActiveBackup, name)
+	return func() { app.Store().Remove(StoreKeyActiveBackup) }, nil
+}
+
 // RestoreBackup replaces the database content with the backup stored
 // under name in the backups filesystem.
 //
@@ -92,23 +109,32 @@ func (app *BaseApp) CreateBackup(ctx context.Context, name string) error {
 //   - a standard PocketBase backup (a pb_data zip with data.db), from
 //     PocketBase v0.23.0 through v0.41.x (see [PocketBaseImportVersions]).
 //
-// The archive is fully read and checked before anything is changed. Files
-// are copied into the configured file storage first, then collections,
-// records, settings and migrations are replaced. On PostgreSQL that second
-// step is one transaction; on MySQL schema changes commit implicitly, so
-// only the record data is atomic.
+// The archive is fully read and checked before anything is changed.
+// Collections, records, settings and migrations are replaced first; the files
+// are copied into the configured file storage after that committed. On
+// PostgreSQL the database step is one transaction; on MySQL schema changes
+// commit implicitly, so only the record data is atomic.
 //
 // The instance's file mode, file host, S3 storage and backups settings, and
 // instance scopes are kept. Superusers and their sessions come from the
 // backup. Other instances sharing the database must be restarted to reload
 // their cached collections and settings.
 func (app *BaseApp) RestoreBackup(ctx context.Context, name string) error {
-	if app.Store().Has(StoreKeyActiveBackup) {
-		return errors.New("try again later - another backup/restore operation has already been started")
-	}
+	return app.RestoreBackupWithOptions(ctx, name, DefaultRestoreOptions())
+}
 
-	app.Store().Set(StoreKeyActiveBackup, name)
-	defer app.Store().Remove(StoreKeyActiveBackup)
+// RestoreBackupWithOptions is the same as [BaseApp.RestoreBackup] but
+// allows choosing whether collections missing from the backup are dropped.
+func (app *BaseApp) RestoreBackupWithOptions(ctx context.Context, name string, opts RestoreOptions) error {
+	release, err := app.acquireBackupOp(name)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	if app.HasPendingRestoreFiles() {
+		return errors.New("a previous restore did not finish copying its files: retry copying them (or discard them) before restoring again")
+	}
 
 	event := new(BackupEvent)
 	event.App = app
@@ -138,7 +164,7 @@ func (app *BaseApp) RestoreBackup(ctx context.Context, name string) error {
 		}
 		defer src.Close()
 
-		return ba.restoreFromSource(e.Context, src)
+		return ba.restoreFromSource(e.Context, src, e.Name, opts)
 	})
 }
 

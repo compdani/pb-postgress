@@ -82,7 +82,7 @@ func (app *BaseApp) registerNotifyWatcherHooks() {
 
 	settingsNotify := func(e *ModelEvent) error {
 		err := e.Next()
-		if err != nil || e.Model.PK() != paramsKeySettings {
+		if err != nil || !isSettingsKey(e.Model.PK()) {
 			return err
 		}
 
