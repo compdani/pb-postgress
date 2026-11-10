@@ -277,6 +277,8 @@ func TestPopupSignInAuthorizeValidation(t *testing.T) {
 		{"origin with path", map[string]string{"popup_origin": popupTestOrigin + "/cb"}, 400, ""},
 		{"missing origin", map[string]string{"popup_origin": ""}, 400, ""},
 		{"another redirect url", map[string]string{"redirect_uri": popupTestOrigin}, 400, ""},
+		{"https redirect behind a tls proxy", map[string]string{"redirect_uri": "https://example.com/api/oauth2-redirect"}, 200, ""},
+		{"redirect with query", map[string]string{"redirect_uri": "https://example.com/api/oauth2-redirect?x=1"}, 400, ""},
 		{"redirect to another host", map[string]string{"redirect_uri": "http://evil.example.com/api/oauth2-redirect"}, 400, ""},
 		{"missing PKCE", map[string]string{"code_challenge": "", "code_challenge_method": ""}, 303, "error=invalid_request"},
 		{"silent sign-in is not supported", map[string]string{"prompt": "none"}, 303, "error=invalid_request"},

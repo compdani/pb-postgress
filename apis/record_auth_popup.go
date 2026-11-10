@@ -124,6 +124,28 @@ func oauth2ServerPopupRedirectURL(e *core.RequestEvent) string {
 	return oauth2ServerBaseURL(e) + "/api/oauth2-redirect"
 }
 
+// isOAuth2ServerPopupRedirectURL reports whether uri is this server OAuth2 redirect handler.
+//
+// The SDK builds it from the url the frontend uses to reach the server, so behind a TLS
+// terminating proxy (where the request looks like plain http) it is https while
+// oauth2ServerPopupRedirectURL may not know it. The host must still be this server.
+func isOAuth2ServerPopupRedirectURL(e *core.RequestEvent, uri string) bool {
+	if strings.EqualFold(uri, oauth2ServerPopupRedirectURL(e)) {
+		return true
+	}
+
+	u, err := url.Parse(uri)
+	if err != nil || u.Path != "/api/oauth2-redirect" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return false
+	}
+
+	if !strings.EqualFold(u.Host, e.Request.Host) {
+		return false
+	}
+
+	return u.Scheme == "https" || (u.Scheme == "http" && isLoopbackHostname(u.Hostname()))
+}
+
 // oauth2ServerRequestOrigin returns the origin of the frontend that made the request.
 //
 // Browsers send the Origin header on cross-origin requests (and on posts); a plain

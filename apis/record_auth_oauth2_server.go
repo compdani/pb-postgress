@@ -145,7 +145,7 @@ func (p *oauth2ServerAuthorizeParams) validate(e *core.RequestEvent, collection 
 			return client, &oauth2ServerAuthorizeError{code: "invalid_client", description: "The popup sign-in is not enabled for this account type."}
 		}
 
-		if !strings.EqualFold(p.RedirectURI, oauth2ServerPopupRedirectURL(e)) {
+		if !isOAuth2ServerPopupRedirectURL(e, p.RedirectURI) {
 			return client, &oauth2ServerAuthorizeError{code: "invalid_request", description: "The redirect_uri is not valid for the popup sign-in."}
 		}
 
