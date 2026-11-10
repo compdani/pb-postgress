@@ -1456,6 +1456,22 @@ func (app *BaseApp) registerBaseHooks() {
 		return ba.renameCollectionInScopes(oldName, c.Name)
 	}, Priority: -999998})
 	app.OnModelDelete().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
+	// A deleted collection leaves the scope of every instance.
+	app.OnModelDelete().Bind(&hook.Handler[*ModelEvent]{Func: func(e *ModelEvent) error {
+		c, ok := e.Model.(*Collection)
+		if !ok {
+			return e.Next()
+		}
+		name := c.Name
+		if err := e.Next(); err != nil {
+			return err
+		}
+		ba := asBaseApp(e.App)
+		if ba == nil || !ba.IsBootstrapped() || !ba.HasTable("_instances") {
+			return nil
+		}
+		return ba.renameCollectionInScopes(name, "")
+	}, Priority: -999998})
 
 	app.OnModelUpdate().BindFunc(func(e *ModelEvent) error {
 		if settings, ok := e.Model.(*Settings); ok && app.IsBootstrapped() && app.HasTable("_fileConfig") {

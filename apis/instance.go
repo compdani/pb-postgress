@@ -49,10 +49,16 @@ func bindInstanceAPI(app core.App, rg *router.RouterGroup[*core.RequestEvent]) {
 		if err := e.BindBody(&scope); err != nil {
 			return e.BadRequestError("Invalid scope", err)
 		}
-		if err := core.AsBaseApp(e.App).SetInstanceScope(scope); err != nil {
-			return e.BadRequestError("Invalid scope", err)
+		ba := core.AsBaseApp(e.App)
+		if err := ba.SetInstanceScope(scope); err != nil {
+			return e.BadRequestError("Invalid scope: "+err.Error(), err)
 		}
-		return e.JSON(http.StatusOK, scope)
+		// the stored scope can differ from the request (stale names are dropped)
+		saved, err := ba.InstanceScope()
+		if err != nil {
+			return err
+		}
+		return e.JSON(http.StatusOK, saved)
 	}).Bind(RequireSuperuserAuth())
 	rg.POST("/instance/settings", func(e *core.RequestEvent) error {
 		body := struct {

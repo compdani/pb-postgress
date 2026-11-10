@@ -115,15 +115,20 @@ func (app *BaseApp) SetInstanceScope(scope InstanceScope) error {
 		byName[c.Name] = c
 		byID[c.Id] = c
 	}
+	// names of collections that no longer exist (deleted or renamed from
+	// another instance) are dropped instead of rejecting the whole scope
+	known := make([]string, 0, len(scope.Collections))
 	for _, name := range scope.Collections {
 		c := byName[name]
-		if c == nil {
-			return fmt.Errorf("unknown collection %q", name)
+		if c == nil || slices.Contains(known, name) {
+			continue
 		}
 		if scope.Mode == "deny" && c.System {
 			return fmt.Errorf("system collections cannot be hidden: %s", name)
 		}
+		known = append(known, name)
 	}
+	scope.Collections = known
 	for _, c := range collections {
 		if !scopeVisible(scope, c) {
 			continue
@@ -141,7 +146,7 @@ func (app *BaseApp) SetInstanceScope(scope InstanceScope) error {
 }
 
 // renameCollectionInScopes replaces oldName with newName in the scope of every
-// instance that lists it.
+// instance that lists it. An empty newName removes the entry.
 func (app *BaseApp) renameCollectionInScopes(oldName, newName string) error {
 	defer app.resetScopeCache()
 	rows := []*Instance{}
@@ -153,17 +158,19 @@ func (app *BaseApp) renameCollectionInScopes(oldName, newName string) error {
 		if err := json.Unmarshal([]byte(row.ScopeCollections), &names); err != nil {
 			continue
 		}
-		changed := false
-		for i, n := range names {
-			if n == oldName {
-				names[i] = newName
-				changed = true
-			}
-		}
-		if !changed {
+		if !slices.Contains(names, oldName) {
 			continue
 		}
-		raw, err := json.Marshal(slices.Compact(names))
+		next := make([]string, 0, len(names))
+		for _, n := range names {
+			if n == oldName {
+				n = newName
+			}
+			if n != "" && !slices.Contains(next, n) {
+				next = append(next, n)
+			}
+		}
+		raw, err := json.Marshal(next)
 		if err != nil {
 			return err
 		}
