@@ -124,7 +124,7 @@ func (d *DB) EnsureSchema(ctx context.Context) error {
 
 // Register makes this bucket the registered file host. _fileHosts holds one
 // row: earlier bucket rows (e.g. from a wiped bucket directory) are replaced,
-// but a full PocketBase host or S3 registration is never overwritten.
+// but a full PgBase host or S3 registration is never overwritten.
 func (d *DB) Register(ctx context.Context, h Host) error {
 	if d.hostsTable == "" {
 		return errors.New("file host registry is not initialized")
@@ -141,7 +141,7 @@ func (d *DB) Register(ctx context.Context, h Host) error {
 	}
 	defer tx.Rollback()
 
-	// Serialize with other registrations and with PocketBase's SetFileHost,
+	// Serialize with other registrations and with PgBase's SetFileHost,
 	// which takes the same lock, so the check and the replace are atomic.
 	release := func() {}
 	if d.driver == "mysql" {
@@ -407,7 +407,7 @@ func quoteIdent(driver, name string) string {
 }
 
 // FileHostsLockName prefixes the MySQL named lock that serializes writers of
-// _fileHosts (the bucket's Register and PocketBase's SetFileHost). Named locks
+// _fileHosts (the bucket's Register and PgBase's SetFileHost). Named locks
 // are server-wide, so the current database name is appended; both sides build
 // the name the same way in SQL.
 const FileHostsLockName = "pb_file_hosts:"

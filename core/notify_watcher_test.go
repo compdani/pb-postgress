@@ -10,6 +10,7 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/hook"
 	"github.com/pocketbase/pocketbase/tools/store"
 	"golang.org/x/sync/semaphore"
 )
@@ -85,7 +86,18 @@ func TestNotifyWatcher_SettingsUpdate(t *testing.T) {
 		t.Fatalf("Expected 1 app2 event, got %d", app2Total)
 	}
 
-	app2SuperuserIPs := app2.Settings().SuperuserIPs
+	// the event is emitted before the reload finished loading: wait for the loaded
+	// value, reading it under the settings lock
+	var app2SuperuserIPs []string
+	for end := time.Now().Add(2 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		clone, err := app2.Settings().Clone()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if app2SuperuserIPs = clone.SuperuserIPs; len(app2SuperuserIPs) == 1 {
+			break
+		}
+	}
 	if len(app2SuperuserIPs) != 1 || app2SuperuserIPs[0] != "127.0.0.1" {
 		t.Fatalf("Expected exactly 127.0.0.1 superuser IP in app2 settings event, got %v", app2SuperuserIPs)
 	}
@@ -113,31 +125,49 @@ func TestNotifyWatcher_CollectionsUpdate(t *testing.T) {
 	})
 	defer app1.ClearBootstrap()
 	defer app2.ClearBootstrap()
+
+	// The query loggers are installed right after the bootstrap and before the
+	// cache sync (which polls the same connections from its own goroutine)
+	// starts, so setting them can't race with it.
+	testQueries := store.New[string, []string](nil)
+	app2.OnBootstrap().Bind(&hook.Handler[*core.BootstrapEvent]{
+		Func: func(e *core.BootstrapEvent) error {
+			if err := e.Next(); err != nil {
+				return err
+			}
+
+			app2.ConcurrentDB().(*dbx.DB).QueryLogFunc = func(ctx context.Context, t time.Duration, sql string, rows *sql.Rows, err error) {
+				testQueries.SetFunc("concurrent", func(old []string) []string {
+					return append(old, sql)
+				})
+			}
+			app2.ConcurrentDB().(*dbx.DB).ExecLogFunc = func(ctx context.Context, t time.Duration, sql string, result sql.Result, err error) {
+				testQueries.SetFunc("concurrent", func(old []string) []string {
+					return append(old, sql)
+				})
+			}
+			app2.NonconcurrentDB().(*dbx.DB).QueryLogFunc = func(ctx context.Context, t time.Duration, sql string, rows *sql.Rows, err error) {
+				testQueries.SetFunc("nonconcurrent", func(old []string) []string {
+					return append(old, sql)
+				})
+			}
+			app2.NonconcurrentDB().(*dbx.DB).ExecLogFunc = func(ctx context.Context, t time.Duration, sql string, result sql.Result, err error) {
+				testQueries.SetFunc("nonconcurrent", func(old []string) []string {
+					return append(old, sql)
+				})
+			}
+
+			return nil
+		},
+		Priority: -996, // after the bootstrap, before the cache sync starts (-997 continues)
+	})
 	if err := app2.Bootstrap(); err != nil {
 		t.Fatal(err)
 	}
 
-	testQueries := store.New[string, []string](nil)
-	app2.ConcurrentDB().(*dbx.DB).QueryLogFunc = func(ctx context.Context, t time.Duration, sql string, rows *sql.Rows, err error) {
-		testQueries.SetFunc("concurrent", func(old []string) []string {
-			return append(old, sql)
-		})
-	}
-	app2.ConcurrentDB().(*dbx.DB).ExecLogFunc = func(ctx context.Context, t time.Duration, sql string, result sql.Result, err error) {
-		testQueries.SetFunc("concurrent", func(old []string) []string {
-			return append(old, sql)
-		})
-	}
-	app2.NonconcurrentDB().(*dbx.DB).QueryLogFunc = func(ctx context.Context, t time.Duration, sql string, rows *sql.Rows, err error) {
-		testQueries.SetFunc("nonconcurrent", func(old []string) []string {
-			return append(old, sql)
-		})
-	}
-	app2.NonconcurrentDB().(*dbx.DB).ExecLogFunc = func(ctx context.Context, t time.Duration, sql string, result sql.Result, err error) {
-		testQueries.SetFunc("nonconcurrent", func(old []string) []string {
-			return append(old, sql)
-		})
-	}
+	// what the bootstrap itself ran is not part of the test
+	testQueries.Remove("concurrent")
+	testQueries.Remove("nonconcurrent")
 
 	ctx, cancelCtx := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancelCtx()
@@ -152,7 +182,7 @@ func TestNotifyWatcher_CollectionsUpdate(t *testing.T) {
 		for {
 			select {
 			case <-ticker.C:
-				if len(testQueries.Get("concurrent")) == 1 {
+				if countQuery(testQueries.Get("concurrent"), "SELECT {{_collections}}.* FROM \"_collections\" ORDER BY \"created\" ASC, \"id\" ASC") >= 1 {
 					sem.Release(1)
 					return
 				}
@@ -186,12 +216,20 @@ func TestNotifyWatcher_CollectionsUpdate(t *testing.T) {
 	if len(nonconcurrentQueries) != 0 {
 		t.Fatalf("Expected 0 concurrent queries, got %d (%v)", len(nonconcurrentQueries), nonconcurrentQueries)
 	}
-	if len(concurrentQueries) != 1 {
-		t.Fatalf("Expected 1 concurrent query, got %d (%v)", len(concurrentQueries), concurrentQueries)
-	}
 
+	// the cache sync also polls the shared versions, so only the reload query is checked
 	expectedQuery := "SELECT {{_collections}}.* FROM \"_collections\" ORDER BY \"created\" ASC, \"id\" ASC"
-	if concurrentQueries[0] != expectedQuery {
-		t.Fatalf("Expected query\n%s\ngot\n%s", expectedQuery, concurrentQueries[0])
+	if countQuery(concurrentQueries, expectedQuery) < 1 {
+		t.Fatalf("Expected at least one %q, got %v", expectedQuery, concurrentQueries)
 	}
+}
+
+func countQuery(queries []string, query string) int {
+	n := 0
+	for _, q := range queries {
+		if q == query {
+			n++
+		}
+	}
+	return n
 }

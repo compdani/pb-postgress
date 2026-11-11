@@ -30,7 +30,7 @@ func TestNew(t *testing.T) {
 	app := New()
 
 	if app == nil {
-		t.Fatal("Expected initialized PocketBase instance, got nil")
+		t.Fatal("Expected initialized PgBase instance, got nil")
 	}
 
 	if app.RootCmd == nil {
@@ -58,7 +58,7 @@ func TestNewWithConfig(t *testing.T) {
 	})
 
 	if app == nil {
-		t.Fatal("Expected initialized PocketBase instance, got nil")
+		t.Fatal("Expected initialized PgBase instance, got nil")
 	}
 
 	if app.RootCmd == nil {
@@ -107,7 +107,7 @@ func TestNewWithConfigAndFlags(t *testing.T) {
 	})
 
 	if app == nil {
-		t.Fatal("Expected initialized PocketBase instance, got nil")
+		t.Fatal("Expected initialized PgBase instance, got nil")
 	}
 
 	if app.RootCmd == nil {

@@ -167,7 +167,10 @@ function migrationsReviewModal(files) {
                     return null;
                 }
                 if (!item.changes?.length) {
-                    return t.div({ className: "txt-hint" }, "No collection changes (it may change records or run SQL).");
+                    return t.div(
+                        { className: "txt-hint" },
+                        "No collection changes (it may change records or run SQL).",
+                    );
                 }
                 return t.div({ className: "m-t-xs" }, item.changes.map((c) => changeRow(item, c)));
             },

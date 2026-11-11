@@ -74,7 +74,7 @@ func withinRoot(root, full string) error {
 	return nil
 }
 
-// maxNameDepth bounds the segments below collection/recordId. PocketBase
+// maxNameDepth bounds the segments below collection/recordId. PgBase
 // stores thumbnails one level down (thumbs_<file>/<size>_<file>).
 const maxNameDepth = 4
 

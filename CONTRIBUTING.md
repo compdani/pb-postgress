@@ -1,4 +1,4 @@
-# Contributing to PocketBase
+# Contributing to PgBase
 
 > [!IMPORTANT]
 > Due to recent LLM spam, PRs are temporary disabled and only existing collaborators can open a PR.
@@ -28,11 +28,11 @@ git clone https://github.com/your_username/pocketbase.git
 
 ## Making changes in the Go code
 
-PocketBase is distributed as a Go package, which means that in order to run the project you'll have to create a Go `main` program that imports the package.
+PgBase is distributed as a Go package, which means that in order to run the project you'll have to create a Go `main` program that imports the package.
 
 The repository already includes such program, located in `examples/base`, that is also used for the prebuilt executables.
 
-So, let's assume that you already done some changes in the PocketBase Go code and you want now to run them:
+So, let's assume that you already done some changes in the PgBase Go code and you want now to run them:
 
 1. Navigate to `examples/base`
 2. Run `go run main.go serve`
@@ -62,7 +62,7 @@ This will start a web server on `http://localhost:8090` with the embedded prebui
 
 ## Making changes in the Superuser UI
 
-PocketBase Superuser UI is a single-page application (SPA) built with Svelte and Vite.
+PgBase Superuser UI is a single-page application (SPA) built with Svelte and Vite.
 
 To start the Superuser UI:
 
@@ -75,11 +75,11 @@ To start the Superuser UI:
 
 You could open the browser and access the running Superuser UI at `http://localhost:5173`.
 
-Since the Superuser UI is just a client-side application, you need to have the PocketBase backend server also running in the background (either manually running the `examples/base/main.go` or download a prebuilt executable).
+Since the Superuser UI is just a client-side application, you need to have the PgBase backend server also running in the background (either manually running the `examples/base/main.go` or download a prebuilt executable).
 
 > [!NOTE]
 > By default, the Superuser UI is expecting the backend server to be started at `http://localhost:8090`, but you could change that by creating a new `ui/.env.development.local` file with `PB_BACKEND_URL = YOUR_ADDRESS` variable inside it.
 
 Every change you make in the Superuser UI should be automatically reflected in the browser at `http://localhost:5173` without reloading the page.
 
-Once you are done with your changes, you have to build the Superuser UI with `npm run build`, so that it can be embedded in the go package. And that's it - you can make your PR to the main PocketBase repository.
+Once you are done with your changes, you have to build the Superuser UI with `npm run build`, so that it can be embedded in the go package. And that's it - you can make your PR to the main PgBase repository.

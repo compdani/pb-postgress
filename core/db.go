@@ -128,13 +128,23 @@ func (app *BaseApp) delete(ctx context.Context, model Model, isForAuxDB bool) er
 		return e.App.OnModelDeleteExecute().Trigger(event, func(e *ModelEvent) error {
 			db := modelWriteDB(e.App, e.Model, isForAuxDB)
 
-			return baseLockRetry(func(attempt int) error {
+			if err := baseLockRetry(func(attempt int) error {
 				_, err := db.Delete(modelTableName(e.App, e.Model), dbx.HashExp{
 					idColumn: pk,
 				}).WithContext(e.Context).Execute()
 
 				return err
-			}, defaultMaxLockRetries)
+			}, defaultMaxLockRetries); err != nil {
+				return err
+			}
+
+			if !isForAuxDB {
+				if ba := asBaseApp(e.App); ba != nil {
+					ba.bufferRealtimeEvent(e.Model, realtimeActionDelete)
+				}
+			}
+
+			return nil
 		})
 	})
 	if deleteErr != nil {
@@ -322,6 +332,12 @@ func (app *BaseApp) create(ctx context.Context, model Model, withValidations boo
 
 			e.Model.MarkAsNotNew()
 
+			if !isForAuxDB {
+				if ba := asBaseApp(e.App); ba != nil {
+					ba.bufferRealtimeEvent(e.Model, realtimeActionCreate)
+				}
+			}
+
 			return nil
 		})
 	})
@@ -387,7 +403,7 @@ func (app *BaseApp) update(ctx context.Context, model Model, withValidations boo
 		return e.App.OnModelUpdateExecute().Trigger(event, func(e *ModelEvent) error {
 			db := modelWriteDB(e.App, e.Model, isForAuxDB)
 
-			return baseLockRetry(func(attempt int) error {
+			if err := baseLockRetry(func(attempt int) error {
 				if m, ok := e.Model.(DBExporter); ok {
 					data, err := m.DBExport(e.App)
 					if err != nil {
@@ -407,7 +423,17 @@ func (app *BaseApp) update(ctx context.Context, model Model, withValidations boo
 				}
 
 				return db.Model(e.Model).WithContext(e.Context).Update()
-			}, defaultMaxLockRetries)
+			}, defaultMaxLockRetries); err != nil {
+				return err
+			}
+
+			if !isForAuxDB {
+				if ba := asBaseApp(e.App); ba != nil {
+					ba.bufferRealtimeEvent(e.Model, realtimeActionUpdate)
+				}
+			}
+
+			return nil
 		})
 	})
 	if saveErr != nil {

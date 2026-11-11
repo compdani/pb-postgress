@@ -29,6 +29,47 @@ func (m *Param) TableName() string {
 //
 // If no settings were stored it will persist the current app ones.
 func (app *BaseApp) ReloadSettings() error {
+	return app.reloadSettings(true, false)
+}
+
+// reloadSettings reloads the stored settings.
+//
+// With allowInit false it never writes: it is a no-op when no settings were stored yet
+// (used by the cache sync, which only applies what the other instances stored).
+//
+// With skipIfLoaded (the cache sync) it does nothing when the stored settings are
+// the ones that were already loaded.
+//
+// Reloads outside of a transaction are serialized with each other, hooks
+// included (a reload of the cache sync must not write the settings while another
+// reload's hooks read them). The lock is reentrant: a hook that saves settings
+// reloads them again from the same goroutine. A transaction's reload loads
+// uncommitted rows and doesn't take part: it must not hold up (or be held up by)
+// anything while it owns the write connection.
+func (app *BaseApp) reloadSettings(allowInit, skipIfLoaded bool) error {
+	cs := app.cacheSync
+	inTx := app.txInfo != nil
+
+	if cs != nil && !inTx {
+		cs.settingsReload.Lock()
+		defer cs.settingsReload.Unlock()
+	}
+
+	// the fingerprint is taken before loading so a concurrent change
+	// is never marked as loaded
+	var loadedFingerprint string
+	if cs != nil && !inTx {
+		// also taken by the bootstrap load, before the sync runs: it is what
+		// tells the sync which stored settings this instance really has
+		loadedFingerprint, _ = cs.settingsFingerprint()
+
+		if skipIfLoaded && loadedFingerprint != "" {
+			if loaded, _ := cs.settingsLoaded.Load().(string); loaded == loadedFingerprint {
+				return nil
+			}
+		}
+	}
+
 	param := &Param{}
 	err := app.ModelQuery(param).Model(paramsKeySettings, param)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -38,6 +79,10 @@ func (app *BaseApp) ReloadSettings() error {
 	// no settings were previously stored -> save
 	// (ReloadSettings() will be invoked again by a system hook after successful save)
 	if param.Id == "" {
+		if !allowInit {
+			return nil
+		}
+
 		// force insert in case the param entry was deleted manually after application start
 		app.Settings().MarkAsNew()
 		return app.Save(app.Settings())
@@ -56,7 +101,7 @@ func (app *BaseApp) ReloadSettings() error {
 	event := new(SettingsReloadEvent)
 	event.App = app
 
-	return app.OnSettingsReload().Trigger(event, func(e *SettingsReloadEvent) error {
+	err = app.OnSettingsReload().Trigger(event, func(e *SettingsReloadEvent) error {
 		s := e.App.Settings()
 		if own.Id == "" {
 			s.setKey("")
@@ -82,6 +127,23 @@ func (app *BaseApp) ReloadSettings() error {
 		s.mu.Unlock()
 		return nil
 	})
+	if err == nil && cs != nil {
+		if inTx {
+			// the load may include uncommitted rows, so it must not certify the
+			// committed ones: the sync reloads, and a rollback asks for it right away
+			cs.settingsLoaded.Store("")
+			app.txInfo.OnComplete(func(txErr error) error {
+				if txErr != nil {
+					app.requestCacheReload(cacheVersionSettings)
+				}
+				return nil
+			})
+		} else if loadedFingerprint != "" {
+			cs.settingsLoaded.Store(loadedFingerprint)
+		}
+	}
+
+	return err
 }
 
 func (s *Settings) setKey(key string) {
@@ -129,6 +191,11 @@ func syncSharedSettings(app App, model Model) error {
 		return err
 	}
 	_, err = app.DB().Update(paramsTable, dbx.Params{"value": data["value"], "updated": data["updated"]}, dbx.HashExp{"id": paramsKeySettings}).Execute()
+	if err == nil {
+		if ba := asBaseApp(app); ba != nil {
+			ba.bumpCacheVersion(cacheVersionSettings)
+		}
+	}
 	return err
 }
 
@@ -188,7 +255,9 @@ func (app *BaseApp) DisableInstanceSettings() error {
 	if _, err := app.DB().Delete(paramsTable, dbx.HashExp{"id": paramsKeyInstanceSettingsPrefix + id}).Execute(); err != nil {
 		return err
 	}
-	return app.ReloadSettings()
+	err = app.ReloadSettings()
+	app.bumpCacheVersion(cacheVersionSettings)
+	return err
 }
 
 func newSettingsFromParam(app App, p *Param) (*Settings, error) {

@@ -7,7 +7,7 @@ import (
 const defaultPostgresMigrationBatchSize = 500
 
 // CollectionPostgresMigrationConfig defines options for migrating a SQLite-backed
-// collection's records to a PocketBase-managed PostgreSQL table.
+// collection's records to a PgBase-managed PostgreSQL table.
 type CollectionPostgresMigrationConfig struct {
 	// DryRun validates the migration and returns a preview without making changes.
 	DryRun bool
@@ -41,7 +41,7 @@ type CollectionPostgresMigrationResult struct {
 }
 
 // MigrateCollectionToPostgres copies all records from a SQLite-backed collection
-// into a new PocketBase-managed PostgreSQL table and updates the collection metadata
+// into a new PgBase-managed PostgreSQL table and updates the collection metadata
 // to route future reads and writes to PostgreSQL.
 func (app *BaseApp) MigrateCollectionToPostgres(collectionModelOrIdentifier any, config CollectionPostgresMigrationConfig) (*CollectionPostgresMigrationResult, error) {
 	return nil, errors.New("cross-engine collection migration is unsupported: the instance uses one server database; migrate with native database tools")

@@ -136,7 +136,7 @@ func TestBucketProcessFileLifecycle(t *testing.T) {
 }
 
 // Concurrent bucket registrations leave exactly one _fileHosts row, and a
-// bucket never replaces a full host registered by PocketBase. On MySQL the
+// bucket never replaces a full host registered by PgBase. On MySQL the
 // concurrent part reproduces the empty-table deadlock without the named lock;
 // on PostgreSQL the transactions are too short to collide reliably, so there
 // it is a smoke check and LOCK TABLE is what guarantees it.
@@ -192,7 +192,7 @@ func TestFileHostRegistrationIsSerialized(t *testing.T) {
 	}
 }
 
-// A bucket racing PocketBase's SetFileHost(full) must never end up replacing
+// A bucket racing PgBase's SetFileHost(full) must never end up replacing
 // the full host: if both succeed, the bucket ran first and the full host wins.
 func TestFileHostRegistrationKeepsConcurrentFullHost(t *testing.T) {
 	cfg := tests.NewDatabaseConfig(t)

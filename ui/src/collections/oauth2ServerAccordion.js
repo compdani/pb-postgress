@@ -234,7 +234,7 @@ export function oauth2ServerAccordion(collection) {
                         ),
                         t.p(
                             null,
-                            "To sign in another PocketBase app with it (popup + realtime, passkeys on this single domain), "
+                            "To sign in another PgBase app with it (popup + realtime, passkeys on this single domain), "
                                 + "add an OIDC provider in that app's auth collection with the client id/secret and:",
                         ),
                         t.p(null, "Auth URL: ", t.code(null, () => data.baseURL + "/authorize")),

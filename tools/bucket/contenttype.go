@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// extensionTypes overrides sniffing for types PocketBase serves explicitly.
+// extensionTypes overrides sniffing for types PgBase serves explicitly.
 var extensionTypes = map[string]string{
 	".svg":  "image/svg+xml",
 	".css":  "text/css",

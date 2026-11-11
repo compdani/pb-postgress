@@ -762,6 +762,7 @@ func (r *runner) finalizeActivePropsProcessing(collection *Collection, prop stri
 
 		result := &search.ResolverResult{
 			Identifier: r.resolver.jsonArrayLength(jePair),
+			LikeAsText: true, // an integer
 		}
 
 		if r.withMultiMatch {
@@ -812,6 +813,7 @@ func (r *runner) finalizeActivePropsProcessing(collection *Collection, prop stri
 	// -------------------------------------------------------
 	result := &search.ResolverResult{
 		Identifier: "[[" + r.activeTableAlias + "." + cleanFieldName + "]]",
+		LikeAsText: likeNeedsTextCast(r.resolver.app, field),
 	}
 
 	if r.withMultiMatch {
@@ -850,4 +852,15 @@ func (r *runner) finalizeActivePropsProcessing(collection *Collection, prop stri
 	}
 
 	return result, nil
+}
+
+// likeNeedsTextCast reports whether the column of the field is not a text one
+// (booleans, numbers, JSON, arrays, ...): PostgreSQL has no LIKE for those unless
+// they are cast to text (the admin UI searches every field of a collection at once).
+func likeNeedsTextCast(app App, field Field) bool {
+	columnType := strings.ToUpper(strings.TrimSpace(field.ColumnType(app)))
+
+	return !strings.HasPrefix(columnType, "TEXT") &&
+		!strings.HasPrefix(columnType, "VARCHAR") &&
+		!strings.HasPrefix(columnType, "CHAR")
 }

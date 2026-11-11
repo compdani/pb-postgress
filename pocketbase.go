@@ -22,10 +22,10 @@ import (
 
 var _ core.App = (*PocketBase)(nil)
 
-// Version of PocketBase
+// Version of PgBase
 var Version = "(untracked)"
 
-// PocketBase defines a PocketBase app launcher.
+// PocketBase defines a PgBase app launcher.
 //
 // It implements [core.App] via embedding and all of the app interface methods
 // could be accessed directly through the instance (eg. PocketBase.DataDir()).
@@ -42,7 +42,7 @@ type PocketBase struct {
 	RootCmd *cobra.Command
 }
 
-// Config is the PocketBase initialization config struct.
+// Config is the PgBase initialization config struct.
 type Config struct {
 	DBDriver string
 	DBDSN    string
@@ -63,7 +63,7 @@ type Config struct {
 	DBConnect        core.DBConnectFunc // default to core.dbConnect
 }
 
-// New creates a new PocketBase instance with the default configuration.
+// New creates a new PgBase instance with the default configuration.
 // Use [NewWithConfig] if you want to provide a custom configuration.
 //
 // Note that the application will not be initialized/bootstrapped yet,
@@ -79,7 +79,7 @@ func New() *PocketBase {
 	})
 }
 
-// NewWithConfig creates a new PocketBase instance with the provided config.
+// NewWithConfig creates a new PgBase instance with the provided config.
 //
 // Note that the application will not be initialized/bootstrapped yet,
 // aka. DB connections, migrations, app settings, etc. will not be accessible.
@@ -208,7 +208,7 @@ func (pb *PocketBase) Execute() error {
 }
 
 // eagerParseFlags parses the global app flags before calling pb.RootCmd.Execute().
-// so we can have all PocketBase flags ready for use on initialization.
+// so we can have all PgBase flags ready for use on initialization.
 func (pb *PocketBase) eagerParseFlags(config *Config) error {
 	pb.RootCmd.PersistentFlags().StringVar(&config.DBDriver, "dbDriver", config.DBDriver, "database driver (postgres or mysql; PB_DB_DRIVER)")
 	pb.RootCmd.PersistentFlags().StringVar(&config.DBDSN, "dbDSN", config.DBDSN, "database connection string (PB_DB_DSN)")
@@ -216,7 +216,7 @@ func (pb *PocketBase) eagerParseFlags(config *Config) error {
 		&pb.dataDirFlag,
 		"dir",
 		config.DefaultDataDir,
-		"the PocketBase data directory",
+		"the PgBase data directory",
 	)
 
 	pb.RootCmd.PersistentFlags().StringVar(

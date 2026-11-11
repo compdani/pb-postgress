@@ -266,3 +266,88 @@ func TestLogsTruncate(t *testing.T) {
 		scenario.Test(t)
 	}
 }
+
+// The admin UI searches the logs with `level?~'x'||message?~'x'||data?~'x'`: the
+// level is an integer column and the data a JSON one, which have no LIKE on PostgreSQL
+// unless they are cast to text.
+func TestLogsSearchAcrossAllColumns(t *testing.T) {
+	t.Parallel()
+
+	superuserToken := "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY"
+	stub := func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+		if err := tests.StubLogsData(app); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	scenarios := []tests.ApiScenario{
+		{
+			Name:            "list: level, message and data are all searchable with ?~",
+			Method:          http.MethodGet,
+			URL:             "/api/logs?filter=(level%3F~%27x%27%7C%7Cmessage%3F~%27x%27%7C%7Cdata%3F~%27x%27)",
+			Headers:         map[string]string{"Authorization": superuserToken},
+			BeforeTestFunc:  stub,
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"items":[`},
+			ExpectedEvents:  map[string]int{"*": 0},
+		},
+		{
+			Name:           "list: the integer level matches a numeric term",
+			Method:         http.MethodGet,
+			URL:            "/api/logs?filter=level~%278%27",
+			Headers:        map[string]string{"Authorization": superuserToken},
+			BeforeTestFunc: stub,
+			ExpectedStatus: 200,
+			ExpectedContent: []string{
+				`"totalItems":1`,
+				`"id":"f2133873-44fb-9f38-bf82-c918f53b310d"`, // level 8
+			},
+			NotExpectedContent: []string{`"id":"873f2133-9f38-44fb-bf82-c8f53b310d91"`}, // level 0
+			ExpectedEvents:     map[string]int{"*": 0},
+		},
+		{
+			Name:            "list: not like on the json data",
+			Method:          http.MethodGet,
+			URL:             "/api/logs?filter=data!~%27zzz-nothing%27",
+			Headers:         map[string]string{"Authorization": superuserToken},
+			BeforeTestFunc:  stub,
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"totalItems":2`},
+			ExpectedEvents:  map[string]int{"*": 0},
+		},
+		{
+			Name:            "list: like on the json data finds the matching log",
+			Method:          http.MethodGet,
+			URL:             "/api/logs?filter=data~%27400%27",
+			Headers:         map[string]string{"Authorization": superuserToken},
+			BeforeTestFunc:  stub,
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"totalItems":1`, `"id":"f2133873-44fb-9f38-bf82-c918f53b310d"`},
+			ExpectedEvents:  map[string]int{"*": 0},
+		},
+		{
+			Name:            "list: a json path compared with a number",
+			Method:          http.MethodGet,
+			URL:             "/api/logs?filter=data.status~400",
+			Headers:         map[string]string{"Authorization": superuserToken},
+			BeforeTestFunc:  stub,
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"totalItems":1`, `"id":"f2133873-44fb-9f38-bf82-c918f53b310d"`},
+			ExpectedEvents:  map[string]int{"*": 0},
+		},
+		{
+			Name:            "stats: the same search",
+			Method:          http.MethodGet,
+			URL:             "/api/logs/stats?filter=(level%3F~%27x%27%7C%7Cmessage%3F~%27x%27%7C%7Cdata%3F~%27x%27)",
+			Headers:         map[string]string{"Authorization": superuserToken},
+			BeforeTestFunc:  stub,
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`[`},
+			ExpectedEvents:  map[string]int{"*": 0},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario.Test(t)
+	}
+}

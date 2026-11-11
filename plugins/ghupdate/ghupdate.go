@@ -1,5 +1,5 @@
 // Package ghupdate implements a new command to selfupdate the current
-// PocketBase executable with the latest GitHub release.
+// PgBase executable with the latest GitHub release.
 //
 // This is kept only for backward-compatibility and it is replaced by
 // the equivalent `update` BugStage plugin.

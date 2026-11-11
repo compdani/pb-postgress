@@ -1,5 +1,5 @@
 {
-    "name": "PocketBase Superuser UI",
+    "name": "PgBase Superuser UI",
     "private": true,
     "type": "module",
     "scripts": {

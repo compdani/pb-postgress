@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-// Server is the HTTP API other PocketBase instances use to read and write bytes.
+// Server is the HTTP API other PgBase instances use to read and write bytes.
 // Every call needs Authorization: Bearer <secret>. GET and HEAD also accept a
-// signed ?token= for one key (see SignToken). PocketBase enforces record and
+// signed ?token= for one key (see SignToken). PgBase enforces record and
 // field access rules before it proxies a download, so the bucket never serves
 // objects anonymously.
 type Server struct {

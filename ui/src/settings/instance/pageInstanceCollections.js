@@ -251,8 +251,8 @@ export function pageInstanceCollections() {
                                             null,
                                             t.td(null, instance.id || instance.instanceId || ""),
                                             t.td(null, instance.url || ""),
-                                            t.td(null, instance.mode || instance.fileMode || ""),
-                                            t.td(null, instance.registeredAt || instance.registered_at || ""),
+                                            t.td(null, instance.scopeMode || ""),
+                                            t.td(null, instance.created_at || ""),
                                         );
                                     });
                                 }),

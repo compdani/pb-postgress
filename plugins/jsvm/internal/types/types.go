@@ -132,7 +132,7 @@ type CoreApp = excludeHooks<ORIGINAL_CORE_APP>
 interface PocketBase extends excludeHooks<ORIGINAL_POCKETBASE>{}
 
 /**
- * ` + "`$app`" + ` is the current running PocketBase instance that is globally
+ * ` + "`$app`" + ` is the current running PgBase instance that is globally
  * available in each .pb.js file.
  *
  * _Note that this variable is available only in pb_hooks context._
@@ -912,7 +912,7 @@ declare namespace $security {
 
 /**
  * ` + "`" + `$filesystem` + "`" + ` defines common helpers for working
- * with the PocketBase filesystem abstraction.
+ * with the PgBase filesystem abstraction.
  *
  * @group PocketBase
  */
@@ -1154,7 +1154,7 @@ declare class InternalServerError implements router.ApiError {
 }
 
 /**
- * ` + "`" + `$apis` + "`" + ` defines commonly used PocketBase api helpers and middlewares.
+ * ` + "`" + `$apis` + "`" + ` defines commonly used PgBase api helpers and middlewares.
  *
  * @group PocketBase
  */

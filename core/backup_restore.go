@@ -240,7 +240,17 @@ func (app *BaseApp) restoreFromSource(ctx context.Context, src backupSource, bac
 	}
 	app.Store().Set(StoreKeyLastRestoreReport, report)
 
+	// the other instances reload their caches, and this one also re-applies
+	// the auth token invalidations through the cache sync
+	app.bumpCacheVersion(cacheVersionCollections)
+	app.bumpCacheVersion(cacheVersionSettings)
+	app.requestCacheReload(cacheVersionCollections)
+	app.requestCacheReload(cacheVersionSettings)
+
 	// the caches reload even when the files failed: the database did change
+	// (held as a collection write so the cache sync never publishes in between)
+	releaseWrite := app.beginCollectionWrite()
+	defer releaseWrite()
 	return errors.Join(app.ReloadCachedCollections(), app.ReloadSettings(), filesErr)
 }
 

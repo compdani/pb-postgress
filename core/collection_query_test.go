@@ -154,7 +154,11 @@ func TestFindCachedCollectionByNameOrId(t *testing.T) {
 
 	totalQueries := 0
 	app.ConcurrentDB().(*dbx.DB).QueryLogFunc = func(ctx context.Context, t time.Duration, sql string, rows *sql.Rows, err error) {
-		totalQueries++
+		// only the collections queries count: the cache sync and the realtime bus
+		// poll their own tables on the same connection
+		if strings.Contains(sql, "_collections") {
+			totalQueries++
+		}
 	}
 
 	run := func(withCache bool) {
@@ -273,7 +277,11 @@ func TestFindCachedCollectionReferences(t *testing.T) {
 
 	totalQueries := 0
 	app.ConcurrentDB().(*dbx.DB).QueryLogFunc = func(ctx context.Context, t time.Duration, sql string, rows *sql.Rows, err error) {
-		totalQueries++
+		// only the collections queries count: the cache sync and the realtime bus
+		// poll their own tables on the same connection
+		if strings.Contains(sql, "_collections") {
+			totalQueries++
+		}
 	}
 
 	run := func(withCache bool) {

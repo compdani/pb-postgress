@@ -40,6 +40,32 @@ func (r *logFieldResolver) RowidSortExpr(direction string) (string, error) {
 	return fmt.Sprintf("[[created]] %s, [[id]] %s", direction, direction), nil
 }
 
+// resolveLogColumn resolves a logs field. The level (integer) and the data (JSON)
+// are not text columns, and PostgreSQL has no LIKE for them unless they are cast
+// (the admin UI searches level, message and data at once).
+func resolveLogColumn(resolver *search.SimpleFieldResolver, field string) (*search.ResolverResult, error) {
+	result, err := resolver.Resolve(field)
+	if err == nil && (field == "level" || field == "data") {
+		result.LikeAsText = true
+	}
+	return result, err
+}
+
+// Resolve implements [search.FieldResolver].
+func (r *logFieldResolver) Resolve(field string) (*search.ResolverResult, error) {
+	return resolveLogColumn(r.SimpleFieldResolver, field)
+}
+
+// logStatsFieldResolver is the field resolver of the logs stats.
+type logStatsFieldResolver struct {
+	*search.SimpleFieldResolver
+}
+
+// Resolve implements [search.FieldResolver].
+func (r *logStatsFieldResolver) Resolve(field string) (*search.ResolverResult, error) {
+	return resolveLogColumn(r.SimpleFieldResolver, field)
+}
+
 func logsList(e *core.RequestEvent) error {
 	fieldResolver := &logFieldResolver{search.NewSimpleFieldResolver(logFilterFields...)}
 	if e.App.SQLDialect() == core.DialectMySQL {
@@ -58,10 +84,11 @@ func logsList(e *core.RequestEvent) error {
 }
 
 func logsStats(e *core.RequestEvent) error {
-	fieldResolver := search.NewSimpleFieldResolver(logFilterFields...)
+	base := search.NewSimpleFieldResolver(logFilterFields...)
 	if e.App.SQLDialect() == core.DialectMySQL {
-		fieldResolver.JSONExtract = dbutils.JSONExtractMySQL
+		base.JSONExtract = dbutils.JSONExtractMySQL
 	}
+	fieldResolver := &logStatsFieldResolver{base}
 
 	filter := e.Request.URL.Query().Get(search.FilterQueryParam)
 

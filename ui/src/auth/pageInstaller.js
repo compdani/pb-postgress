@@ -13,7 +13,7 @@ export function pageInstaller(route) {
         return;
     }
 
-    app.store.title = "Setup your PocketBase instance";
+    app.store.title = "Setup your PgBase instance";
 
     const data = store({
         ready: false,
@@ -232,8 +232,10 @@ export function pageInstaller(route) {
             { className: "txt-center m-b-base" },
             t.img({ className: "main-logo", src: () => app.store.mainLogo, ariaHidden: true, alt: "App logo" }),
             t.h5({ className: "m-t-10" }, () => app.store.title),
-            t.div({ className: "txt-hint m-t-5" }, () =>
-                data.step === "join" ? "Join an existing database" : `Step ${data.step} of 3`),
+            t.div(
+                { className: "txt-hint m-t-5" },
+                () => data.step === "join" ? "Join an existing database" : `Step ${data.step} of 3`,
+            ),
         ),
         () => {
             if (!data.ready) {
@@ -358,8 +360,8 @@ function databaseStep(data, testDb, connectDb) {
                     disabled: () => data.isBusy,
                     placeholder: () =>
                         data.driver === "mysql"
-                            ? "user:password@tcp(127.0.0.1:3306)/pocketbase"
-                            : "postgres://user:password@127.0.0.1:5432/pocketbase?sslmode=disable",
+                            ? "user:password@tcp(127.0.0.1:3306)/pgbase"
+                            : "postgres://user:password@127.0.0.1:5432/pgbase?sslmode=disable",
                     value: () => data.dsn,
                     oninput: (e) => (data.dsn = e.target.value),
                 }),

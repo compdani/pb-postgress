@@ -239,7 +239,11 @@ func realtimeSetSubscriptions(e *core.RequestEvent) error {
 
 	return e.App.OnRealtimeSubscribeRequest().Trigger(event, func(e *core.RealtimeSubscribeRequestEvent) error {
 		// update auth state
+		realtimeAuthMu.Lock()
 		e.Client.Set(RealtimeClientAuthKey, e.Auth)
+		e.Client.Unset(realtimeClientUnverifiedKey) // authenticated again just now
+		e.Client.Unset(realtimeClientSweepFailuresKey)
+		realtimeAuthMu.Unlock()
 
 		// unsubscribe from any previous existing subscriptions
 		e.Client.Unsubscribe()
@@ -276,12 +280,14 @@ func realtimeUpdateClientsAuth(app core.App, authRecord *core.Record) error {
 				clientAuth, _ := client.Get(RealtimeClientAuthKey).(*core.Record)
 				if clientAuth != nil &&
 					clientAuth.Id == authRecord.Id &&
-					clientAuth.Collection().Name == authRecord.Collection().Name {
-					if clientAuth.TokenKey() != authRecord.TokenKey() {
-						client.Unset(RealtimeClientAuthKey)
-					} else {
-						client.Set(RealtimeClientAuthKey, authRecord)
-					}
+					clientAuth.Collection().Id == authRecord.Collection().Id {
+					realtimeAuthSwap(client, clientAuth, func() {
+						if clientAuth.TokenKey() != authRecord.TokenKey() {
+							client.Unset(RealtimeClientAuthKey)
+						} else {
+							client.Set(RealtimeClientAuthKey, authRecord)
+						}
+					})
 				}
 			}
 
@@ -305,7 +311,7 @@ func realtimeUnsetClientsAuthByRecordModelOrProxy(app core.App, authModel core.M
 				if clientAuth != nil &&
 					clientAuth.Id == authModel.PK() &&
 					clientAuth.Collection().Name == authModel.TableName() {
-					client.Unset(RealtimeClientAuthKey)
+					realtimeAuthSwap(client, clientAuth, func() { client.Unset(RealtimeClientAuthKey) })
 				}
 			}
 
@@ -316,8 +322,13 @@ func realtimeUnsetClientsAuthByRecordModelOrProxy(app core.App, authModel core.M
 	return group.Wait()
 }
 
-// realtimeUnsetClientsAuthByCollection unsets the auth state of all authenticated clients related to the collection.
-func realtimeUnsetClientsAuthByCollection(app core.App, collection *core.Collection) error {
+// realtimeUnsetClientsAuthByCollectionId unsets the auth state of all clients
+// authenticated with a record of the collection with the provided id.
+//
+// It matches by id (the name may have changed together with the secret, while
+// the clients keep the collection they authenticated with) and never depends
+// on the instance scope.
+func realtimeUnsetClientsAuthByCollectionId(app core.App, collectionId string) error {
 	chunks := app.SubscriptionsBroker().ChunkedClients(clientsChunkSize)
 
 	group := new(errgroup.Group)
@@ -326,8 +337,11 @@ func realtimeUnsetClientsAuthByCollection(app core.App, collection *core.Collect
 		group.Go(routine.SafeWrap(func() error {
 			for _, client := range chunk {
 				clientAuth, _ := client.Get(RealtimeClientAuthKey).(*core.Record)
-				if clientAuth != nil && clientAuth.Collection().Name == collection.Name {
-					client.Unset(RealtimeClientAuthKey)
+				if clientAuth == nil {
+					continue
+				}
+				if clientAuth.Collection().Id == collectionId {
+					realtimeAuthSwap(client, clientAuth, func() { client.Unset(RealtimeClientAuthKey) })
 				}
 			}
 
@@ -339,6 +353,20 @@ func realtimeUnsetClientsAuthByCollection(app core.App, collection *core.Collect
 }
 
 func bindRealtimeEvents(app core.App) {
+	bindRealtimeBus(app)
+
+	// another instance changed the token secret of (or deleted) an auth
+	// collection: the cache sync reports it so the clients authenticated with
+	// it are unset here too (matched by collection id, so renames are covered)
+	app.Store().Set(core.StoreKeyAuthCollectionInvalidator, core.AuthCollectionInvalidatorFunc(
+		func(a core.App, collectionId, collectionName string) {
+			if err := realtimeUnsetClientsAuthByCollectionId(a, collectionId); err != nil {
+				a.Logger().Warn("Failed to unset the realtime clients of a changed auth collection",
+					"collectionId", collectionId, "error", err)
+			}
+		},
+	))
+
 	// reset the clients auth on collection secret change
 	// (@todo with the future tracking of old collections data consider replacing with *AfterUpdateSuccess to account for transaction rollback)
 	app.OnCollectionUpdate().Bind(&hook.Handler[*core.CollectionEvent]{
@@ -347,14 +375,16 @@ func bindRealtimeEvents(app core.App) {
 				return e.Next()
 			}
 
-			cached, _ := scopedCollection(e.App, e.Collection.Id)
+			// not scoped: the clients of a collection must be unset whether or not
+			// it is visible to this instance
+			cached, _ := e.App.FindCachedCollectionByNameOrId(e.Collection.Id)
 
 			if err := e.Next(); err != nil {
 				return err
 			}
 
 			if cached != nil && cached.AuthToken.Secret != e.Collection.AuthToken.Secret {
-				if err := realtimeUnsetClientsAuthByCollection(e.App, e.Collection); err != nil {
+				if err := realtimeUnsetClientsAuthByCollectionId(e.App, e.Collection.Id); err != nil {
 					app.Logger().Warn(
 						"Failed to remove client(s) associated to the changed auth collection",
 						slog.String("collectionName", e.Collection.Name),
@@ -372,7 +402,7 @@ func bindRealtimeEvents(app core.App) {
 	app.OnCollectionAfterDeleteSuccess().Bind(&hook.Handler[*core.CollectionEvent]{
 		Func: func(e *core.CollectionEvent) error {
 			if e.Collection.IsAuth() {
-				if err := realtimeUnsetClientsAuthByCollection(e.App, e.Collection); err != nil {
+				if err := realtimeUnsetClientsAuthByCollectionId(e.App, e.Collection.Id); err != nil {
 					app.Logger().Warn(
 						"Failed to remove client(s) associated to the deleted auth collection",
 						slog.String("collectionName", e.Collection.Name),
@@ -641,6 +671,11 @@ func realtimeBroadcastRecord(app core.App, action string, record *core.Record, d
 			var clientAuth *core.Record
 
 			for _, client := range chunk {
+				// the auth of this client could not be re-validated: nothing is delivered
+				if unverified, _ := client.Get(realtimeClientUnverifiedKey).(bool); unverified {
+					continue
+				}
+
 				// note: not executed concurrently to avoid races and to ensure
 				// that the access checks are applied for the current record db state
 				for prefix, rule := range subscriptionRuleMap {

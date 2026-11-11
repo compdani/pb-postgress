@@ -92,6 +92,8 @@ func seedFixtures(app *core.BaseApp) error {
 	if err := app.ReloadCachedCollections(); err != nil {
 		return err
 	}
+	// the fixtures replaced the collections out of band: nothing to invalidate
+	app.RebaselineCacheSync()
 	collections, err := app.FindAllCollections()
 	if err != nil {
 		return err

@@ -107,7 +107,7 @@ func recordsList(e *core.RequestEvent) error {
 		// While technically the below doesn't fully guarantee protection against filter timing attacks, in practice combined with the network latency it makes them even less feasible.
 		// A properly configured rate limiter or individual fields Hidden checks are better suited if you are really concerned about eventual information disclosure by side-channel attacks.
 		//
-		// In all cases it doesn't really matter that much because it doesn't affect the builtin PocketBase security sensitive fields (e.g. password and tokenKey) since they
+		// In all cases it doesn't really matter that much because it doesn't affect the builtin PgBase security sensitive fields (e.g. password and tokenKey) since they
 		// are not client-side filterable and in the few places where they need to be compared against an external value, a constant time check is used.
 		if !e.HasSuperuserAuth() &&
 			(collection.ListRule != nil && *collection.ListRule != "") &&

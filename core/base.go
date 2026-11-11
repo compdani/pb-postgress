@@ -41,7 +41,7 @@ const (
 	LocalStorageDirName       string = "storage"
 	LocalBackupsDirName       string = "backups"
 	LocalAutocertCacheDirName string = ".autocert_cache"
-	LocalNotifyDirName        string = ".notify"            // optional watched directory that is used as a cross-platform workaround for synchronizing various runtime states between multiple PocketBase instances pointing to the same pb_data
+	LocalNotifyDirName        string = ".notify"            // optional watched directory that is used as a cross-platform workaround for synchronizing various runtime states between multiple PgBase instances pointing to the same pb_data
 	LocalTempDirName          string = ".pb_temp_to_delete" // temp pb_data sub directory that will be deleted on each app.Bootstrap()
 
 	// @todo consider removing after backups refactoring
@@ -70,15 +70,24 @@ type BaseAppConfig struct {
 	AuxMaxOpenConns  int
 	AuxMaxIdleConns  int
 	IsDev            bool
+
+	// RealtimeBus makes the instances that share the database publish the record
+	// events of their writes to each other's realtime clients (see realtime_bus.go).
+	// The PB_REALTIME_BUS=1 environment variable enables it too.
+	RealtimeBus bool
 }
 
 // ensures that the BaseApp implements the App interface.
 var _ App = (*BaseApp)(nil)
 
-// BaseApp implements core.App and defines the base PocketBase app structure.
+// BaseApp implements core.App and defines the base PgBase app structure.
 type BaseApp struct {
 	// cached scope of this instance (see instance.go)
 	scopeCache *scopeCache
+
+	// keeps the cached collections and settings in line with the changes
+	// made by the other instances of the shared database (see cache_sync.go)
+	cacheSync *cacheSync
 
 	// collections (id or name) whose writes are skipped; set only on the
 	// app clone a reviewed migration runs with (see migrations_review.go)
@@ -219,6 +228,10 @@ func NewBaseApp(config BaseAppConfig) *BaseApp {
 		cron:                cron.New(),
 		subscriptionsBroker: subscriptions.NewBroker(),
 		config:              &config,
+	}
+	app.cacheSync = newCacheSync(app)
+	if os.Getenv("PB_REALTIME_BUS") == "1" {
+		app.config.RealtimeBus = true
 	}
 
 	// apply config defaults
@@ -793,7 +806,7 @@ func (app *BaseApp) fileStorageKind(c *Collection) (string, *FileHost, error) {
 		if err != nil {
 			return "", nil, err
 		}
-		// A full PocketBase host serves the other instances in any mode. A
+		// A full PgBase host serves the other instances in any mode. A
 		// bucket serves only fileServer mode, so a bucket started next to
 		// local-mode instances cannot silently move their files.
 		if host != nil && (host.Mode == "full" || (host.Mode == "bucket" && mode == "fileServer")) {
@@ -1429,49 +1442,7 @@ func (app *BaseApp) registerBaseHooks() {
 		}
 		return e.Next()
 	}, Priority: -999998})
-	// Instance scopes store collection names, and every instance shares the
-	// same database, so a rename made from one instance must be carried over
-	// to the scope of all the others. Otherwise a collection hidden from
-	// (or, in allow mode, granted to) another instance loses its entry there.
-	app.OnModelUpdate().Bind(&hook.Handler[*ModelEvent]{Func: func(e *ModelEvent) error {
-		c, ok := e.Model.(*Collection)
-		if !ok || c.IsNew() {
-			return e.Next()
-		}
-		ba := asBaseApp(e.App)
-		if ba == nil || !ba.IsBootstrapped() || !ba.HasTable("_instances") {
-			return e.Next()
-		}
-		old, err := e.App.FindCollectionByNameOrId(cast.ToString(c.LastSavedPK()))
-		if err != nil {
-			return e.Next()
-		}
-		oldName := old.Name
-		if err := e.Next(); err != nil {
-			return err
-		}
-		if oldName == c.Name {
-			return nil
-		}
-		return ba.renameCollectionInScopes(oldName, c.Name)
-	}, Priority: -999998})
 	app.OnModelDelete().Bind(&hook.Handler[*ModelEvent]{Func: guardCollection, Priority: -999999})
-	// A deleted collection leaves the scope of every instance.
-	app.OnModelDelete().Bind(&hook.Handler[*ModelEvent]{Func: func(e *ModelEvent) error {
-		c, ok := e.Model.(*Collection)
-		if !ok {
-			return e.Next()
-		}
-		name := c.Name
-		if err := e.Next(); err != nil {
-			return err
-		}
-		ba := asBaseApp(e.App)
-		if ba == nil || !ba.IsBootstrapped() || !ba.HasTable("_instances") {
-			return nil
-		}
-		return ba.renameCollectionInScopes(name, "")
-	}, Priority: -999998})
 
 	app.OnModelUpdate().BindFunc(func(e *ModelEvent) error {
 		if settings, ok := e.Model.(*Settings); ok && app.IsBootstrapped() && app.HasTable("_fileConfig") {
@@ -1602,6 +1573,7 @@ func (app *BaseApp) registerBaseHooks() {
 	app.registerOAuth2CodeHooks()
 	app.registerPasskeyHooks()
 	app.registerNotifyWatcherHooks()
+	app.registerCacheSyncHooks()
 }
 
 // getLoggerMinLevel returns the logger min level based on the

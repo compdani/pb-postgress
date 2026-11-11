@@ -36,6 +36,11 @@ type ResolverResult struct {
 	// to the query when building both resolved operands/sides in a single expression.
 	Params dbx.Params
 
+	// LikeAsText makes the "~" and "!~" operators compare the operand as text
+	// on PostgreSQL, which has no LIKE for integer, JSON, ... columns
+	// (set it for resolved columns that are not text).
+	LikeAsText bool
+
 	// MultiMatchSubQuery is an optional sub query expression that will be added
 	// in addition to the combined ResolverResult expression during build.
 	MultiMatchSubQuery *MultiMatchSubquery

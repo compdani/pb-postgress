@@ -1,5 +1,5 @@
 // Package update implements a new command to replace the current
-// PocketBase executable with the one from the latest BugStage releases.
+// PgBase executable with the one from the latest BugStage releases.
 //
 // Note that it expects the fetched release to have file(s) in the following formats:
 //   - "*_linux_amd64.zip"
