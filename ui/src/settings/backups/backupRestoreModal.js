@@ -90,7 +90,7 @@ function backupRestoreModal(key) {
                     continue;
                 }
                 if (r.action === "rename" && !r.newName.trim()) {
-                    throw new Error('Enter a new name for "' + c.name + '".');
+                    throw new Error("Enter a new name for \"" + c.name + "\".");
                 }
                 resolutions[c.id] = {
                     action: r.action === "import" ? "skip" : r.action,
@@ -174,7 +174,10 @@ function backupRestoreModal(key) {
                 { className: "alert warning" },
                 t.div(
                     { className: "content" },
-                    t.p({ className: "txt-bold" }, "The restore changed the database but the files are not all copied."),
+                    t.p(
+                        { className: "txt-bold" },
+                        "The restore changed the database but the files are not all copied.",
+                    ),
                     t.p(null, () => data.filesError),
                     t.div(
                         { className: "flex m-t-sm" },
@@ -337,10 +340,12 @@ function backupRestoreModal(key) {
                                     conflict
                                         ? t.div(
                                             { className: "txt-hint" },
-                                            "Exists here (" + conflict.localRecords + " records)" +
-                                                (conflict.localReferencedBy?.length
-                                                    ? ", used by " +
-                                                        conflict.localReferencedBy.map((x) => x.collection + "." + x.field).join(", ")
+                                            "Exists here (" + conflict.localRecords + " records)"
+                                                + (conflict.localReferencedBy?.length
+                                                    ? ", used by "
+                                                        + conflict.localReferencedBy.map((x) =>
+                                                            x.collection + "." + x.field
+                                                        ).join(", ")
                                                     : ""),
                                         )
                                         : null,
@@ -351,7 +356,9 @@ function backupRestoreModal(key) {
                                             { value: "skip" },
                                             conflict ? "Skip (keep existing)" : "Don't import",
                                         ),
-                                        conflict && (!c.system || !data.otherInstances) ? t.option({ value: "replace" }, "Replace existing") : null,
+                                        conflict && (!c.system || !data.otherInstances)
+                                            ? t.option({ value: "replace" }, "Replace existing")
+                                            : null,
                                         conflict && !c.system
                                             ? t.option({ value: "rename" }, "Import under a new name")
                                             : null,
@@ -373,7 +380,10 @@ function backupRestoreModal(key) {
                                     { className: "field m-t-sm" },
                                     t.label(null, "Settings"),
                                     t.select(
-                                        { value: () => data.settings, onchange: (e) => (data.settings = e.target.value) },
+                                        {
+                                            value: () => data.settings,
+                                            onchange: (e) => (data.settings = e.target.value),
+                                        },
                                         t.option({ value: "" }, "Restore the backup's settings"),
                                         t.option({ value: "none" }, "Keep the current settings"),
                                         t.option({ value: "instance" }, "Restore for this instance only"),

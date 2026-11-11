@@ -72,7 +72,9 @@ export function joinStep(initialInstances, api, initialStage) {
     }
 
     function defaultResolution(c) {
-        return c.conflict ? { action: "skip", newName: "", shared: false } : { action: "import", newName: "", shared: false };
+        return c.conflict
+            ? { action: "skip", newName: "", shared: false }
+            : { action: "import", newName: "", shared: false };
     }
 
     async function analyze(e) {
@@ -153,8 +155,8 @@ export function joinStep(initialInstances, api, initialStage) {
                 return;
             }
             if (
-                Object.values(data.resolutions).some((r) => r.action === "replace") &&
-                !window.confirm(
+                Object.values(data.resolutions).some((r) => r.action === "replace")
+                && !window.confirm(
                     "Replace deletes the existing collection's records for every instance that uses it. Continue?",
                 )
             ) {
@@ -267,7 +269,9 @@ function roleStage(data, instances, next) {
                             { className: "field m-b-sm" },
                             t.select(
                                 { value: () => data.copyFrom, onchange: (e) => (data.copyFrom = e.target.value) },
-                                instances.map((i) => t.option({ value: i.id }, i.name + (i.url ? " (" + i.url + ")" : ""))),
+                                instances.map((i) =>
+                                    t.option({ value: i.id }, i.name + (i.url ? " (" + i.url + ")" : ""))
+                                ),
                             ),
                         )
                         : t.div({ className: "alert warning" }, "There is no other instance to replicate.")
@@ -304,8 +308,10 @@ function roleStage(data, instances, next) {
                     className: () => `btn block ${data.busy ? "loading" : ""}`,
                     disabled: () => data.busy || (data.mode === "replica" && !data.copyFrom),
                 },
-                t.span({ className: "txt" }, () =>
-                    data.mode === "new" && data.start === "restore" ? "Next" : "Finish setup"),
+                t.span(
+                    { className: "txt" },
+                    () => data.mode === "new" && data.start === "restore" ? "Next" : "Finish setup",
+                ),
             ),
         ),
     );
@@ -379,7 +385,9 @@ function collectionRow(data, c) {
         conflict ? null : t.option({ value: "import" }, "Import"),
         conflict ? t.option({ value: "skip" }, "Skip (keep existing)") : t.option({ value: "skip" }, "Don't import"),
         conflict && !c.system ? t.option({ value: "replace" }, "Replace existing") : null,
-        conflict && !conflict.localSystem && !c.system ? t.option({ value: "rename" }, "Import under a new name") : null,
+        conflict && !conflict.localSystem && !c.system
+            ? t.option({ value: "rename" }, "Import under a new name")
+            : null,
     );
     return t.div(
         { className: "block m-b-sm p-sm", style: "border:1px solid var(--baseAlt2Color, #ddd);border-radius:6px" },
@@ -392,9 +400,9 @@ function collectionRow(data, c) {
         conflict
             ? t.div(
                 { className: "txt-hint" },
-                `Conflicts with an existing ${conflict.localType} collection "${conflict.localName}" ` +
-                    `(${conflict.localRecords} records)` +
-                    (conflict.localReferencedBy?.length
+                `Conflicts with an existing ${conflict.localType} collection "${conflict.localName}" `
+                    + `(${conflict.localRecords} records)`
+                    + (conflict.localReferencedBy?.length
                         ? `, used by ${refs(conflict.localReferencedBy)}`
                         : ""),
             )
@@ -500,7 +508,10 @@ function filesStage(data, filesAction) {
             { className: "col-12" },
             t.div(
                 { className: "alert warning" },
-                t.p({ className: "txt-bold" }, "The collections and records were restored, but the files were not all copied."),
+                t.p(
+                    { className: "txt-bold" },
+                    "The collections and records were restored, but the files were not all copied.",
+                ),
                 t.p(null, () => data.filesError),
             ),
         ),

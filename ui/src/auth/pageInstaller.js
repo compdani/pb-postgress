@@ -232,8 +232,10 @@ export function pageInstaller(route) {
             { className: "txt-center m-b-base" },
             t.img({ className: "main-logo", src: () => app.store.mainLogo, ariaHidden: true, alt: "App logo" }),
             t.h5({ className: "m-t-10" }, () => app.store.title),
-            t.div({ className: "txt-hint m-t-5" }, () =>
-                data.step === "join" ? "Join an existing database" : `Step ${data.step} of 3`),
+            t.div(
+                { className: "txt-hint m-t-5" },
+                () => data.step === "join" ? "Join an existing database" : `Step ${data.step} of 3`,
+            ),
         ),
         () => {
             if (!data.ready) {
