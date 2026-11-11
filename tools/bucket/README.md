@@ -1,6 +1,6 @@
 # Bucket
 
-`bucket` is a standalone file server for one PocketBase database. It stores bytes on disk and serves them to other instances. It does not import the PocketBase app, and it does not use SQLite. A process is either Postgres or MySQL, the same single database as the main instance.
+`bucket` is a standalone file server for one PgBase database. It stores bytes on disk and serves them to other instances. It does not import the PgBase app, and it does not use SQLite. A process is either Postgres or MySQL, the same single database as the main instance.
 
 S3 mode is configured on the main instance. This process is only the filesystem file server (`mode=bucket`).
 
@@ -25,7 +25,7 @@ Flags override the environment: `--dir` (`PB_BUCKET_DIR`), `--http` (`PB_BUCKET_
 
 If `--apiKey` is omitted, a bearer secret is generated, stored in `<dir>/.secret`, and printed once as `PB_BUCKET_API_KEY=...`.
 
-On startup the process registers itself in `_fileHosts` (`id`, `url`, `mode`, `secret`, `registered_at`) with `mode=bucket`, replacing earlier bucket rows. It refuses to start if a `full` or `s3` host is registered. PocketBase uses the bucket only when its file mode is `fileServer`. It creates `_fileHosts` and `_fileChanges` when they are missing, and adds any of those columns that an existing table does not have yet.
+On startup the process registers itself in `_fileHosts` (`id`, `url`, `mode`, `secret`, `registered_at`) with `mode=bucket`, replacing earlier bucket rows. It refuses to start if a `full` or `s3` host is registered. PgBase uses the bucket only when its file mode is `fileServer`. It creates `_fileHosts` and `_fileChanges` when they are missing, and adds any of those columns that an existing table does not have yet.
 
 ## HTTP API
 
@@ -40,7 +40,7 @@ Other instances write bytes here. The database is not a byte channel.
 | `DELETE` | `/files/{collection}/{recordId}/` | bearer; deletes the record directory |
 | `GET` | `/files/?prefix=&after=` | bearer |
 
-`{filename...}` may nest up to four segments (PocketBase thumbnails use `thumbs_<file>/<size>_<file>`). Nothing is served anonymously: PocketBase checks record and field access rules and then proxies the download with the bearer secret. A signed token grants one key until it expires.
+`{filename...}` may nest up to four segments (PgBase thumbnails use `thumbs_<file>/<size>_<file>`). Nothing is served anonymously: PgBase checks record and field access rules and then proxies the download with the bearer secret. A signed token grants one key until it expires.
 
 `GET /files/?prefix=` returns `{"prefix","items":[{key,size,updated,...}],"truncated"}` in key order, at most 1000 items. When `truncated` is true, repeat with `after=<last key>`.
 
@@ -74,6 +74,6 @@ The token is expired when `now >= expiry`. A main instance that can read `_fileH
 | `collection`, `record_id`, `filename` | object key |
 | `created_at` | insert time |
 
-The bucket reads `id` greater than its cursor. Ids are allocated at insert but visible at commit, so a row behind a missing id waits 30 seconds from when the watcher first sees the gap for the earlier id to commit; after that the gap is treated as a rollback, and a transaction still open by then is not replayed. `delete` removes the object unless it was written more than 5 seconds (clock-skew tolerance) after the row's `created_at`, or the whole record directory when `filename` is empty or `*`. PocketBase also deletes files directly through `_fileDeleteQueue`, so the feed is a backstop. `upsert` recomputes the ETag from the file on disk and drops the cached metadata. Postgres uses `LISTEN pb_file_changes` and also polls. MySQL polls. The cursor is `<dir>/.cursor`. If it cannot be read, the watcher stops instead of replaying from 0; remove the file to replay deliberately.
+The bucket reads `id` greater than its cursor. Ids are allocated at insert but visible at commit, so a row behind a missing id waits 30 seconds from when the watcher first sees the gap for the earlier id to commit; after that the gap is treated as a rollback, and a transaction still open by then is not replayed. `delete` removes the object unless it was written more than 5 seconds (clock-skew tolerance) after the row's `created_at`, or the whole record directory when `filename` is empty or `*`. PgBase also deletes files directly through `_fileDeleteQueue`, so the feed is a backstop. `upsert` recomputes the ETag from the file on disk and drops the cached metadata. Postgres uses `LISTEN pb_file_changes` and also polls. MySQL polls. The cursor is `<dir>/.cursor`. If it cannot be read, the watcher stops instead of replaying from 0; remove the file to replay deliberately.
 
 Real database tests run only when `PB_TEST_PG_DSN` or `PB_TEST_MYSQL_DSN` is set.

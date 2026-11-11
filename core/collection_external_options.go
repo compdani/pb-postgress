@@ -57,7 +57,7 @@ func (m *Collection) IsExternal() bool {
 	return m != nil && m.collectionExternalOptions.External
 }
 
-// UsesPostgresRecords reports whether the collection stores records in a PocketBase-managed PostgreSQL table.
+// UsesPostgresRecords reports whether the collection stores records in a PgBase-managed PostgreSQL table.
 func (m *Collection) UsesPostgresRecords() bool {
 	return m != nil && m.collectionExternalOptions.PostgresRecords
 }

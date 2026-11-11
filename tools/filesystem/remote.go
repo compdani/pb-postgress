@@ -208,7 +208,7 @@ func (d *remoteDriver) Copy(ctx context.Context, dst, src string) error {
 // ListPaged reads one page from GET /files/?prefix=&after=.
 //
 // A bucket host returns {"items":[{key,size,updated}],"truncated":bool} and
-// pages with after=<last key>. A full PocketBase file host returns a plain
+// pages with after=<last key>. A full PgBase file host returns a plain
 // JSON array of blob.ListObject with no paging. Both are accepted.
 func (d *remoteDriver) ListPaged(ctx context.Context, opts *blob.ListOptions) (*blob.ListPage, error) {
 	q := url.Values{}

@@ -155,7 +155,7 @@ type settings struct {
 	Logs         LogsConfig         `form:"logs" json:"logs"`
 }
 
-// Settings defines the PocketBase app settings.
+// Settings defines the PgBase app settings.
 type Settings struct {
 	settings
 

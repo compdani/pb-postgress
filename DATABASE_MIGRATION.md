@@ -266,7 +266,7 @@ storage/<collectionId>/<recordId>/<file>   record files, no thumbnails
 ```
 
 Record values are the text a database returns for each column, which is
-the form PocketBase already loads records from, so no type is tied to one
+the form PgBase already loads records from, so no type is tied to one
 driver. Every table is read in one REPEATABLE READ, read-only transaction.
 Files are included only for collections stored in this instance's
 `pb_data/storage`; S3 and file-server files are not copied.

@@ -13,7 +13,7 @@ export function pageInstaller(route) {
         return;
     }
 
-    app.store.title = "Setup your PocketBase instance";
+    app.store.title = "Setup your PgBase instance";
 
     const data = store({
         ready: false,
@@ -358,8 +358,8 @@ function databaseStep(data, testDb, connectDb) {
                     disabled: () => data.isBusy,
                     placeholder: () =>
                         data.driver === "mysql"
-                            ? "user:password@tcp(127.0.0.1:3306)/pocketbase"
-                            : "postgres://user:password@127.0.0.1:5432/pocketbase?sslmode=disable",
+                            ? "user:password@tcp(127.0.0.1:3306)/pgbase"
+                            : "postgres://user:password@127.0.0.1:5432/pgbase?sslmode=disable",
                     value: () => data.dsn,
                     oninput: (e) => (data.dsn = e.target.value),
                 }),

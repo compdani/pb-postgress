@@ -116,7 +116,7 @@ type CoreApp = excludeHooks<core.App>
 interface PocketBase extends excludeHooks<pocketbase.PocketBase>{}
 
 /**
- * `$app` is the current running PocketBase instance that is globally
+ * `$app` is the current running PgBase instance that is globally
  * available in each .pb.js file.
  *
  * _Note that this variable is available only in pb_hooks context._
@@ -896,7 +896,7 @@ declare namespace $security {
 
 /**
  * `$filesystem` defines common helpers for working
- * with the PocketBase filesystem abstraction.
+ * with the PgBase filesystem abstraction.
  *
  * @group PocketBase
  */
@@ -1138,7 +1138,7 @@ declare class InternalServerError implements router.ApiError {
 }
 
 /**
- * `$apis` defines commonly used PocketBase api helpers and middlewares.
+ * `$apis` defines commonly used PgBase api helpers and middlewares.
  *
  * @group PocketBase
  */
@@ -5977,7 +5977,7 @@ namespace filesystem {
    * ListPaged reads one page from GET /files/?prefix=&after=.
    *
    * A bucket host returns {"items":[{key,size,updated}],"truncated":bool} and
-   * pages with after=<last key>. A full PocketBase file host returns a plain
+   * pages with after=<last key>. A full PgBase file host returns a plain
    * JSON array of blob.ListObject with no paging. Both are accepted.
    */
   listPaged(ctx: context.Context, opts: blob.ListOptions): (blob.ListPage)
@@ -6111,13 +6111,13 @@ namespace exec {
 }
 
 /**
- * Package core is the backbone of PocketBase.
+ * Package core is the backbone of PgBase.
  *
- * It defines the main PocketBase App interface and its base implementation.
+ * It defines the main PgBase App interface and its base implementation.
  */
 namespace core {
  /**
-  * App defines the main PocketBase app interface.
+  * App defines the main PgBase app interface.
   *
   * Note that the interface is not intended to be implemented manually by users
   * and instead they should use core.BaseApp (either directly or as embedded field in a custom struct).
@@ -8136,7 +8136,7 @@ namespace core {
   isDev: boolean
  }
  /**
-  * BaseApp implements CoreApp and defines the base PocketBase app structure.
+  * BaseApp implements CoreApp and defines the base PgBase app structure.
   */
  interface BaseApp {
  }
@@ -8735,7 +8735,7 @@ namespace core {
  }
  interface BaseApp {
   /**
-   * ManagesPostgresRecordSchema reports whether PocketBase should create/sync the physical Postgres table.
+   * ManagesPostgresRecordSchema reports whether PgBase should create/sync the physical Postgres table.
    */
   managesPostgresRecordSchema(c: Collection): boolean
  }
@@ -8798,7 +8798,7 @@ namespace core {
  }
  interface Collection {
   /**
-   * UsesPostgresRecords reports whether the collection stores records in a PocketBase-managed PostgreSQL table.
+   * UsesPostgresRecords reports whether the collection stores records in a PgBase-managed PostgreSQL table.
    */
   usesPostgresRecords(): boolean
  }
@@ -8849,13 +8849,13 @@ namespace core {
  }
  interface BaseApp {
   /**
-   * ImportPostgresTable registers an existing PostgreSQL table as an external PocketBase collection.
+   * ImportPostgresTable registers an existing PostgreSQL table as an external PgBase collection.
    */
   importPostgresTable(config: PostgresImportConfig): (Collection)
  }
  /**
   * CollectionPostgresMigrationConfig defines options for migrating a SQLite-backed
-  * collection's records to a PocketBase-managed PostgreSQL table.
+  * collection's records to a PgBase-managed PostgreSQL table.
   */
  interface CollectionPostgresMigrationConfig {
   /**
@@ -8899,7 +8899,7 @@ namespace core {
  interface BaseApp {
   /**
    * MigrateCollectionToPostgres copies all records from a SQLite-backed collection
-   * into a new PocketBase-managed PostgreSQL table and updates the collection metadata
+   * into a new PgBase-managed PostgreSQL table and updates the collection metadata
    * to route future reads and writes to PostgreSQL.
    */
   migrateCollectionToPostgres(collectionModelOrIdentifier: any, config: CollectionPostgresMigrationConfig): (CollectionPostgresMigrationResult)
@@ -10128,7 +10128,7 @@ namespace core {
   onComplete(fn: (txErr: Error) => void): void
  }
  /**
-  * RequestEvent defines the PocketBase router handler event.
+  * RequestEvent defines the PgBase router handler event.
   */
  type _sVBGxQq = router.Event
  interface RequestEvent extends _sVBGxQq {
@@ -10386,7 +10386,7 @@ namespace core {
    * ThumbError indicates the a thumb wasn't able to be generated
    * (e.g. because it didn't satisfy the support image formats or it timed out).
    *
-   * Note that PocketBase fallbacks to the original file in case of a thumb error,
+   * Note that PgBase fallbacks to the original file in case of a thumb error,
    * but developers can check the field and provide their own custom thumb generation if necessary.
    */
   thumbError: Error
@@ -14901,7 +14901,7 @@ namespace core {
   logs: LogsConfig
  }
  /**
-  * Settings defines the PocketBase app settings.
+  * Settings defines the PgBase app settings.
   */
  type _ssTQzUi = settings
  interface Settings extends _ssTQzUi {
@@ -15622,13 +15622,13 @@ namespace apis {
  }
  interface wrapStdHandler {
   /**
-   * WrapStdHandler wraps Go [http.Handler] into a PocketBase handler func.
+   * WrapStdHandler wraps Go [http.Handler] into a PgBase handler func.
    */
   (h: http.Handler): (_arg0: core.RequestEvent) => void
  }
  interface wrapStdMiddleware {
   /**
-   * WrapStdMiddleware wraps Go [func(http.Handler) http.Handle] into a PocketBase middleware func.
+   * WrapStdMiddleware wraps Go [func(http.Handler) http.Handle] into a PgBase middleware func.
    */
   (m: (_arg0: http.Handler) => http.Handler): (_arg0: core.RequestEvent) => void
  }
@@ -15727,7 +15727,7 @@ namespace apis {
  }
  interface defaultInstallerFunc {
   /**
-   * DefaultInstallerFunc is the default PocketBase installer function.
+   * DefaultInstallerFunc is the default PgBase installer function.
    *
    * It will attempt to open a link in the browser (with the one-time
    * [InstallerToken] for this process) to the installer UI so that users can
@@ -16354,7 +16354,7 @@ namespace apis {
 
 namespace pocketbase {
  /**
-  * PocketBase defines a PocketBase app launcher.
+  * PocketBase defines a PgBase app launcher.
   *
   * It implements [CoreApp] via embedding and all of the app interface methods
   * could be accessed directly through the instance (eg. PocketBase.DataDir()).
@@ -16367,7 +16367,7 @@ namespace pocketbase {
   rootCmd?: cobra.Command
  }
  /**
-  * Config is the PocketBase initialization config struct.
+  * Config is the PgBase initialization config struct.
   */
  interface Config {
   dbDriver: string
@@ -16394,7 +16394,7 @@ namespace pocketbase {
  }
  interface _new {
   /**
-   * New creates a new PocketBase instance with the default configuration.
+   * New creates a new PgBase instance with the default configuration.
    * Use [NewWithConfig] if you want to provide a custom configuration.
    *
    * Note that the application will not be initialized/bootstrapped yet,
@@ -16407,7 +16407,7 @@ namespace pocketbase {
  }
  interface newWithConfig {
   /**
-   * NewWithConfig creates a new PocketBase instance with the provided config.
+   * NewWithConfig creates a new PgBase instance with the provided config.
    *
    * Note that the application will not be initialized/bootstrapped yet,
    * aka. DB connections, migrations, app settings, etc. will not be accessible.
@@ -20438,7 +20438,7 @@ namespace http {
  * unnecessary breaking changes, this package is based and implemented
  * as a minimal, stripped down version of the previously used gocloud.dev/blob.
  * While there is no promise that it won't diverge in the future to accommodate
- * better some PocketBase specific use cases, currently it copies and
+ * better some PgBase specific use cases, currently it copies and
  * tries to follow as close as possible the same implementations,
  * conventions and rules for the key escaping/unescaping, blob read/write
  * interfaces and struct options as gocloud.dev/blob, therefore the

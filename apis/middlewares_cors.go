@@ -7,7 +7,7 @@ package apis
 //
 // I doubt that this would matter for most cases, but the only major difference
 // is that for non-supported routes this middleware doesn't return 405 and fallbacks
-// to the default catch-all PocketBase route (aka. returns 404) to avoid
+// to the default catch-all PgBase route (aka. returns 404) to avoid
 // the extra overhead of further hijacking and wrapping the Go default mux
 // (https://github.com/golang/go/issues/65648#issuecomment-1955328807).
 // -------------------------------------------------------------------

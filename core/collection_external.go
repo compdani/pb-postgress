@@ -34,7 +34,7 @@ func (app *BaseApp) IsPostgresBacked(c *Collection) bool {
 	return false // all records use the instance database
 }
 
-// ManagesPostgresRecordSchema reports whether PocketBase should create/sync the physical Postgres table.
+// ManagesPostgresRecordSchema reports whether PgBase should create/sync the physical Postgres table.
 func (app *BaseApp) ManagesPostgresRecordSchema(c *Collection) bool {
 	if app == nil || c == nil || !app.IsPostgresBacked(c) || c.IsExternal() {
 		return false

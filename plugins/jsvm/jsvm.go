@@ -1,5 +1,5 @@
 // Package jsvm implements pluggable utilities for binding a JS goja runtime
-// to the PocketBase instance (loading migrations, attaching to app hooks, etc.).
+// to the PgBase instance (loading migrations, attaching to app hooks, etc.).
 //
 // The package also exports several reusable bindings so that users
 // can utilize them as part of their own custom goja runtime setup.

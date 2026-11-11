@@ -7,8 +7,8 @@ Build it from this repository (releases are tags only, with no prebuilt binaries
 ```sh
 git clone --branch v0.41.1 https://github.com/compdani/pb-postgress.git
 cd pb-postgress
-go build -o pocketbase ./examples/base
-./pocketbase serve --dbDriver postgres --dbDSN "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
+go build -o pgbase ./examples/base
+./pgbase serve --dbDriver postgres --dbDSN "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
 ```
 
 Without `--dbDriver` / `--dbDSN`, `serve` starts the installer and prints a setup URL. The dashboard is at `/_/`. To update, check out a newer tag and build again.
@@ -17,7 +17,7 @@ The executable is based on [`examples/base/main.go`](../examples/base/main.go) a
 
 ## Use as a Go framework/toolkit
 
-PocketBase is distributed as a regular Go library package which allows you to build
+PgBase is distributed as a regular Go library package which allows you to build
 your own custom app specific business logic and still have a single portable executable at the end.
 
 In a custom app, keep importing `github.com/pocketbase/pocketbase` and point it at this repository:

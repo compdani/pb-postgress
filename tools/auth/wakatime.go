@@ -76,7 +76,7 @@ func (p *Wakatime) FetchAuthUser(token *oauth2.Token) (*AuthUser, error) {
 		RefreshToken: token.RefreshToken,
 	}
 
-	// note: we don't check for is_email_public field because PocketBase
+	// note: we don't check for is_email_public field because PgBase
 	// has its own emailVisibility flag which is false by default
 	if extracted.Data.IsEmailConfirmed {
 		user.Email = extracted.Data.Email

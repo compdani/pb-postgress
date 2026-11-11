@@ -1,13 +1,13 @@
 # API_DOCS — Go Framework Reference for AI Agents
 
-> **Audience:** AI agents and automated tooling building on the **pb-postgress** fork.
+> **Audience:** AI agents and automated tooling building on the **PgBase** fork.
 >
 > **Scope:** Go framework API only — hooks, routes, `core.App`, `*core.BaseApp`, PostgreSQL helpers.
 > For REST endpoints see [README.md](README.md). For standard PocketBase behavior see [upstream Go docs](https://pocketbase.io/docs/go-overview/).
 
 ## Identity
 
-**pb-postgress** is a drop-in replacement for upstream `[github.com/pocketbase/pocketbase](https://github.com/pocketbase/pocketbase)` with optional PostgreSQL-backed collection records.
+**PgBase** is a drop-in replacement for upstream `[github.com/pocketbase/pocketbase](https://github.com/pocketbase/pocketbase)` with optional PostgreSQL-backed collection records.
 
 - Imports stay unchanged: `github.com/pocketbase/pocketbase`, `.../core`, `.../apis`, etc.
 - PostgreSQL is **opt-in** via `PB_POSTGRES_URL`. Without it, behavior matches standard PocketBase (SQLite only).
@@ -509,10 +509,10 @@ collection, err := ba.ImportPostgresTable(core.PostgresImportConfig{
 | `S3Files`        | No       | `true` for imports              |
 
 
-PostgreSQL → PocketBase field type mapping:
+PostgreSQL → PgBase field type mapping:
 
 
-| PostgreSQL type                                                                   | PocketBase field |
+| PostgreSQL type                                                                   | PgBase field |
 | --------------------------------------------------------------------------------- | ---------------- |
 | `boolean`, `bool`                                                                 | bool             |
 | `integer`, `bigint`, `smallint`, `numeric`, `double precision`, `real`, `decimal` | number           |

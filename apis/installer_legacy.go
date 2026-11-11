@@ -14,7 +14,7 @@ import (
 	"github.com/pocketbase/pocketbase/ui"
 )
 
-// DefaultInstallerFunc is the default PocketBase installer function.
+// DefaultInstallerFunc is the default PgBase installer function.
 //
 // It will attempt to open a link in the browser (with the one-time
 // [InstallerToken] for this process) to the installer UI so that users can

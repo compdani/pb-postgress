@@ -1,6 +1,6 @@
-// Package core is the backbone of PocketBase.
+// Package core is the backbone of PgBase.
 //
-// It defines the main PocketBase App interface and its base implementation.
+// It defines the main PgBase App interface and its base implementation.
 package core
 
 import (
@@ -17,7 +17,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/subscriptions"
 )
 
-// App defines the main PocketBase app interface.
+// App defines the main PgBase app interface.
 //
 // Note that the interface is not intended to be implemented manually by users
 // and instead they should use core.BaseApp (either directly or as embedded field in a custom struct).

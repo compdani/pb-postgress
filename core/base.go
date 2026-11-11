@@ -41,7 +41,7 @@ const (
 	LocalStorageDirName       string = "storage"
 	LocalBackupsDirName       string = "backups"
 	LocalAutocertCacheDirName string = ".autocert_cache"
-	LocalNotifyDirName        string = ".notify"            // optional watched directory that is used as a cross-platform workaround for synchronizing various runtime states between multiple PocketBase instances pointing to the same pb_data
+	LocalNotifyDirName        string = ".notify"            // optional watched directory that is used as a cross-platform workaround for synchronizing various runtime states between multiple PgBase instances pointing to the same pb_data
 	LocalTempDirName          string = ".pb_temp_to_delete" // temp pb_data sub directory that will be deleted on each app.Bootstrap()
 
 	// @todo consider removing after backups refactoring
@@ -80,7 +80,7 @@ type BaseAppConfig struct {
 // ensures that the BaseApp implements the App interface.
 var _ App = (*BaseApp)(nil)
 
-// BaseApp implements core.App and defines the base PocketBase app structure.
+// BaseApp implements core.App and defines the base PgBase app structure.
 type BaseApp struct {
 	// cached scope of this instance (see instance.go)
 	scopeCache *scopeCache
@@ -806,7 +806,7 @@ func (app *BaseApp) fileStorageKind(c *Collection) (string, *FileHost, error) {
 		if err != nil {
 			return "", nil, err
 		}
-		// A full PocketBase host serves the other instances in any mode. A
+		// A full PgBase host serves the other instances in any mode. A
 		// bucket serves only fileServer mode, so a bucket started next to
 		// local-mode instances cannot silently move their files.
 		if host != nil && (host.Mode == "full" || (host.Mode == "bucket" && mode == "fileServer")) {

@@ -14,7 +14,7 @@ type PostgresImportConfig struct {
 	S3Files        *bool
 }
 
-// ImportPostgresTable registers an existing PostgreSQL table as an external PocketBase collection.
+// ImportPostgresTable registers an existing PostgreSQL table as an external PgBase collection.
 func (app *BaseApp) ImportPostgresTable(config PostgresImportConfig) (*Collection, error) {
 	if !app.HasPostgres() {
 		return nil, errors.New("postgres is not configured")

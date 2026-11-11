@@ -1,7 +1,7 @@
 // Package s3 implements a lightweight client for interacting with the
 // REST APIs of any S3 compatible service.
 //
-// It implements only the minimal functionality required by PocketBase
+// It implements only the minimal functionality required by PgBase
 // such as objects list, get, copy, delete and upload.
 //
 // For more details why we don't use the official aws-sdk-go-v2, you could check

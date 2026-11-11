@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Change is one row from the _fileChanges log written by a PocketBase instance.
+// Change is one row from the _fileChanges log written by a PgBase instance.
 type Change struct {
 	ID         int64
 	Op         string
@@ -37,7 +37,7 @@ type Watcher struct {
 	// may belong to a transaction that has not committed yet. The wait runs
 	// from when this watcher first saw the gap (and at least GapGrace after
 	// the next row's created_at); after it the gap is treated as a rollback.
-	// A transaction open longer than that is still skipped; PocketBase's own
+	// A transaction open longer than that is still skipped; PgBase's own
 	// delete queue covers deletes in that case. Non-positive means 30s.
 	GapGrace time.Duration
 

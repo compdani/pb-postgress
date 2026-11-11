@@ -1,6 +1,6 @@
 # Testing
 
-PocketBase comes with mixed bag of unit and integration tests.
+PgBase comes with mixed bag of unit and integration tests.
 To run them, use the standard `go test` command:
 
 ```sh

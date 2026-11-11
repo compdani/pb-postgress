@@ -1,4 +1,4 @@
-// Package migratecmd adds a new "migrate" command support to a PocketBase instance.
+// Package migratecmd adds a new "migrate" command support to a PgBase instance.
 //
 // It also comes with automigrations support and templates generation
 // (both for JS and GO migration files).
