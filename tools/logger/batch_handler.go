@@ -98,7 +98,13 @@ type BatchHandler struct {
 //
 // The handler ignores records whose level is lower.
 func (h *BatchHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return level >= h.options.Level.Level()
+	// the level can change at any time (see SetLevel), e.g. when the settings
+	// are reloaded from another goroutine
+	h.mux.Lock()
+	minLevel := h.options.Level
+	h.mux.Unlock()
+
+	return level >= minLevel.Level()
 }
 
 // WithGroup returns a new BatchHandler that starts a group.

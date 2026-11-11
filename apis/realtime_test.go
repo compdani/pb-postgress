@@ -1237,3 +1237,50 @@ func TestRealtimeRecordResolve(t *testing.T) {
 		})
 	}
 }
+
+func TestRealtimeLocalAuthCollectionRenameAndRotationUnsetsClients(t *testing.T) {
+	t.Parallel()
+
+	testApp, _ := tests.NewTestApp(t)
+	defer testApp.Cleanup()
+
+	if _, err := apis.NewRouter(testApp); err != nil {
+		t.Fatal(err)
+	}
+
+	users := core.NewAuthCollection("rt_rename_users")
+	if err := testApp.Save(users); err != nil {
+		t.Fatal(err)
+	}
+	// the client keeps the collection object it authenticated with, which is
+	// not the one that gets renamed below
+	authenticatedWith, err := testApp.FindCollectionByNameOrId("rt_rename_users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := core.NewRecord(authenticatedWith)
+	user.SetEmail("rename@example.com")
+	user.SetPassword("1234567890")
+	if err := testApp.Save(user); err != nil {
+		t.Fatal(err)
+	}
+
+	client := subscriptions.NewDefaultClient()
+	client.Set(apis.RealtimeClientAuthKey, user) // keeps the collection it authenticated with
+	testApp.SubscriptionsBroker().Register(client)
+
+	// rename and rotate the token secret in one save
+	rule := "verified = true"
+	users.Name = "rt_renamed_users"
+	users.AuthRule = &rule
+	if err := testApp.Save(users); err != nil {
+		t.Fatal(err)
+	}
+
+	if user.Collection().Name != "rt_rename_users" {
+		t.Fatalf("precondition: the client record must still carry the old collection name, got %q", user.Collection().Name)
+	}
+	if client.Get(apis.RealtimeClientAuthKey) != nil {
+		t.Fatal("the client authenticated with the renamed, rotated collection must be unset")
+	}
+}

@@ -59,6 +59,31 @@ func (app *BaseApp) InstanceScope() (InstanceScope, error) {
 	return scope, err
 }
 
+// visibleUnder decides whether the collection is visible.
+//
+// For a collection that the published collections cache knows, the decision is
+// the one recorded in the scope snapshot of the cache sync (see
+// cacheSync.state): it is keyed by collection id and only moves together with
+// the collections it was computed for (or tightens until they are published).
+// A scope read on its own can therefore never turn a collection visible
+// because another instance renamed it. Collections the snapshot doesn't
+// know (new ones) and apps without a running cache sync use the live scope.
+func (app *BaseApp) visibleUnder(scope InstanceScope, c *Collection) bool {
+	if c.System {
+		return true
+	}
+
+	if cs := app.cacheSync; cs != nil {
+		if st := cs.state.Load(); st != nil {
+			if hidden, known := st.hidden[c.Id]; known {
+				return !hidden
+			}
+		}
+	}
+
+	return scopeVisible(scope, c)
+}
+
 func (app *BaseApp) loadInstanceScope() (InstanceScope, error) {
 	id, err := app.InstanceID()
 	if err != nil {
@@ -93,13 +118,13 @@ func (app *BaseApp) CollectionVisible(c *Collection) bool {
 		return true
 	}
 	if scope, ok := app.cachedScope(); ok {
-		return scopeVisible(scope, c)
+		return app.visibleUnder(scope, c)
 	}
 	if !app.IsBootstrapped() || !app.HasTable("_instances") {
 		return true
 	}
 	scope, err := app.InstanceScope()
-	return err == nil && scopeVisible(scope, c)
+	return err == nil && app.visibleUnder(scope, c)
 }
 func (app *BaseApp) SetInstanceScope(scope InstanceScope) error {
 	if scope.Mode != "all" && scope.Mode != "allow" && scope.Mode != "deny" {
@@ -150,7 +175,9 @@ func (app *BaseApp) SetInstanceScope(scope InstanceScope) error {
 func (app *BaseApp) renameCollectionInScopes(oldName, newName string) error {
 	defer app.resetScopeCache()
 	rows := []*Instance{}
-	if err := app.DB().Select("id", "scopeCollections").From("_instances").All(&rows); err != nil {
+	// locked in a fixed order: two concurrent renames must not both read the
+	// same list and then overwrite each other's change
+	if err := app.DB().NewQuery("SELECT [[id]], [[scopeCollections]] FROM {{_instances}} ORDER BY [[id]] FOR UPDATE").All(&rows); err != nil {
 		return err
 	}
 	for _, row := range rows {
@@ -196,8 +223,36 @@ func (app *BaseApp) writeInstanceScope(scope InstanceScope) error {
 	if err != nil {
 		return err
 	}
+
+	// resolved before the write, which fails when the scope can't be enforced
+	var plan *localScopePlan
+	if cs := app.cacheSync; cs != nil {
+		if plan, err = cs.planLocal(scope); err != nil {
+			return err
+		}
+	}
+
 	_, err = app.DB().Update("_instances", dbx.Params{"scopeMode": scope.Mode, "scopeCollections": string(raw)}, dbx.HashExp{"id": id}).Execute()
-	return err
+	if err != nil {
+		return err
+	}
+
+	// the scope snapshot of the cache sync follows this instance's own scope
+	// right away (after the commit, when written inside a transaction)
+	if cs := app.cacheSync; cs != nil && plan != nil {
+		if app.txInfo != nil {
+			app.txInfo.OnComplete(func(txErr error) error {
+				if txErr == nil {
+					cs.adoptLocal(plan)
+				}
+				return nil
+			})
+		} else {
+			cs.adoptLocal(plan)
+		}
+	}
+
+	return nil
 }
 
 // SetInstanceInfo sets the display name and public URL of this instance.

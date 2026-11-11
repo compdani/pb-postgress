@@ -759,6 +759,10 @@ func onCollectionDeleteExecute(e *CollectionEvent) error {
 		return fmt.Errorf("[%s] system collections cannot be deleted", e.Collection.Name)
 	}
 
+	if ba := asBaseApp(e.App); ba != nil {
+		defer ba.beginCollectionWrite()() // released last, after the cache reload below
+	}
+
 	defer func() {
 		if err := e.App.ReloadCachedCollections(); err != nil {
 			e.App.Logger().Warn("Failed to reload collections cache", "error", err)
@@ -785,6 +789,10 @@ func onCollectionDeleteExecute(e *CollectionEvent) error {
 
 	txErr := e.App.RunInTransaction(func(txApp App) error {
 		e.App = txApp
+
+		if ba := asBaseApp(txApp); ba != nil {
+			ba.bumpCacheVersion(cacheVersionCollections)
+		}
 
 		if err := appendCollectionFileDeletes(txApp, e.Collection); err != nil {
 			return err
@@ -814,12 +822,26 @@ func onCollectionDeleteExecute(e *CollectionEvent) error {
 		}
 
 		// delete
-		return e.Next()
+		if err := e.Next(); err != nil {
+			return err
+		}
+
+		// a deleted collection leaves the scope of every instance; this commits
+		// with the delete (and the shared cache version bump), so no other
+		// instance can see the new state together with the old scopes
+		if ba := asBaseApp(txApp); ba != nil && ba.IsBootstrapped() && ba.HasTable("_instances") {
+			return ba.renameCollectionInScopes(e.Collection.Name, "")
+		}
+
+		return nil
 	})
 
 	e.App = originalApp
 
 	if txErr == nil {
+		if ba := asBaseApp(e.App); ba != nil {
+			ba.noteLocalAuthCollection(e.Collection, true)
+		}
 		if ba := asBaseApp(e.App); ba != nil && ba.HasPostgres() && ba.IsPostgresBacked(e.Collection) {
 			if err := ba.DeletePostgresCollectionMetadata(e.Collection); err != nil {
 				e.App.Logger().Warn("Failed to delete postgres collection metadata", "collection", e.Collection.Name, "error", err)
@@ -935,6 +957,9 @@ func onCollectionSaveExecute(e *CollectionEvent) error {
 	if ba := asBaseApp(e.App); ba != nil && !e.Collection.IsNew() && !ba.CollectionVisible(e.Collection) {
 		return nil
 	}
+	if ba := asBaseApp(e.App); ba != nil {
+		defer ba.beginCollectionWrite()() // released last, after the cache reload below
+	}
 	defer func() {
 		if err := e.App.ReloadCachedCollections(); err != nil {
 			e.App.Logger().Warn("Failed to reload collections cache", "error", err)
@@ -959,6 +984,10 @@ func onCollectionSaveExecute(e *CollectionEvent) error {
 	originalApp := e.App
 	txErr := e.App.RunInTransaction(func(txApp App) error {
 		e.App = txApp
+
+		if ba := asBaseApp(txApp); ba != nil {
+			ba.bumpCacheVersion(cacheVersionCollections)
+		}
 
 		isView := e.Collection.IsView()
 
@@ -999,6 +1028,18 @@ func onCollectionSaveExecute(e *CollectionEvent) error {
 			return err
 		}
 
+		// Instance scopes store collection names, and every instance shares
+		// the same database, so a rename must carry over to the scope of all
+		// the others. It commits with the rename (and the shared cache
+		// version bump) so no instance can see the new name with the old scope.
+		if oldCollection != nil && oldCollection.Name != e.Collection.Name {
+			if ba := asBaseApp(txApp); ba != nil && ba.IsBootstrapped() && ba.HasTable("_instances") {
+				if err := ba.renameCollectionInScopes(oldCollection.Name, e.Collection.Name); err != nil {
+					return err
+				}
+			}
+		}
+
 		// sync the changes with the related records table
 		if !isView {
 			if err := e.App.SyncRecordTableSchema(e.Collection, oldCollection); err != nil {
@@ -1013,6 +1054,10 @@ func onCollectionSaveExecute(e *CollectionEvent) error {
 
 	if txErr != nil {
 		return txErr
+	}
+
+	if ba := asBaseApp(e.App); ba != nil {
+		ba.noteLocalAuthCollection(e.Collection, false)
 	}
 
 	// trigger an update for all views with changed fields as a result of the current collection save

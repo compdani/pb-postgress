@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fatih/color"
@@ -18,6 +19,19 @@ const systemHookIdNotifyWatcher = "__pbNotifyWatcherSystemHook__"
 
 func (app *BaseApp) registerNotifyWatcherHooks() {
 	var notifyWatcher *fsnotify.Watcher
+	var notifyDone <-chan struct{} // closed when the watcher's event goroutine returned
+
+	// closeWatcher closes the watcher and waits for its event goroutine, so it can
+	// no longer read the app state while a bootstrap clear is tearing it down
+	closeWatcher := func() {
+		if notifyWatcher != nil {
+			_ = notifyWatcher.Close()
+		}
+		if notifyDone != nil {
+			<-notifyDone
+		}
+		notifyWatcher, notifyDone = nil, nil
+	}
 
 	instanceId := "@" + security.PseudorandomString(10)
 
@@ -34,11 +48,9 @@ func (app *BaseApp) registerNotifyWatcherHooks() {
 				return err
 			}
 
-			if notifyWatcher != nil {
-				_ = notifyWatcher.Close()
-			}
+			closeWatcher()
 
-			notifyWatcher, err = createNotifyDirWatcher(e.App, instanceId, localNotifyDirPath)
+			notifyWatcher, notifyDone, err = createNotifyDirWatcher(e.App, instanceId, localNotifyDirPath)
 			if err != nil {
 				e.App.Logger().Warn("Notify dir watcher failure.", "error", err)
 			}
@@ -52,9 +64,7 @@ func (app *BaseApp) registerNotifyWatcherHooks() {
 	app.OnTerminate().Bind(&hook.Handler[*TerminateEvent]{
 		Id: systemHookIdNotifyWatcher,
 		Func: func(e *TerminateEvent) error {
-			if notifyWatcher != nil {
-				_ = notifyWatcher.Close()
-			}
+			closeWatcher()
 
 			_ = os.Remove(settingsFile)
 			_ = os.Remove(collectionsFile)
@@ -68,10 +78,7 @@ func (app *BaseApp) registerNotifyWatcherHooks() {
 		Id:       systemHookIdNotifyWatcher,
 		Priority: -998,
 		Func: func(e *BootstrapEvent) error {
-			if notifyWatcher != nil {
-				_ = notifyWatcher.Close()
-				notifyWatcher = nil
-			}
+			closeWatcher()
 			_ = os.Remove(settingsFile)
 			_ = os.Remove(collectionsFile)
 			return e.Next()
@@ -137,35 +144,44 @@ func (app *BaseApp) registerNotifyWatcherHooks() {
 	})
 }
 
-func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath string) (*fsnotify.Watcher, error) {
+func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath string) (*fsnotify.Watcher, <-chan struct{}, error) {
 	// create the notify dir (if not already)
 	err := os.MkdirAll(localNotifyDirPath, os.ModePerm)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create a notify dir: %w", err)
+		return nil, nil, fmt.Errorf("failed to create a notify dir: %w", err)
 	}
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return nil, fmt.Errorf("failed to init notify dir watcher: %w", err)
+		return nil, nil, fmt.Errorf("failed to init notify dir watcher: %w", err)
 	}
 
 	err = watcher.Add(localNotifyDirPath)
 	if err != nil {
 		_ = watcher.Close()
-		return nil, fmt.Errorf("unable to watch notify dir: %w", err)
+		return nil, nil, fmt.Errorf("unable to watch notify dir: %w", err)
 	}
 
 	var debounceTimer *time.Timer
 
+	// tracks the scheduled debounce callbacks, so closing the watcher can wait
+	// for one that already started instead of leaving it running during teardown
+	var callbacks sync.WaitGroup
+
 	stopDebounceTimer := func() {
 		if debounceTimer != nil {
-			debounceTimer.Stop()
+			if debounceTimer.Stop() {
+				callbacks.Done() // it never ran
+			}
 			debounceTimer = nil
 		}
 	}
 
 	// watch
+	done := make(chan struct{})
 	routine.FireAndForget(func() {
+		defer close(done)
+		defer callbacks.Wait() // after the timer was stopped (deferred below, runs first)
 		defer stopDebounceTimer()
 
 		for {
@@ -182,12 +198,21 @@ func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath strin
 
 				stopDebounceTimer()
 
+				callbacks.Add(1)
 				debounceTimer = time.AfterFunc(50*time.Millisecond, func() {
+					defer callbacks.Done()
+
 					filename := filepath.Base(event.Name)
 
 					// settings changed
 					if strings.HasPrefix(filename, "settings@") {
 						app.Logger().Debug("Reloading settings after notify event")
+
+						// published through the cache sync (it never reverts a local collection write)
+						if ba := asBaseApp(app); ba != nil && ba.cacheSync != nil && ba.cacheSync.running() {
+							ba.requestCacheReload(cacheVersionSettings)
+							return
+						}
 
 						err := app.ReloadSettings()
 						if err != nil {
@@ -199,6 +224,11 @@ func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath strin
 					// collections changed
 					if strings.HasPrefix(filename, "collections@") {
 						app.Logger().Debug("Reloading cached collections after notify event")
+
+						if ba := asBaseApp(app); ba != nil && ba.cacheSync != nil && ba.cacheSync.running() {
+							ba.requestCacheReload(cacheVersionCollections)
+							return
+						}
 
 						err := app.ReloadCachedCollections()
 						if err != nil {
@@ -219,5 +249,5 @@ func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath strin
 		}
 	})
 
-	return watcher, err
+	return watcher, done, err
 }

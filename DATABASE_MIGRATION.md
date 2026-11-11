@@ -48,12 +48,99 @@ consumers poll `_fileChanges.id`. S3 uses the existing backend globally.
 
 `_instances` stores instance identity and all/allow/deny collection scope.
 Superusers can GET/PUT `/api/instance/scope` with `{mode,collections:[]}` and
-GET `/api/instances`. System and auth collections always remain visible;
+GET `/api/instances`. System collections always remain visible (user-created
+auth collections can be hidden, and then cannot authenticate on that instance);
 unknown collections and required visible-to-hidden relations are rejected.
 The implementation filters common API collection lookups, collection lists,
 realtime publication/subscription, filters, and relation expansion. Raw SQL is
 disabled for scoped instances. Hidden collection imports are rejected and
 schema synchronization/deletion leaves hidden collections untouched.
+Scope is not a security boundary: it is enforced by each instance when it reads
+and delivers data, while the collection cache, the cache versions and (with the
+realtime bus enabled) realtime events are shared by all instances. A collection rename or delete
+rewrites the scopes of all instances in the same transaction.
+
+### Shared cache versions
+
+Instances sharing a database keep their cached collections (API rules, schema,
+auth token secrets) and settings in line through `_cacheVersions`. A
+transaction that changes collections or settings bumps the matching version
+row once, as its last statements, so a rollback never bumps it (on MySQL DDL
+commits implicitly, so a failed transaction may still bump). PostgreSQL also
+sends a `pb_cache` NOTIFY; every instance polls the versions anyway
+(`core.CacheSyncInterval`, 2s), which is the only mechanism on MySQL or behind
+a pooler that cannot LISTEN. A slower reconcile (`core.CacheSyncReconcileInterval`,
+45s) repairs a lost bump. A reloaded cache is normally not published while a
+local collection write is running; if one runs longer than `core.CacheSyncMaxDeferral`
+(30s) the publication is forced anyway.
+When another instance changes the token secret of an auth collection, or
+deletes it, the realtime clients authenticated with it are unset here too.
+Raw SQL that touches `_collections` or `_params` bumps the versions as well.
+
+### Realtime bus (opt-in)
+
+With `PB_REALTIME_BUS=1` (or `BaseAppConfig.RealtimeBus`) the instances publish the
+record events of their writes to each other's realtime clients. Without it a
+client only receives the events of writes made on the instance it is connected to
+(and it still needs a sticky connection for `POST /api/realtime`).
+
+A transaction that writes records inserts thin events (collection id, record id,
+action) into `_realtimeEvents` as its last statements, numbered with a per-process
+sequence. A process has one write connection, so its sequence is in commit order and
+no cluster-wide lock is needed. Every other instance polls the events of each live
+process (`_realtimeBoots`, 250ms by default, `core.RealtimeBusInterval`), reloads
+the record and broadcasts it to its own clients with its own API rules and scope. The
+writer doesn't read its own events. There is deliberately no NOTIFY: in a
+transaction it makes postgres serialize all commits on one lock.
+
+The bus is best effort. A failure to publish (or more than 1000 non-auth events in
+one transaction) never fails the write: it bumps the shared `realtimeGap` version,
+and every instance then re-validates the auth of its realtime clients. Events about
+auth records are never dropped by the cap. Independently of the bus, every instance
+sweeps its authenticated realtime clients every 30s (`PB_REALTIME_AUTH_SWEEP`, seconds,
+min 5; this sweep runs even when the bus itself is off): a client whose record
+was deleted, whose token key changed or whose auth collection is no longer visible
+is unset, so a revoked client normally keeps receiving events for about that long
+(the time the sweep's queries take and scheduling come on top; REST requests are
+checked against the database on every request). If the sweep can't read the records, delivery to those clients is suspended
+and their auth is dropped after three failed sweeps.
+
+Measured with four instances creating records as fast as they can on one local
+PostgreSQL (`PB_TEST_BENCH_BUS=1 go test ./core -run TestRealtimeBusCommitThroughput -v`):
+about 55% of the throughput without the bus (the extra insert and savepoint per
+transaction).
+
+Record deletes made on another instance reach a client only when that can be decided
+without the record, which no longer exists (its API rules and subscription filters can't
+be evaluated, and the rows they reference may be gone too): the rule of the subscribed
+topic is empty (public) and the subscription has no filter, or the client is a superuser
+and the subscription has no filter. Such an event carries only `id`, `collectionId` and
+`collectionName`, never the record's data. A client whose rule is an expression (e.g.
+`@request.auth.id != ''`; superusers excepted) or whose subscription uses a filter
+doesn't get the delete of a record removed on another instance; it learns about it
+when it refetches the record or refreshes its list. While any `OnRecordEnrich` hook is
+registered (a hook can veto an event for a client, and can't run for a deleted
+record) remote deletes aren't delivered at all, unless the application sets
+`apis.RealtimeRemoteDeletesIgnoreEnrichHooks = true` (once at startup, before serving). A delete handled by the client's own instance is delivered as before. The
+auth effect of a deleted auth record is applied on every instance in any case.
+
+Known limits (accepted for the first release):
+
+* Settings are updated in place and read without a lock, as before. Reloads
+  outside a transaction are serialized (the lock is reentrant, so a reload hook
+  may save settings), hooks included. A reload inside a transaction does not
+  take that lock (it owns the single write connection), so it can overlap
+  the hooks of a concurrent reload.
+* A settings reload hook must not wait for another goroutine that reloads the
+  settings: the reload lock is held for the whole reload.
+* Editing the scope of an instance (`PUT /api/instance/scope`) at the very moment another
+  instance renames a collection can write the old name back into that scope: the scope
+  edit isn't serialized with renames. Scope is not a security boundary.
+* A collections version bump or its savepoint that fails aborts the collection
+  transaction. On MySQL, DDL commits implicitly, so the schema change itself
+  cannot be undone.
+* A settings change committed on one instance reaches the others within one
+  poll (2s by default), and within 45s if its version bump was lost.
 
 ## Validation and remaining work
 

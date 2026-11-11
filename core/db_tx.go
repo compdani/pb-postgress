@@ -29,10 +29,60 @@ func (app *BaseApp) runInTransaction(db dbx.Builder, fn func(txApp App) error, i
 		return fn(app)
 	case *dbx.DB:
 		var txApp *BaseApp
+		var dirtyCaches []string
+		var realtimeGap bool
+
+		// the transaction can touch collections in many places (imports,
+		// cascades), so the cache sync must not publish a reload while it runs
+		defer func() {
+			if txApp != nil && txApp.txInfo != nil {
+				txApp.txInfo.releaseCollectionWrite(app)
+			}
+		}()
+
 		txErr := txOrDB.Transactional(func(tx *dbx.Tx) error {
 			txApp = app.createTxApp(tx, isForAuxDB)
-			return fn(txApp)
+			if err := fn(txApp); err != nil {
+				dirtyCaches = txApp.txInfo.takeDirtyCaches()
+				return err
+			}
+
+			// the shared cache versions are written last, as the final statements
+			// of the outermost transaction (see cache_versions.go)
+			dirtyCaches = txApp.txInfo.takeDirtyCaches()
+			if err := txApp.flushCacheVersions(tx, dirtyCaches); err != nil {
+				return err
+			}
+
+			// the realtime events go last (see realtime_bus.go)
+			if !isForAuxDB {
+				events, overflow := txApp.txInfo.takeRealtimeEvents()
+				gap, err := txApp.flushRealtimeEvents(tx, events, overflow)
+				realtimeGap = gap
+				return err
+			}
+
+			return nil
 		})
+
+		// events that could not be published (or were dropped): the other
+		// instances must re-validate their clients
+		if txErr == nil && realtimeGap {
+			app.signalRealtimeGap()
+		}
+
+		// only a committed transaction changes what the others will see
+		if txErr == nil && app.cacheSync != nil {
+			app.cacheSync.applyBaselineChanges(txApp.txInfo.takeBaselineChanges())
+		}
+
+		// mysql DDL commits implicitly, so a failed transaction may still have
+		// changed the schema; a spurious bump only costs the others a reload
+		if txErr != nil && len(dirtyCaches) > 0 && app.SQLDialect() == DialectMySQL {
+			if err := app.writeCacheVersions(app.NonconcurrentDB(), dirtyCaches); err != nil {
+				app.Logger().Warn("Failed to bump the shared cache version after a failed transaction", "error", err)
+			}
+		}
 
 		// execute all after event calls on transaction complete
 		if txApp != nil && txApp.txInfo != nil {
@@ -83,6 +133,22 @@ type TxAppInfo struct {
 	afterFuncs []func(txErr error) error
 	mu         sync.Mutex
 	isForAuxDB bool
+
+	// shared cache versions to bump when the transaction ends (see cache_versions.go)
+	dirtyCaches map[string]struct{}
+
+	// whether this transaction holds the cache sync's collection write lock
+	collectionWriteHeld bool
+
+	// local auth collection secret changes, applied to the cache sync's
+	// baseline once the transaction commits
+	baselineChanges []baselineChange
+
+	// record events buffered for the realtime bus (see realtime_bus.go)
+	realtimeEvents   []realtimeBusEvent
+	realtimeIndex    map[string]struct{}
+	realtimeNonAuth  int
+	realtimeOverflow bool
 }
 
 // OnComplete registers the provided callback that will be invoked

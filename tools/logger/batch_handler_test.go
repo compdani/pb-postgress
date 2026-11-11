@@ -352,3 +352,24 @@ func checkLogMessages(expected []string, logs []*Log, t *testing.T) {
 		}
 	}
 }
+
+func TestBatchHandlerEnabledWhileSettingTheLevel(t *testing.T) {
+	h := NewBatchHandler(BatchOptions{
+		WriteFunc: func(ctx context.Context, logs []*Log) error { return nil },
+	})
+	l := slog.New(h)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 2000; i++ {
+			h.SetLevel(slog.Level(i%3 - 1))
+		}
+	}()
+
+	for i := 0; i < 2000; i++ {
+		l.Debug("message") // calls Enabled concurrently with SetLevel
+	}
+
+	<-done
+}

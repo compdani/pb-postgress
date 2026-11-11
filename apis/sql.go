@@ -154,6 +154,11 @@ func executeQuery(app core.App, query string, maxRows int) (*runSQLResult, error
 				return err
 			}
 
+			// raw statements bypass the model hooks that keep the shared caches in sync
+			if ba := core.AsBaseApp(txApp); ba != nil {
+				ba.BumpCacheVersionsForQuery(query)
+			}
+
 			result.AffectedRows, err = execResult.RowsAffected()
 			if err != nil {
 				// non-critical error (e.g. not supported by the driver)

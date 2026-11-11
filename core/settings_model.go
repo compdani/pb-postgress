@@ -53,10 +53,18 @@ func (app *BaseApp) registerSettingsHooks() {
 
 			// auto reload the app settings because we don't know whether
 			// the Settings model is the app one or a different one
-			return errors.Join(
+			reloadErr := errors.Join(
 				me.App.Settings().PostScan(),
 				me.App.ReloadSettings(),
 			)
+
+			// bumped after the local reload so the cache sync of this instance
+			// finds the settings already loaded and skips a redundant reload
+			if ba := asBaseApp(me.App); ba != nil {
+				ba.bumpCacheVersion(cacheVersionSettings)
+			}
+
+			return reloadErr
 		}
 
 		return nil

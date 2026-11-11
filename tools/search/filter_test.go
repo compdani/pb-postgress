@@ -384,3 +384,70 @@ func TestLikeParamsWrapping(t *testing.T) {
 		t.Fatalf("Expected query \n%s, \ngot \n%s", expectedQuery, calledQueries[0])
 	}
 }
+
+// PostgreSQL has no LIKE for integer or JSON columns: the operands that the resolver
+// marked as non-text are cast, and only those.
+func TestLikeAsText(t *testing.T) {
+	driver, dsn := testdb.New(t)
+	if driver == "postgres" {
+		driver = "pgx"
+	}
+	raw, err := sql.Open(driver, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	db := dbx.NewFromDB(raw, driver)
+
+	resolver := search.NewSimpleFieldResolver("level", "message")
+
+	build := func(filter string, asText bool) string {
+		t.Helper()
+		expr, err := search.FilterData(filter).BuildExpr(&likeAsTextResolver{SimpleFieldResolver: resolver, asText: asText})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var calls []string
+		db.QueryLogFunc = func(ctx context.Context, d time.Duration, sql string, rows *sql.Rows, err error) {
+			calls = append(calls, sql)
+		}
+		db.ExecLogFunc = func(ctx context.Context, d time.Duration, sql string, result sql.Result, err error) {
+			calls = append(calls, sql)
+		}
+		db.Select().Where(expr).Build().Execute()
+		if len(calls) != 1 {
+			t.Fatalf("expected 1 query, got %d", len(calls))
+		}
+		return calls[0]
+	}
+
+	postgres := driver == "pgx"
+
+	for _, filter := range []string{"level~'4'", "level!~'4'", "level?~'4'"} {
+		got := build(filter, true)
+		if postgres && !strings.Contains(got, "CAST([[level]] AS TEXT)") {
+			t.Fatalf("%s: expected the marked column to be cast on PostgreSQL, got %s", filter, got)
+		}
+		if !postgres && strings.Contains(got, "CAST(") {
+			t.Fatalf("%s: nothing is cast outside PostgreSQL, got %s", filter, got)
+		}
+	}
+
+	// not marked: untouched
+	if got := build("message~'x'", false); strings.Contains(got, "CAST(") {
+		t.Fatalf("an unmarked column must not be cast, got %s", got)
+	}
+}
+
+type likeAsTextResolver struct {
+	*search.SimpleFieldResolver
+	asText bool
+}
+
+func (r *likeAsTextResolver) Resolve(field string) (*search.ResolverResult, error) {
+	result, err := r.SimpleFieldResolver.Resolve(field)
+	if err == nil {
+		result.LikeAsText = r.asText
+	}
+	return result, err
+}

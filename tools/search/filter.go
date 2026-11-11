@@ -192,19 +192,9 @@ func buildResolversExpr(
 	case fexpr.SignNeq, fexpr.SignAnyNeq:
 		expr = resolveEqualExpr(false, left, right)
 	case fexpr.SignLike, fexpr.SignAnyLike:
-		// the right side is a column and therefor wrap it with "%" for contains like behavior
-		if len(right.Params) == 0 {
-			expr = dbx.NewExp(fmt.Sprintf("%s LIKE ('%%' || %s || '%%') ESCAPE '\\'", left.Identifier, right.Identifier), left.Params)
-		} else {
-			expr = dbx.NewExp(fmt.Sprintf("%s LIKE %s ESCAPE '\\'", left.Identifier, right.Identifier), mergeParams(left.Params, wrapLikeParams(right.Params)))
-		}
+		expr = likeComparison{left: left, right: right}
 	case fexpr.SignNlike, fexpr.SignAnyNlike:
-		// the right side is a column and therefor wrap it with "%" for not-contains like behavior
-		if len(right.Params) == 0 {
-			expr = dbx.NewExp(fmt.Sprintf("%s NOT LIKE ('%%' || %s || '%%') ESCAPE '\\'", left.Identifier, right.Identifier), left.Params)
-		} else {
-			expr = dbx.NewExp(fmt.Sprintf("%s NOT LIKE %s ESCAPE '\\'", left.Identifier, right.Identifier), mergeParams(left.Params, wrapLikeParams(right.Params)))
-		}
+		expr = likeComparison{left: left, right: right, not: true}
 	case fexpr.SignLt, fexpr.SignAnyLt:
 		expr = dbx.NewExp(fmt.Sprintf("%s < %s", left.Identifier, right.Identifier), mergeParams(left.Params, right.Params))
 	case fexpr.SignLte, fexpr.SignAnyLte:
@@ -219,7 +209,11 @@ func buildResolversExpr(
 		return nil, fmt.Errorf("unknown expression operator %q", op)
 	}
 
-	expr = typedComparison{expr, left, right}
+	// the numeric typing is for comparisons: a LIKE compares text (its parameter
+	// is already wrapped with "%" and must stay a text)
+	if _, isLike := expr.(likeComparison); !isLike {
+		expr = typedComparison{expr, left, right}
+	}
 
 	// multi-match expressions
 	if !isAnyMatchOp(op) {
@@ -234,6 +228,7 @@ func buildResolversExpr(
 		} else if left.MultiMatchSubQuery != nil {
 			mm := &manyVsOneExpr{
 				nullFallback: left.NullFallback,
+				likeAsText:   left.LikeAsText,
 				subQuery:     left.MultiMatchSubQuery,
 				op:           op,
 				otherOperand: right,
@@ -243,6 +238,7 @@ func buildResolversExpr(
 		} else if right.MultiMatchSubQuery != nil {
 			mm := &manyVsOneExpr{
 				nullFallback: right.NullFallback,
+				likeAsText:   right.LikeAsText,
 				subQuery:     right.MultiMatchSubQuery,
 				op:           op,
 				otherOperand: left,
@@ -687,11 +683,13 @@ func (e *manyVsManyExpr) Build(db *dbx.DB, params dbx.Params) string {
 	whereExpr, buildErr := buildResolversExpr(
 		&ResolverResult{
 			NullFallback: e.left.NullFallback,
+			LikeAsText:   e.left.LikeAsText,
 			Identifier:   "[[" + lAlias + ".multiMatchValue]]",
 		},
 		e.op,
 		&ResolverResult{
 			NullFallback: e.right.NullFallback,
+			LikeAsText:   e.right.LikeAsText,
 			Identifier:   "[[" + rAlias + ".multiMatchValue]]",
 			// note: the AfterBuild needs to be handled only once and it
 			// doesn't matter whether it is applied on the left or right subquery operand
@@ -728,6 +726,9 @@ type manyVsOneExpr struct {
 	op           fexpr.SignOp
 	inverse      bool
 	nullFallback NullFallbackPreference
+
+	// whether the multi-match value is a non-text column (see ResolverResult.LikeAsText)
+	likeAsText bool
 }
 
 // Build converts the expression into a SQL fragment.
@@ -742,11 +743,13 @@ func (e *manyVsOneExpr) Build(db *dbx.DB, params dbx.Params) string {
 
 	r1 := &ResolverResult{
 		NullFallback: e.nullFallback,
+		LikeAsText:   e.likeAsText,
 		Identifier:   "[[" + alias + ".multiMatchValue]]",
 		AfterBuild:   dbx.Not, // inverse for the not-exist expression
 	}
 
 	r2 := &ResolverResult{
+		LikeAsText: e.otherOperand.LikeAsText,
 		Identifier: e.otherOperand.Identifier,
 		Params:     e.otherOperand.Params,
 	}
@@ -812,4 +815,45 @@ func (e typedComparison) Build(db *dbx.DB, params dbx.Params) string {
 		sql = strings.ReplaceAll(sql, e.left.Identifier, "CAST("+e.left.Identifier+" AS NUMERIC)")
 	}
 	return sql
+}
+
+// likeComparison is the "~" and "!~" operators.
+//
+// PostgreSQL has no LIKE for non-text columns (integers, JSON, ...), unlike the
+// databases the filter syntax comes from, so on PostgreSQL the operands that
+// the resolver marked as non-text (ResolverResult.LikeAsText) are cast to text.
+type likeComparison struct {
+	left, right *ResolverResult
+	not         bool
+}
+
+// Build implements [dbx.Expression].
+func (e likeComparison) Build(db *dbx.DB, params dbx.Params) string {
+	postgres := db.DriverName() == "pgx" || db.DriverName() == "postgres"
+
+	asText := func(r *ResolverResult) string {
+		if postgres && r.LikeAsText {
+			return "CAST(" + r.Identifier + " AS TEXT)"
+		}
+		return r.Identifier
+	}
+
+	operator := "LIKE"
+	if e.not {
+		operator = "NOT LIKE"
+	}
+
+	var sql string
+	var exprParams dbx.Params
+
+	if len(e.right.Params) == 0 {
+		// the right side is a column and therefor wrapped with "%" for contains like behavior
+		sql = fmt.Sprintf("%s %s ('%%' || %s || '%%') ESCAPE '\\'", asText(e.left), operator, asText(e.right))
+		exprParams = e.left.Params
+	} else {
+		sql = fmt.Sprintf("%s %s %s ESCAPE '\\'", asText(e.left), operator, e.right.Identifier)
+		exprParams = mergeParams(e.left.Params, wrapLikeParams(e.right.Params))
+	}
+
+	return dbx.NewExp(sql, exprParams).Build(db, params)
 }
