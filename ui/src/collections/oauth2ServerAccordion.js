@@ -417,7 +417,7 @@ export function oauth2ServerAccordion(collection) {
                 }),
                 t.label(null, "Allowed redirect hosts (one per line; empty allows all HTTPS hosts)"),
                 t.textarea({
-                    value: () => data.config.registration.allowedRedirectHosts.join("\n"),
+                    value: () => (data.config.registration.allowedRedirectHosts || []).join("\n"),
                     onchange: (e) =>
                         data.config.registration.allowedRedirectHosts = e.target.value.split("\n").map(v => v.trim())
                             .filter(Boolean),
