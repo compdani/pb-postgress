@@ -49,8 +49,9 @@ func oauth2ServerRegister(e *core.RequestEvent) error {
 	if !cfg.Enabled {
 		return e.NotFoundError("Client registration is disabled.", nil)
 	}
-	host, _, _ := net.SplitHostPort(e.Request.RemoteAddr)
-	key := fmt.Sprintf("%p:%s:%s", e.App, col.Id, host)
+	// RealIP honors the configured trusted proxy headers, so registrations
+	// behind a reverse proxy are limited per client rather than per proxy
+	key := fmt.Sprintf("%p:%s:%s", e.App, col.Id, e.RealIP())
 	hour := time.Now().Unix() / 3600
 	limit := cfg.RateLimit
 	if limit <= 0 {

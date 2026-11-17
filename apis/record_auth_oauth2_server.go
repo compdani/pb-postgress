@@ -351,6 +351,12 @@ func oauth2ServerAuthorizeSubmit(e *core.RequestEvent) error {
 
 	switch form.Action {
 	case "continue":
+		// unverified (self-registered) apps must never be authorized from the
+		// remembered session alone; the page doesn't offer it, so enforce it here too
+		if client.SelfRegistered {
+			return loginFailed("Please sign in to continue to this app.")
+		}
+
 		// continue with the remembered account
 		// (the session cookie is SameSite=Lax so it is not sent with cross-site posts)
 		record := readOAuth2ServerSession(e, collection)

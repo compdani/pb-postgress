@@ -610,6 +610,17 @@ func TestOAuth2ServerRegistration(t *testing.T) {
 				t.Fatal("expected page", res.StatusCode)
 			}
 			res.Body.Close()
+			// a same-site "continue" post must not authorize an unverified app from the session alone
+			form := url.Values{}
+			for k, v := range params {
+				form[k] = v
+			}
+			form.Set("action", "continue")
+			res = s.do(http.MethodPost, "/api/collections/users/oauth2-server/authorize", form, map[string]string{"Cookie": cookie.String()})
+			if res.StatusCode == http.StatusSeeOther || strings.Contains(res.Header.Get("Location"), "code=") {
+				t.Fatal("unverified app continued from the remembered session", res.StatusCode, res.Header)
+			}
+			res.Body.Close()
 		}
 	}
 	client, err := s.app.FindFirstRecordByData("_oauth2ServerClients", "clientId", id)
