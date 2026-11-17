@@ -17,9 +17,9 @@ import (
 func TestRecordAuthWithOAuth2Redirect(t *testing.T) {
 	t.Parallel()
 
-	clientStubs := make([]map[string]subscriptions.Client, 0, 11)
+	clientStubs := make([]map[string]subscriptions.Client, 0, 12)
 
-	for i := 0; i < 11; i++ {
+	for range 12 {
 		c1 := subscriptions.NewDefaultClient()
 
 		c2 := subscriptions.NewDefaultClient()
@@ -356,6 +356,33 @@ func TestRecordAuthWithOAuth2Redirect(t *testing.T) {
 				app.Store().Get("cancelFunc").(context.CancelFunc)()
 
 				checkFailureRedirect(t, app, res)
+			},
+		},
+		{
+			Name:    "client with different IP and fallback",
+			Method:  http.MethodGet,
+			URL:     "/api/oauth2-redirect?code=123&state=" + clientStubs[11]["c3"].Id(),
+			Headers: map[string]string{"x-test-ip": "127.0.0.2"},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				app.Settings().TrustedProxy.Headers = []string{"x-test-ip"}
+
+				clientStubs[11]["c3"].Set(apis.RealtimeClientIPKey, "127.0.0.1")
+				clientStubs[11]["c3"].Set(apis.RealtimeOAuth2SubscriptionClientIPKey, "127.0.0.2")
+
+				beforeTestFunc(clientStubs[11], map[string][]string{
+					"c3": {`"state":"` + clientStubs[11]["c3"].Id(), `"code":"123"`},
+				})(t, app, e)
+			},
+			ExpectedStatus: http.StatusTemporaryRedirect,
+			ExpectedEvents: map[string]int{"*": 0},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				app.Store().Get("cancelFunc").(context.CancelFunc)()
+
+				checkSuccessRedirect(t, app, res)
+
+				if clientStubs[11]["c3"].HasSubscription("@oauth2") {
+					t.Fatalf("Expected oauth2 subscription to be removed")
+				}
 			},
 		},
 	}

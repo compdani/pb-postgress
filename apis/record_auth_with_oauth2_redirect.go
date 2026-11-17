@@ -33,7 +33,7 @@ func oauth2SubscriptionRedirect(e *core.RequestEvent) error {
 
 	if e.Request.Method == http.MethodPost {
 		if err := e.BindBody(&data); err != nil {
-			e.App.Logger().Debug("Failed to read OAuth2 redirect data", "error", err)
+			e.App.Logger().Warn("Failed to read OAuth2 redirect data", "error", err)
 			return failureRedirect(e)
 		}
 	} else {
@@ -44,7 +44,7 @@ func oauth2SubscriptionRedirect(e *core.RequestEvent) error {
 	}
 
 	if data.State == "" {
-		e.App.Logger().Debug("Missing OAuth2 state parameter")
+		e.App.Logger().Warn("Missing OAuth2 state parameter")
 		return failureRedirect(e)
 	}
 
@@ -55,18 +55,30 @@ func oauth2SubscriptionRedirect(e *core.RequestEvent) error {
 
 	client, err := e.App.SubscriptionsBroker().ClientById(data.State)
 	if err != nil || client.IsDiscarded() || !client.HasSubscription(oauth2SubscriptionTopic) {
-		e.App.Logger().Debug("Missing or invalid OAuth2 subscription client", "error", err, "clientId", data.State)
+		e.App.Logger().Warn("Missing or invalid OAuth2 subscription client", "error", err, "clientId", data.State)
 		return failureRedirect(e)
 	}
 	defer client.Unsubscribe(oauth2SubscriptionTopic)
 
 	// additional check to minimize the risk of XSRF attack vectors
 	//
-	// note: custom registered clients (aka. those without IP in the store)
+	// note1: custom registered clients (aka. those without RealtimeClientIPKey in the store)
 	// are excluded from the check for backward compatibility
-	clientIP, _ := client.Get(RealtimeClientIPKey).(string)
-	if clientIP != "" && clientIP != e.RealIP() {
-		e.App.Logger().Debug("The client IP that completed the authentication is different from the one that initialized the OAuth2 realtime connection")
+	//
+	// note2: the extra subscriptionClientIP check is performed as fallback
+	// to minimize false-positives in case of virtualized devices with multiple
+	// network interfaces during the OAuth2 "All in one" flow
+	// (https://ganigeorgiev.com/pocketbase/discussions/7758#comment-7ccdsr6gi1nd0y3)
+	realIP := e.RealIP()
+	connectionClientIP, _ := client.Get(RealtimeClientIPKey).(string)
+	subscriptionClientIP, _ := client.Get(RealtimeOAuth2SubscriptionClientIPKey).(string)
+	if connectionClientIP != "" && realIP != connectionClientIP && realIP != subscriptionClientIP {
+		e.App.Logger().Warn(
+			"The client IP that completed the authentication is different from the one that initialized the OAuth2 realtime connection/subscription",
+			"connectionClientIP", connectionClientIP,
+			"subscriptionClientIP", subscriptionClientIP,
+			"redirectClientIP", realIP,
+		)
 		return failureRedirect(e)
 	}
 
@@ -80,13 +92,13 @@ func oauth2SubscriptionRedirect(e *core.RequestEvent) error {
 		)
 		if nameErr != nil {
 			// non-critical error
-			e.App.Logger().Debug("Failed to parse and load Apple Redirect name data", "error", nameErr)
+			e.App.Logger().Warn("Failed to parse and load Apple Redirect name data", "error", nameErr)
 		}
 	}
 
 	encodedData, err := json.Marshal(data)
 	if err != nil {
-		e.App.Logger().Debug("Failed to marshalize OAuth2 redirect data", "error", err)
+		e.App.Logger().Warn("Failed to marshalize OAuth2 redirect data", "error", err)
 		return failureRedirect(e)
 	}
 
@@ -98,7 +110,7 @@ func oauth2SubscriptionRedirect(e *core.RequestEvent) error {
 	client.Send(msg)
 
 	if data.Error != "" || data.Code == "" {
-		e.App.Logger().Debug("Failed OAuth2 redirect due to an error or missing code parameter", "error", data.Error, "clientId", data.State)
+		e.App.Logger().Warn("Failed OAuth2 redirect due to an error or missing code parameter", "error", data.Error, "clientId", data.State)
 		return failureRedirect(e)
 	}
 

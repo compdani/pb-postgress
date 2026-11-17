@@ -416,6 +416,10 @@ type App interface {
 	// LogQuery returns a new Log select query.
 	LogQuery() *dbx.SelectQuery
 
+	// CountLogs returns the total number of log entries
+	// (optionally filtered by the provided non-nil expressions).
+	CountLogs(exprs ...dbx.Expression) (int64, error)
+
 	// FindLogById finds a single Log entry by its id.
 	FindLogById(id string) (*Log, error)
 

@@ -1,3 +1,12 @@
+## Unreleased (upstream v0.42.x backports)
+
+- Fixed S3 multipart uploads being reported as successful when `CompleteMultipartUpload` returns `200 OK` with an XML `<Error>` body (upstream v0.42.3).
+- Requests with an unknown, invalid or expired `Authorization` token are now rejected with 401 by the new `pbRejectUnknownToken` middleware instead of silently continuing as guest (upstream v0.42.0/v0.42.1). Unlike upstream, non-Bearer schemes (e.g. `Basic` client credentials for the OAuth2 server token endpoint) are left to the route handlers. The superuser UI clears stale tokens and retries accordingly.
+- Relaxed the realtime subscription IP check: a subscription request no longer has to come from the connection IP, which caused false positives for roaming/mobile clients. The OAuth2 redirect IP check now also accepts the IP of the `@oauth2` subscription request (`apis.RealtimeOAuth2SubscriptionClientIPKey`). OAuth2 redirect failures are logged as WARN instead of DEBUG (upstream v0.42.3).
+- Fixed a `cron.Stop()` race that could deadlock or initialize the ticker after stopping (upstream v0.42.0).
+- Benign mid-response network errors (broken pipe, closed http2 stream, client disconnected) on OK responses are logged as INFO instead of ERROR (upstream v0.42.0/v0.42.3).
+- Added `app.CountLogs(exprs...)` (upstream v0.42.0). Upstream's automatic `VACUUM` + `PRAGMA wal_checkpoint` after logs cleanup is not ported: both are SQLite-oriented and here the logs live in the main Postgres/MySQL database.
+
 ## v0.40.6 (Postgres fork backports)
 
 - Added `app.ClearBootstrap()` and `app.OnBootstrapClear()`; `ResetBootstrapState()` remains as a deprecated alias. Cleanup retains both Postgres pools. Fixed log batch writes deadlocking inside auxiliary database transactions and flush queued logs before clearing bootstrap resources.
