@@ -48,6 +48,9 @@ const (
 	DefaultSecurityHeadersMiddlewarePriority = DefaultRateLimitMiddlewarePriority - 10
 	DefaultSecurityHeadersMiddlewareId       = "pbSecurityHeaders"
 
+	DefaultRejectUnknownTokenMiddlewarePriority = 9999
+	DefaultRejectUnknownTokenMiddlewareId       = "pbRejectUnknownToken"
+
 	DefaultRequireGuestOnlyMiddlewareId                 = "pbRequireGuestOnly"
 	DefaultRequireAuthMiddlewareId                      = "pbRequireAuth"
 	DefaultRequireSuperuserAuthMiddlewareId             = "pbRequireSuperuserAuth"
@@ -179,8 +182,10 @@ func RequireSameCollectionContextAuth(collectionPathParam string) *hook.Handler[
 //
 // This middleware is registered by default for all routes.
 //
-// Note: We don't throw an error on invalid or expired token to allow
+// Note: We don't throw an error here on invalid or expired token to allow
 // users to extend with their own custom handling in external middleware(s).
+// Requests that still have a token but no e.Auth are rejected later
+// by the rejectUnknownToken middleware.
 func loadAuthToken() *hook.Handler[*core.RequestEvent] {
 	return &hook.Handler[*core.RequestEvent]{
 		Id:       DefaultLoadAuthTokenMiddlewareId,
@@ -222,6 +227,35 @@ func getAuthTokenFromRequest(e *core.RequestEvent) string {
 	}
 
 	return token
+}
+
+// rejectUnknownToken rejects with 401 requests that have an Authorization
+// token but no loaded auth record (aka. unknown, invalid or expired token,
+// e.g. after a password change).
+//
+// It runs last (high priority value) so that custom middlewares
+// still have a chance to load e.Auth on their own.
+//
+// Authorization headers with a non-Bearer scheme (e.g. "Basic" client
+// credentials for the OAuth2 server token endpoint) are not PgBase auth
+// tokens and are left to the route handlers.
+func rejectUnknownToken() *hook.Handler[*core.RequestEvent] {
+	return &hook.Handler[*core.RequestEvent]{
+		Id:       DefaultRejectUnknownTokenMiddlewareId,
+		Priority: DefaultRejectUnknownTokenMiddlewarePriority,
+		Func: func(e *core.RequestEvent) error {
+			if e.Auth != nil {
+				return e.Next()
+			}
+
+			token := getAuthTokenFromRequest(e)
+			if token != "" && !strings.ContainsAny(token, " \t") {
+				return e.UnauthorizedError("", errors.New("unknown authorization token"))
+			}
+
+			return e.Next()
+		},
+	}
 }
 
 // wwwRedirect performs www->non-www redirect(s) if the request host
@@ -373,33 +407,42 @@ func logRequest(event *core.RequestEvent, err error) {
 		return
 	}
 
-	// the non-error route has explicitly disabled the activity logger
-	if err == nil && event.Get(requestEventKeySkipSuccessActivityLog) != nil {
+	status := event.Status()
+
+	// check if it is "benign" to decide whether to log it as error or just info
+	// (a nil error is always logged as info to preserve the previous behavior
+	// for handlers that don't explicitly write a status)
+	isOKState := err == nil || (status < 400 && status > 199 && canBeIgnored(err))
+
+	// the OK route has explicitly disabled the activity logger
+	if isOKState && event.Get(requestEventKeySkipSuccessActivityLog) != nil {
 		return
 	}
 
-	attrs := make([]any, 0, 15)
-
-	attrs = append(attrs, slog.String("type", "request"))
-
-	started := cast.ToTime(event.Get(requestEventKeyExecStart))
-	if !started.IsZero() {
-		attrs = append(attrs, slog.Float64("execTime", float64(time.Since(started))/float64(time.Millisecond)))
-	}
-
-	if meta := event.Get(RequestEventKeyLogMeta); meta != nil {
-		attrs = append(attrs, slog.Any("meta", meta))
-	}
-
-	status := event.Status()
 	method := cutStr(strings.ToUpper(event.Request.Method), 50)
 	requestUri := cutStr(event.Request.URL.RequestURI(), 3000)
 
-	// parse the request error
+	attrs := make([]any, 0, 15)
+
+	attrs = append(
+		attrs,
+		slog.String("type", "request"),
+		slog.String("url", requestUri),
+		slog.String("method", method),
+		slog.String("referer", cutStr(event.Request.Referer(), 2000)),
+		slog.String("userAgent", cutStr(event.Request.UserAgent(), 2000)),
+	)
+
+	// parse the request error state no matter of the log type
 	if err != nil {
+		var errMsgSuffix string
+		if isOKState {
+			errMsgSuffix = " (often benign, see https://ganigeorgiev.com/pocketbase/discussions/8361)"
+		}
+
 		apiErr, isPlainApiError := err.(*router.ApiError)
 		if isPlainApiError || errors.As(err, &apiErr) {
-			// the status header wasn't written yet
+			// in case the status header wasn't written yet
 			if status == 0 {
 				status = apiErr.Status
 			}
@@ -415,22 +458,24 @@ func logRequest(event *core.RequestEvent, err error) {
 
 			attrs = append(
 				attrs,
-				slog.String("error", errMsg),
+				slog.String("error", errMsg+errMsgSuffix),
 				slog.Any("details", apiErr.RawData()),
 			)
 		} else {
-			attrs = append(attrs, slog.String("error", err.Error()))
+			attrs = append(attrs, slog.String("error", err.Error()+errMsgSuffix))
 		}
 	}
 
-	attrs = append(
-		attrs,
-		slog.String("url", requestUri),
-		slog.String("method", method),
-		slog.Int("status", status),
-		slog.String("referer", cutStr(event.Request.Referer(), 2000)),
-		slog.String("userAgent", cutStr(event.Request.UserAgent(), 2000)),
-	)
+	attrs = append(attrs, slog.Int("status", status))
+
+	started := cast.ToTime(event.Get(requestEventKeyExecStart))
+	if !started.IsZero() {
+		attrs = append(attrs, slog.Float64("execTime", float64(time.Since(started))/float64(time.Millisecond)))
+	}
+
+	if meta := event.Get(RequestEventKeyLogMeta); meta != nil {
+		attrs = append(attrs, slog.Any("meta", meta))
+	}
 
 	if event.Auth != nil {
 		attrs = append(attrs, slog.String("auth", event.Auth.Collection().Name))
@@ -460,10 +505,10 @@ func logRequest(event *core.RequestEvent, err error) {
 			message += requestUri
 		}
 
-		if err != nil {
-			event.App.Logger().Error(message, attrs...)
-		} else {
+		if isOKState {
 			event.App.Logger().Info(message, attrs...)
+		} else {
+			event.App.Logger().Error(message, attrs...)
 		}
 	})
 }
@@ -473,4 +518,34 @@ func cutStr(str string, max int) string {
 		return str[:max] + "..."
 	}
 	return str
+}
+
+// benignErrors are usually returned after OK status has been already
+// written and are mostly informative (aka. can be safely ignored).
+//
+// See https://ganigeorgiev.com/pocketbase/discussions/8361.
+//
+// @todo consider using the eventual exported error vars once
+// https://github.com/golang/go/issues/66812 get sorted out
+var benignErrors = []string{
+	"http2: request body closed due to handler exiting",
+	"http2: stream closed",
+	"write: broken pipe",
+	"write error: client disconnected",
+}
+
+func canBeIgnored(err error) bool {
+	if err == nil {
+		return true
+	}
+
+	rawErr := err.Error()
+
+	for _, benign := range benignErrors {
+		if strings.Contains(rawErr, benign) {
+			return true
+		}
+	}
+
+	return false
 }

@@ -28,6 +28,24 @@ func (app *BaseApp) FindLogById(id string) (*Log, error) {
 	return model, nil
 }
 
+// CountLogs returns the total number of log entries
+// (optionally filtered by the provided non-nil expressions).
+func (app *BaseApp) CountLogs(optExprs ...dbx.Expression) (int64, error) {
+	var total int64
+
+	q := app.LogQuery().Select("count(*)")
+
+	for _, expr := range optExprs {
+		if expr != nil { // add only the non-nil expressions
+			q.AndWhere(expr)
+		}
+	}
+
+	err := q.Row(&total)
+
+	return total, err
+}
+
 // LogsStatsItem defines the total number of logs for a specific time period.
 type LogsStatsItem struct {
 	Date  types.DateTime `db:"date" json:"date"`

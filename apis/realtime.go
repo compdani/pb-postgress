@@ -28,8 +28,17 @@ const clientsChunkSize = 150
 // RealtimeClientAuthKey is the name of the realtime client store key that holds its auth state.
 const RealtimeClientAuthKey = "auth"
 
-// RealtimeClientIPKey is the name of the realtime client store key that holds the IP of the connected client.
+// RealtimeClientIPKey is the name of the realtime client store key
+// that holds the IP of the client that initialized the realtime connection.
 const RealtimeClientIPKey = "pbRealtimeClientIP"
+
+// RealtimeOAuth2SubscriptionClientIPKey is the name of the realtime client store key
+// that holds the IP of the client that submitted the OAuth2 subscription.
+//
+// It is used as a fallback in the OAuth2 redirect handler IP check to minimize
+// false-positives for clients with multiple network interfaces
+// (https://ganigeorgiev.com/pocketbase/discussions/7758#comment-7ccdsr6gi1nd0y3).
+const RealtimeOAuth2SubscriptionClientIPKey = "pbRealtimeOAuth2SubscriptionClientIP"
 
 // bindRealtimeApi registers the realtime api endpoints.
 func bindRealtimeApi(app core.App, rg *router.RouterGroup[*core.RequestEvent]) {
@@ -211,20 +220,10 @@ func realtimeSetSubscriptions(e *core.RequestEvent) error {
 		return e.NotFoundError("Missing or invalid client id.", err)
 	}
 
-	// for just in case to prevent someone changing a guest subscription
-	//
-	// note1: this is an extra precaution against clientId bruteforce attempts
-	// for installations allowing longer realtime connections duration
-	//
-	// note2: custom registered clients (aka. those without IP in the store)
-	// are excluded from the check for backward compatibility
-	clientIP, _ := client.Get(RealtimeClientIPKey).(string)
-	if clientIP != "" && clientIP != e.RealIP() {
-		return e.BadRequestError(
-			"Invalid realtime client.",
-			errors.New("the subscription request IP doesn't match with the realtime client IP"),
-		)
-	}
+	// note: the subscription request IP is intentionally not compared with the
+	// connection IP because it causes false-positives for roaming/mobile clients
+	// (https://ganigeorgiev.com/pocketbase/discussions/7758). Authenticated clients
+	// are still protected by the same-auth check below and the max connection duration.
 
 	// for now allow only guest->auth upgrades and any other auth change is forbidden
 	clientAuth, _ := client.Get(RealtimeClientAuthKey).(*core.Record)
@@ -244,6 +243,14 @@ func realtimeSetSubscriptions(e *core.RequestEvent) error {
 		e.Client.Unset(realtimeClientUnverifiedKey) // authenticated again just now
 		e.Client.Unset(realtimeClientSweepFailuresKey)
 		realtimeAuthMu.Unlock()
+
+		// store the IP of the first "@oauth2" subscription request
+		// to allow IP fallback checks in the redirect handler
+		if len(e.Subscriptions) == 1 &&
+			e.Subscriptions[0] == oauth2SubscriptionTopic &&
+			len(e.Client.Subscriptions()) == 0 {
+			e.Client.Set(RealtimeOAuth2SubscriptionClientIPKey, e.RealIP())
+		}
 
 		// unsubscribe from any previous existing subscriptions
 		e.Client.Unsubscribe()

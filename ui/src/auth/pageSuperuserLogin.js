@@ -39,7 +39,14 @@ export function pageSuperuserLogin(route) {
                 data.totalSteps += 2; // otp request + auth
             }
         } catch (err) {
-            app.checkApiError(err);
+            if (err.status == 401 && app.pb.authStore.token) {
+                // the server rejects unknown/expired tokens with 401
+                // -> clear the authStore and try again
+                app.pb.authStore.clear();
+                loadAuthMethods();
+            } else {
+                app.checkApiError(err);
+            }
         }
 
         data.isAuthMethodsLoading = false;

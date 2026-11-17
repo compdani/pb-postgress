@@ -116,6 +116,7 @@ func TestRealtimeSubscribe(t *testing.T) {
 		client.Unsubscribe()
 		client.Unset(apis.RealtimeClientAuthKey)
 		client.Unset(apis.RealtimeClientIPKey)
+		client.Unset(apis.RealtimeOAuth2SubscriptionClientIPKey)
 	}
 
 	validSubscriptionsLimit := make([]string, 1000)
@@ -222,23 +223,75 @@ func TestRealtimeSubscribe(t *testing.T) {
 			ExpectedEvents: map[string]int{"*": 0},
 		},
 		{
-			Name:            "existing client with different IP",
-			Method:          http.MethodPost,
-			URL:             "/api/realtime",
-			Body:            strings.NewReader(`{"clientId":"` + client.Id() + `","subscriptions":["test"]}`),
-			Headers:         map[string]string{"x-test-ip": "127.0.0.2"},
-			ExpectedStatus:  400,
-			ExpectedContent: []string{`"data":{}`},
-			ExpectedEvents:  map[string]int{"*": 0},
+			Name:   "existing client with different IP (non-oauth2 subscription)",
+			Method: http.MethodPost,
+			URL:    "/api/realtime",
+			Body: strings.NewReader(`{
+				"clientId":"` + client.Id() + `",
+				"subscriptions":["test"]
+			}`),
+			Headers:        map[string]string{"x-test-ip": "127.0.0.2"},
+			ExpectedStatus: 204,
+			ExpectedEvents: map[string]int{
+				"*":                          0,
+				"OnRealtimeSubscribeRequest": 1,
+			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				app.Settings().TrustedProxy.Headers = []string{"x-test-ip"}
 
+				// set a different connected IP to ensure that no IP check apply when subscribing
 				client.Set(apis.RealtimeClientIPKey, "127.0.0.1")
 
 				app.SubscriptionsBroker().Register(client)
 			},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				resetClient()
+				defer resetClient()
+
+				subscriptions := client.Subscriptions()
+				if _, ok := subscriptions["test"]; !ok || len(subscriptions) > 1 {
+					t.Fatalf("Expected to find only subscription 'test', got %v", subscriptions)
+				}
+
+				if fallback := client.Get(apis.RealtimeOAuth2SubscriptionClientIPKey); fallback != nil {
+					t.Fatalf("Expected empty @oauth2 subscription IP to be stored, got %v", fallback)
+				}
+			},
+		},
+		{
+			Name:   "existing client with different IP (oauth2 subscription)",
+			Method: http.MethodPost,
+			URL:    "/api/realtime",
+			Body: strings.NewReader(`{
+				"clientId":"` + client.Id() + `",
+				"subscriptions":["@oauth2"]
+			}`),
+			Headers:        map[string]string{"x-test-ip": "127.0.0.2"},
+			ExpectedStatus: 204,
+			ExpectedEvents: map[string]int{
+				"*":                          0,
+				"OnRealtimeSubscribeRequest": 1,
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				app.Settings().TrustedProxy.Headers = []string{"x-test-ip"}
+
+				// set a different connected IP to ensure that no IP check apply when subscribing
+				client.Set(apis.RealtimeClientIPKey, "127.0.0.1")
+
+				app.SubscriptionsBroker().Register(client)
+			},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				defer resetClient()
+
+				subscriptions := client.Subscriptions()
+				if _, ok := subscriptions["@oauth2"]; !ok || len(subscriptions) > 1 {
+					t.Fatalf("Expected to find only subscription '@oauth2', got %v", subscriptions)
+				}
+
+				fallback := client.Get(apis.RealtimeOAuth2SubscriptionClientIPKey)
+				expectedFallback := "127.0.0.2"
+				if fallback != expectedFallback {
+					t.Fatalf("Expected @oauth2 subscription IP %q, got %q", expectedFallback, fallback)
+				}
 			},
 		},
 		{

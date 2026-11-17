@@ -307,6 +307,25 @@ func (u *Uploader) multipartComplete(ctx context.Context, optReqFuncs ...func(*h
 	}
 	defer resp.Body.Close()
 
+	// we don't need the body but because S3 chunks processing can fail
+	// with 200 we need to check for an error response
+	// ---
+	body, err := io.ReadAll(resp.Body)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("failed to read CompleteMultipartUpload body: %w", err)
+	}
+	if len(body) > 0 {
+		respErr := &ResponseError{
+			Status: resp.StatusCode,
+			Raw:    body,
+		}
+
+		// if it fails to parse as an XML <Error> then we assume that it is not such
+		if xml.Unmarshal(respErr.Raw, respErr) == nil {
+			return respErr
+		}
+	}
+
 	return nil
 }
 
