@@ -828,19 +828,30 @@ type likeComparison struct {
 }
 
 // Build implements [dbx.Expression].
+//
+// SQLite's LIKE ignores (ASCII) case, and the filter syntax relies on that, so
+// the other dialects are made case-insensitive too: PostgreSQL uses ILIKE, and
+// MySQL (binary text collation) compares LOWER() of both operands.
 func (e likeComparison) Build(db *dbx.DB, params dbx.Params) string {
 	postgres := db.DriverName() == "pgx" || db.DriverName() == "postgres"
+	mysql := db.DriverName() == "mysql"
 
 	asText := func(r *ResolverResult) string {
 		if postgres && r.LikeAsText {
 			return "CAST(" + r.Identifier + " AS TEXT)"
 		}
+		if mysql {
+			return "LOWER(" + r.Identifier + ")"
+		}
 		return r.Identifier
 	}
 
 	operator := "LIKE"
+	if postgres {
+		operator = "ILIKE"
+	}
 	if e.not {
-		operator = "NOT LIKE"
+		operator = "NOT " + operator
 	}
 
 	var sql string
@@ -851,7 +862,11 @@ func (e likeComparison) Build(db *dbx.DB, params dbx.Params) string {
 		sql = fmt.Sprintf("%s %s ('%%' || %s || '%%') ESCAPE '\\'", asText(e.left), operator, asText(e.right))
 		exprParams = e.left.Params
 	} else {
-		sql = fmt.Sprintf("%s %s %s ESCAPE '\\'", asText(e.left), operator, e.right.Identifier)
+		right := e.right.Identifier
+		if mysql {
+			right = "LOWER(" + right + ")"
+		}
+		sql = fmt.Sprintf("%s %s %s ESCAPE '\\'", asText(e.left), operator, right)
 		exprParams = mergeParams(e.left.Params, wrapLikeParams(e.right.Params))
 	}
 

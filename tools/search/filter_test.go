@@ -380,6 +380,13 @@ func TestLikeParamsWrapping(t *testing.T) {
 
 	expectedQuery := `SELECT * WHERE ([[test1]] LIKE '%abc%' ESCAPE '\' OR [[test2]] LIKE 'ab%c' ESCAPE '\' OR [[test3]] LIKE '%ab\%c%' ESCAPE '\' OR [[test4]] LIKE '%ab\%c' ESCAPE '\' OR [[test5]] LIKE 'ab\\%c' ESCAPE '\' OR [[test6]] LIKE '%ab\\\%c%' ESCAPE '\' OR [[test7]] LIKE '%ab\_c%' ESCAPE '\' OR [[test8]] LIKE '%ab\_c%' ESCAPE '\' OR [[test9]] LIKE '%ab_c' ESCAPE '\' OR [[test10]] LIKE '%ab\\c%' ESCAPE '\' OR [[test11]] LIKE '%\_ab\\c\_%' ESCAPE '\' OR [[test12]] LIKE 'ab\c%' ESCAPE '\' OR [[test13]] LIKE '%a`
 	expectedQuery += "\n" + `b\\%' ESCAPE '\')`
+	// "~" is case-insensitive everywhere: ILIKE on PostgreSQL, LOWER() on MySQL.
+	switch driver {
+	case "pgx":
+		expectedQuery = strings.ReplaceAll(expectedQuery, " LIKE ", " ILIKE ")
+	case "mysql":
+		expectedQuery = regexp.MustCompile(`(\[\[test\d+\]\]) LIKE ('[^']*') ESCAPE`).ReplaceAllString(expectedQuery, "LOWER($1) LIKE LOWER($2) ESCAPE")
+	}
 	if expectedQuery != calledQueries[0] {
 		t.Fatalf("Expected query \n%s, \ngot \n%s", expectedQuery, calledQueries[0])
 	}
@@ -450,4 +457,62 @@ func (r *likeAsTextResolver) Resolve(field string) (*search.ResolverResult, erro
 		result.LikeAsText = r.asText
 	}
 	return result, err
+}
+
+// SQLite's LIKE ignores ASCII case and the filter syntax relies on that: "~"
+// and "!~" must match case-insensitively on every supported database.
+func TestLikeIgnoresCase(t *testing.T) {
+	driver, dsn := testdb.New(t)
+	if driver == "postgres" {
+		driver = "pgx"
+	}
+	raw, err := sql.Open(driver, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	db := dbx.NewFromDB(raw, driver)
+
+	table := fmt.Sprintf("like_case_%d", time.Now().UnixNano())
+	if _, err := db.NewQuery("CREATE TABLE " + table + " (name VARCHAR(100), other VARCHAR(100))").Execute(); err != nil {
+		t.Fatal(err)
+	}
+	defer db.NewQuery("DROP TABLE " + table).Execute()
+	if _, err := db.Insert(table, dbx.Params{"name": "Alice Walker", "other": "WALK"}).Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	resolver := search.NewSimpleFieldResolver("name", "other")
+	count := func(filter string) int {
+		t.Helper()
+		expr, err := search.FilterData(filter).BuildExpr(resolver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var n int
+		if err := db.Select("count(*)").From(table).Where(expr).Row(&n); err != nil {
+			t.Fatalf("%s: %v", filter, err)
+		}
+		return n
+	}
+
+	scenarios := []struct {
+		filter string
+		want   int
+	}{
+		{"name ~ 'alice'", 1},
+		{"name ~ 'ALICE'", 1},
+		{"name ~ 'walker%'", 0}, // explicit pattern without leading %: "walker%" must start the value
+		{"name ~ 'alice%'", 1},
+		{"name !~ 'ALICE'", 0},
+		{"name !~ 'bob'", 1},
+		{"name ?~ 'alice'", 1},
+		{"name ~ other", 1}, // column on the right: "WALK" is contained in "Alice Walker"
+		{"name !~ other", 0},
+	}
+	for _, s := range scenarios {
+		if got := count(s.filter); got != s.want {
+			t.Errorf("%s: got %d rows, want %d", s.filter, got, s.want)
+		}
+	}
 }
