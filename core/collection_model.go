@@ -594,6 +594,7 @@ func (m Collection) MarshalJSON() ([]byte, error) {
 			alias.OAuth2.Providers = redactedProviders
 		}
 
+		alias.OAuth2Server.SigningKey = ""
 		alias.OAuth2Server.Clients = RedactedOAuth2ServerClients(alias.OAuth2Server.Clients)
 
 		return json.Marshal(alias)
@@ -794,6 +795,12 @@ func onCollectionDeleteExecute(e *CollectionEvent) error {
 			ba.bumpCacheVersion(cacheVersionCollections)
 		}
 
+		if e.Collection.IsAuth() && e.Collection.OAuth2Server.RootDiscovery {
+			if err := claimOAuth2ServerRoot(txApp, e.Collection.Id, false); err != nil {
+				return err
+			}
+		}
+
 		if err := appendCollectionFileDeletes(txApp, e.Collection); err != nil {
 			return err
 		}
@@ -954,6 +961,11 @@ func onCollectionSave(e *CollectionEvent) error {
 }
 
 func onCollectionSaveExecute(e *CollectionEvent) error {
+	if e.Collection.IsAuth() {
+		if err := e.Collection.OAuth2Server.PrepareSecrets(); err != nil {
+			return err
+		}
+	}
 	if ba := asBaseApp(e.App); ba != nil && !e.Collection.IsNew() && !ba.CollectionVisible(e.Collection) {
 		return nil
 	}
@@ -987,6 +999,12 @@ func onCollectionSaveExecute(e *CollectionEvent) error {
 
 		if ba := asBaseApp(txApp); ba != nil {
 			ba.bumpCacheVersion(cacheVersionCollections)
+		}
+
+		if e.Collection.IsAuth() && (e.Collection.OAuth2Server.RootDiscovery || (oldCollection != nil && oldCollection.OAuth2Server.RootDiscovery)) {
+			if err := claimOAuth2ServerRoot(txApp, e.Collection.Id, e.Collection.OAuth2Server.RootDiscovery); err != nil {
+				return err
+			}
 		}
 
 		isView := e.Collection.IsView()
@@ -1248,4 +1266,26 @@ func (c *Collection) fieldIndexName(field string) string {
 	}
 
 	return name
+}
+
+// A singleton claim makes root discovery unique even across concurrent saves on
+// different app instances. The claim commits or rolls back with the collection.
+func claimOAuth2ServerRoot(app App, owner string, enabled bool) error {
+	if !enabled {
+		_, err := app.DB().NewQuery("UPDATE {{_oauth2ServerRoot}} SET [[owner]]='' WHERE [[slot]]=1 AND [[owner]]={:owner}").Bind(dbx.Params{"owner": owner}).Execute()
+		return err
+	}
+	if _, err := app.DB().NewQuery("UPDATE {{_oauth2ServerRoot}} SET [[owner]]={:owner} WHERE [[slot]]=1 AND ([[owner]]='' OR [[owner]]={:owner})").Bind(dbx.Params{"owner": owner}).Execute(); err != nil {
+		return err
+	}
+	var row struct {
+		Owner string `db:"owner"`
+	}
+	if err := app.DB().NewQuery("SELECT [[owner]] FROM {{_oauth2ServerRoot}} WHERE [[slot]]=1").One(&row); err != nil {
+		return err
+	}
+	if row.Owner != owner {
+		return fmt.Errorf("only one auth collection may enable root discovery")
+	}
+	return nil
 }

@@ -1,10 +1,14 @@
 package apis_test
 
 import (
+	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/pocketbase/dbx"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,7 +18,6 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
-	"github.com/pocketbase/pocketbase/tools/security"
 )
 
 const (
@@ -257,7 +260,21 @@ func TestOAuth2ServerFullFlow(t *testing.T) {
 
 	// id_token signed with the client secret
 	idToken, _ := data["id_token"].(string)
-	claims, err := security.ParseJWT(idToken, oauth2TestClientSecret)
+	jwksRes := s.do("GET", "/api/collections/users/oauth2-server/jwks", nil, nil)
+	var jwks struct {
+		Keys []struct {
+			N string `json:"n"`
+			E string `json:"e"`
+		}
+	}
+	if err := json.NewDecoder(jwksRes.Body).Decode(&jwks); err != nil {
+		t.Fatal(err)
+	}
+	jwksRes.Body.Close()
+	n, _ := base64.RawURLEncoding.DecodeString(jwks.Keys[0].N)
+	key := rsa.PublicKey{N: new(big.Int).SetBytes(n), E: 65537}
+	token, err := jwt.Parse(idToken, func(t *jwt.Token) (any, error) { return &key, nil }, jwt.WithValidMethods([]string{"RS256"}))
+	claims := token.Claims.(jwt.MapClaims)
 	if err != nil {
 		t.Fatalf("invalid id_token: %v", err)
 	}
@@ -403,7 +420,7 @@ func TestOAuth2ServerClientSecretsAreRedacted(t *testing.T) {
 	if strings.Contains(string(raw), oauth2TestClientSecret) {
 		t.Fatal("client secret leaked in the collection serialization")
 	}
-	if !strings.Contains(string(raw), `"oauth2Server":{"enabled":true`) {
+	if !strings.Contains(string(raw), `"oauth2Server":{`) {
 		t.Fatalf("missing oauth2Server options: %s", raw)
 	}
 
@@ -441,11 +458,11 @@ func TestOAuth2ServerClientSecretsAreRedacted(t *testing.T) {
 
 	users, _ = s.app.FindCollectionByNameOrId("users")
 	client, ok := users.OAuth2Server.GetClient(oauth2TestClientId)
-	if !ok || client.Secret != oauth2TestClientSecret {
+	if !ok || !client.ValidateSecret(oauth2TestClientSecret) {
 		t.Fatalf("expected the existing client secret to be preserved, got %+v", client)
 	}
 	newClient, _ := users.OAuth2Server.GetClient("new-client")
-	if newClient.Secret != strings.Repeat("s", 40) {
+	if !newClient.ValidateSecret(strings.Repeat("s", 40)) {
 		t.Fatalf("unexpected new client secret %q", newClient.Secret)
 	}
 }
@@ -482,4 +499,201 @@ func TestOAuth2ServerConfigValidation(t *testing.T) {
 	if err := s.app.Save(users); err != nil {
 		t.Fatalf("expected loopback/custom scheme redirect uris to be valid: %v", err)
 	}
+}
+
+func TestOAuth2ServerPublicClient(t *testing.T) {
+	s := newOAuth2TestServer(t)
+	users, err := s.app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	users.OAuth2Server.Clients[0].Public = true
+	users.OAuth2Server.Clients[0].Secret = ""
+	if err := s.app.Save(users); err != nil {
+		t.Fatal(err)
+	}
+	params := s.authorizeParams(map[string]string{"code_challenge": "", "code_challenge_method": ""})
+	res := s.do(http.MethodGet, "/api/collections/users/oauth2-server/authorize?"+params.Encode(), nil, nil)
+	if !strings.Contains(res.Header.Get("Location"), "error=invalid_request") {
+		t.Fatalf("missing PKCE accepted: %d %s", res.StatusCode, res.Header.Get("Location"))
+	}
+	res.Body.Close()
+	params = s.authorizeParams(nil)
+	res, code := s.login(params, "test@example.com", "1234567890")
+	if code == "" {
+		page, _ := io.ReadAll(res.Body)
+		t.Fatalf("login: %d %s", res.StatusCode, page)
+	}
+	res.Body.Close()
+	for _, form := range []url.Values{oauth2TestTokenForm(code, nil), oauth2TestTokenForm(code, map[string]string{"client_secret": ""})} {
+		if form.Has("client_secret") {
+			status, data := s.exchange(form, nil)
+			if status != 401 {
+				t.Fatalf("public secret: %d %v", status, data)
+			}
+			continue
+		}
+		status, data := s.exchange(form, nil)
+		if status != 200 || data["access_token"] == nil || data["id_token"] != nil {
+			t.Fatalf("public exchange: %d %v", status, data)
+		}
+	}
+}
+
+func TestOAuth2ServerPathInsertionDiscovery(t *testing.T) {
+	s := newOAuth2TestServer(t)
+	for _, prefix := range []string{"/.well-known/oauth-authorization-server", "/.well-known/openid-configuration"} {
+		res := s.do(http.MethodGet, prefix+"/api/collections/users/oauth2-server", nil, nil)
+		var md map[string]any
+		err := json.NewDecoder(res.Body).Decode(&md)
+		res.Body.Close()
+		if err != nil || res.StatusCode != 200 || !strings.HasSuffix(md["issuer"].(string), "/api/collections/users/oauth2-server") {
+			t.Fatalf("discovery: %d %v %v", res.StatusCode, md, err)
+		}
+	}
+}
+
+func TestOAuth2ServerRegistration(t *testing.T) {
+	s := newOAuth2TestServer(t)
+	users, _ := s.app.FindCollectionByNameOrId("users")
+	register := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", "/api/collections/users/oauth2-server/register", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.handler.ServeHTTP(rec, req)
+		return rec
+	}
+	good := `{"client_name":"Test unverified","redirect_uris":["https://allowed.example/cb"],"token_endpoint_auth_method":"none"}`
+	if rec := register(good); rec.Code != 404 {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	users.OAuth2Server.Registration = core.OAuth2ServerRegistrationConfig{Enabled: true, AllowedRedirectHosts: []string{"ALLOWED.example"}, RateLimit: 100}
+	users.OAuth2Server.SessionDuration = 3600
+	users.OAuth2Server.RootDiscovery = true
+	if err := s.app.Save(users); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{`{"redirect_uris":["http://allowed.example/cb"]}`, `{"redirect_uris":["https://other.example/cb"]}`, `{"redirect_uris":["https://allowed.example/cb"],"grant_types":["implicit"]}`, `{"redirect_uris":["https://allowed.example/cb"],"response_types":["token"]}`} {
+		if rec := register(bad); rec.Code != 400 {
+			t.Fatal(rec.Code, rec.Body.String())
+		}
+	}
+	rec := register(good)
+	if rec.Code != 201 {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	var result map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &result)
+	id := result["client_id"].(string)
+	params := s.authorizeParams(map[string]string{"client_id": id, "redirect_uri": "https://allowed.example/cb"})
+	page := s.do("GET", "/api/collections/users/oauth2-server/authorize?"+params.Encode(), nil, nil)
+	body, _ := io.ReadAll(page.Body)
+	page.Body.Close()
+	if page.StatusCode != 200 || !strings.Contains(string(body), "unverified app") || !strings.Contains(string(body), "allowed.example") {
+		t.Fatal(page.StatusCode, string(body))
+	}
+	login, code := s.login(params, "test@example.com", "1234567890")
+	if code == "" {
+		t.Fatal("login failed", login.StatusCode)
+	}
+	for _, cookie := range login.Cookies() {
+		if cookie.Value != "" {
+			params.Set("prompt", "none")
+			res := s.do("GET", "/api/collections/users/oauth2-server/authorize?"+params.Encode(), nil, map[string]string{"Cookie": cookie.String()})
+			if !strings.Contains(res.Header.Get("Location"), "interaction_required") {
+				t.Fatal("silent DCR", res.StatusCode, res.Header)
+			}
+			res.Body.Close()
+			params.Del("prompt")
+			res = s.do("GET", "/api/collections/users/oauth2-server/authorize?"+params.Encode(), nil, map[string]string{"Cookie": cookie.String()})
+			if res.StatusCode != 200 {
+				t.Fatal("expected page", res.StatusCode)
+			}
+			res.Body.Close()
+		}
+	}
+	client, err := s.app.FindFirstRecordByData("_oauth2ServerClients", "clientId", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.Set("revoked", true)
+	if err := s.app.Save(client); err != nil {
+		t.Fatal(err)
+	}
+	status, data := s.exchange(oauth2TestTokenForm(code, map[string]string{"client_id": id, "client_secret": "", "redirect_uri": "https://allowed.example/cb"}), nil)
+	if status != 401 {
+		t.Fatal(status, data)
+	}
+	page = s.do("GET", "/api/collections/users/oauth2-server/authorize?"+params.Encode(), nil, nil)
+	if page.StatusCode != 400 {
+		t.Fatal("revoked authorize", page.StatusCode)
+	}
+	page.Body.Close()
+	for _, path := range []string{"/.well-known/oauth-authorization-server", "/.well-known/openid-configuration"} {
+		res := s.do("GET", path, nil, nil)
+		if res.StatusCode != 200 {
+			t.Fatal(path, res.StatusCode)
+		}
+		res.Body.Close()
+	}
+	other := core.NewAuthCollection("otherroot")
+	other.OAuth2Server.RootDiscovery = true
+	if err := s.app.Save(other); err == nil {
+		t.Fatal("duplicate root allowed")
+	}
+	users.OAuth2Server.Registration.RateLimit = 1
+	if err := s.app.Save(users); err != nil {
+		t.Fatal(err)
+	}
+	if rec := register(good); rec.Code != 429 {
+		t.Fatal("rate limit", rec.Code)
+	}
+}
+
+func TestOAuth2ServerHashMigration(t *testing.T) {
+	s := newOAuth2TestServer(t)
+	users, _ := s.app.FindCollectionByNameOrId("users")
+	// Simulate an existing deployment by bypassing the save hook with raw options.
+	var options map[string]any
+	if err := json.Unmarshal(users.RawOptions, &options); err != nil {
+		t.Fatal(err)
+	}
+	config := users.OAuth2Server
+	config.Clients[0].Secret = oauth2TestClientSecret
+	config.SigningKey = ""
+	options["oauth2Server"] = config
+	raw, _ := json.Marshal(options)
+	if _, err := s.app.DB().NewQuery("UPDATE {{_collections}} SET [[options]]={:options} WHERE [[id]]={:id}").Bind(dbx.Params{"options": string(raw), "id": users.Id}).Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, migration := range core.SystemMigrations.Items() {
+		if migration.File != "1794000007_oauth2_server_secrets.go" {
+			continue
+		}
+		if err := migration.Up(s.app); err != nil {
+			t.Fatal(err)
+		}
+		users, _ = s.app.FindCollectionByNameOrId("users")
+		first := users.OAuth2Server.Clients[0].Secret
+		if first == oauth2TestClientSecret || !users.OAuth2Server.Clients[0].ValidateSecret(oauth2TestClientSecret) {
+			t.Fatal("not hashed")
+		}
+		if err := migration.Up(s.app); err != nil {
+			t.Fatal(err)
+		}
+		users, _ = s.app.FindCollectionByNameOrId("users")
+		if users.OAuth2Server.Clients[0].Secret != first {
+			t.Fatal("not idempotent")
+		}
+		if err := s.app.ReloadCachedCollections(); err != nil {
+			t.Fatal(err)
+		}
+		_, code := s.login(s.authorizeParams(nil), "test@example.com", "1234567890")
+		status, data := s.exchange(oauth2TestTokenForm(code, nil), nil)
+		if status != 200 || data["id_token"] == nil {
+			t.Fatal(status, data)
+		}
+		return
+	}
+	t.Fatal("migration missing")
 }

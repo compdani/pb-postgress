@@ -19,6 +19,17 @@ import (
 var collectionNameRegex = regexp.MustCompile(`^\w+$`)
 
 func onCollectionValidate(e *CollectionEvent) error {
+	if e.Collection.IsAuth() && e.Collection.OAuth2Server.RootDiscovery {
+		cols, err := e.App.FindAllCollections()
+		if err != nil {
+			return err
+		}
+		for _, col := range cols {
+			if col.Id != e.Collection.Id && col.IsAuth() && col.OAuth2Server.RootDiscovery {
+				return fmt.Errorf("only one auth collection may enable root discovery")
+			}
+		}
+	}
 	var original *Collection
 	if !e.Collection.IsNew() {
 		original = &Collection{}

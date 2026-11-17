@@ -42,6 +42,11 @@ func NewRouter(app core.App) (*router.Router[*core.RequestEvent], error) {
 		pbRouter.Route(method, "/files/{storagePath...}", sharedFileHost)
 	}
 
+	for _, prefix := range []string{"/.well-known/oauth-authorization-server", "/.well-known/openid-configuration"} {
+		pbRouter.GET(prefix+"/api/collections/{collection}/oauth2-server", oauth2ServerDiscovery)
+		pbRouter.GET(prefix, oauth2ServerRootDiscovery)
+	}
+
 	// API routes
 	apiGroup := pbRouter.Group("/api")
 	bindInstallerAPI(app, apiGroup)

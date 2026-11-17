@@ -159,6 +159,12 @@ migrate((app) => {
         "enabled": false,
         "origins": null
       },
+      "registration": {
+        "allowedRedirectHosts": null,
+        "enabled": false,
+        "rateLimit": 0
+      },
+      "rootDiscovery": false,
       "sessionDuration": 2592000
     },
     "otp": {
@@ -357,6 +363,12 @@ func init() {
 					"enabled": false,
 					"origins": null
 				},
+				"registration": {
+					"allowedRedirectHosts": null,
+					"enabled": false,
+					"rateLimit": 0
+				},
+				"rootDiscovery": false,
 				"sessionDuration": 2592000
 			},
 			"otp": {
@@ -644,6 +656,12 @@ migrate((app) => {
         "enabled": false,
         "origins": null
       },
+      "registration": {
+        "allowedRedirectHosts": null,
+        "enabled": false,
+        "rateLimit": 0
+      },
+      "rootDiscovery": false,
       "sessionDuration": 2592000
     },
     "otp": {
@@ -845,6 +863,12 @@ func init() {
 					"enabled": false,
 					"origins": null
 				},
+				"registration": {
+					"allowedRedirectHosts": null,
+					"enabled": false,
+					"rateLimit": 0
+				},
+				"rootDiscovery": false,
 				"sessionDuration": 2592000
 			},
 			"otp": {

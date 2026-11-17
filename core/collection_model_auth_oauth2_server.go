@@ -1,7 +1,11 @@
 package core
 
 import (
-	"crypto/subtle"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"net/url"
 	"regexp"
 	"slices"
@@ -10,6 +14,7 @@ import (
 	"time"
 
 	validation "github.com/pocketbase/ozzo-validation/v4"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // DefaultOAuth2ServerCodeDuration is the authorization code lifetime used
@@ -18,12 +23,25 @@ const DefaultOAuth2ServerCodeDuration int64 = 120
 
 var oauth2ServerClientIdRegex = regexp.MustCompile(`^[\w\-\.]+$`)
 
+// OAuth2ServerRegistrationConfig controls public client self-registration.
+type OAuth2ServerRegistrationConfig struct {
+	Enabled              bool     `form:"enabled" json:"enabled"`
+	AllowedRedirectHosts []string `form:"allowedRedirectHosts" json:"allowedRedirectHosts"`
+	RateLimit            int      `form:"rateLimit" json:"rateLimit"`
+}
+
 // OAuth2ServerConfig defines the options for using an auth collection
 // as an OAuth2 authorization server (authorization code grant).
 //
 // The issued access token is the regular collection auth token, so it is
 // accepted by any app instance that shares the same database.
+
 type OAuth2ServerConfig struct {
+	SigningKey string `json:"signingKey,omitempty" form:"-"`
+
+	Registration  OAuth2ServerRegistrationConfig `form:"registration" json:"registration"`
+	RootDiscovery bool                           `form:"rootDiscovery" json:"rootDiscovery"`
+
 	Enabled bool `form:"enabled" json:"enabled"`
 
 	// CodeDuration specifies how long an issued authorization code is valid (in seconds).
@@ -51,10 +69,11 @@ func (c OAuth2ServerConfig) Validate() error {
 	}
 
 	return validation.ValidateStruct(&c,
+		validation.Field(&c.Registration),
 		validation.Field(&c.CodeDuration, validation.Required, validation.Min(10), validation.Max(600)),
 		validation.Field(&c.SessionDuration, validation.When(c.SessionDuration != 0, validation.Min(int64(60)), validation.Max(int64(31536000)))), // 1min - 1y
 		// the popup sign-in doesn't need a registered client
-		validation.Field(&c.Clients, validation.When(!c.Popup.Enabled, validation.Required), validation.By(checkOAuth2ServerClients)),
+		validation.Field(&c.Clients, validation.When(!c.Popup.Enabled && !c.Registration.Enabled, validation.Required), validation.By(checkOAuth2ServerClients)),
 		validation.Field(&c.Popup),
 	)
 }
@@ -176,6 +195,10 @@ func checkOAuth2ServerPopupOrigin(value any) error {
 
 // OAuth2ServerClient defines a single client application of the collection OAuth2 server.
 type OAuth2ServerClient struct {
+	// Public clients authenticate with PKCE instead of a shared secret.
+	Public         bool `form:"public" json:"public"`
+	SelfRegistered bool `json:"-"`
+
 	// Id is the public client identifier (the "client_id" parameter).
 	Id string `form:"id" json:"id"`
 
@@ -183,7 +206,7 @@ type OAuth2ServerClient struct {
 	Name string `form:"name" json:"name"`
 
 	// Secret is the client secret used to authenticate the client at the token endpoint
-	// and to sign the OpenID Connect id_token (HS256).
+	// as a salted bcrypt hash. ID tokens use a separate RS256 key.
 	Secret string `form:"secret" json:"secret,omitempty"`
 
 	// RedirectURIs lists the exact redirect URIs allowed for the client.
@@ -193,9 +216,14 @@ type OAuth2ServerClient struct {
 // Validate makes OAuth2ServerClient validatable by implementing [validation.Validatable] interface.
 func (c OAuth2ServerClient) Validate() error {
 	return validation.ValidateStruct(&c,
-		validation.Field(&c.Id, validation.Required, validation.Length(3, 100), validation.Match(oauth2ServerClientIdRegex)),
+		validation.Field(&c.Id, validation.Required, validation.Length(3, 100), validation.Match(oauth2ServerClientIdRegex), validation.By(func(v any) error {
+			if strings.HasPrefix(c.Id, "dcr_") {
+				return validation.NewError("reserved_client_id", "The dcr_ prefix is reserved.")
+			}
+			return nil
+		})),
 		validation.Field(&c.Name, validation.Length(0, 255)),
-		validation.Field(&c.Secret, validation.Required, validation.Length(30, 255)),
+		validation.Field(&c.Secret, validation.When(c.Public, validation.Empty).Else(validation.Required, validation.Length(30, 255))),
 		validation.Field(&c.RedirectURIs, validation.Required, validation.Each(validation.By(checkOAuth2ServerRedirectURI))),
 	)
 }
@@ -207,10 +235,11 @@ func (c OAuth2ServerClient) HasRedirectURI(uri string) bool {
 
 // ValidateSecret checks the provided secret in constant time.
 func (c OAuth2ServerClient) ValidateSecret(secret string) bool {
-	if c.Secret == "" || secret == "" {
+	if c.Public || c.Secret == "" || secret == "" {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(c.Secret), []byte(secret)) == 1
+	sum := sha256.Sum256([]byte(secret))
+	return bcrypt.CompareHashAndPassword([]byte(strings.TrimPrefix(c.Secret, "$pb$")), []byte(base64.RawStdEncoding.EncodeToString(sum[:]))) == nil
 }
 
 func checkOAuth2ServerRedirectURI(value any) error {
@@ -270,6 +299,10 @@ func RedactedOAuth2ServerClients(clients []OAuth2ServerClient) []OAuth2ServerCli
 // collection never exposes the client secrets.
 func (c *OAuth2ServerConfig) RestoreSecrets(original []OAuth2ServerClient) {
 	for i := range c.Clients {
+		if c.Clients[i].Public {
+			c.Clients[i].Secret = ""
+			continue
+		}
 		if c.Clients[i].Secret != "" {
 			continue
 		}
@@ -278,4 +311,43 @@ func (c *OAuth2ServerConfig) RestoreSecrets(original []OAuth2ServerClient) {
 			c.Clients[i].Secret = existing.Secret
 		}
 	}
+}
+
+// PrepareSecrets hashes newly supplied secrets and provisions a dedicated ID-token key.
+func (c *OAuth2ServerConfig) PrepareSecrets() error {
+	for i := range c.Clients {
+		client := &c.Clients[i]
+		if client.Public {
+			client.Secret = ""
+			continue
+		}
+		if client.Secret != "" && !isOAuth2ServerSecretHash(client.Secret) {
+			sum := sha256.Sum256([]byte(client.Secret))
+			hash, err := bcrypt.GenerateFromPassword([]byte(base64.RawStdEncoding.EncodeToString(sum[:])), bcrypt.DefaultCost)
+			if err != nil {
+				return err
+			}
+			client.Secret = "$pb$" + string(hash)
+		}
+	}
+	if c.Enabled && c.SigningKey == "" {
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			return err
+		}
+		c.SigningKey = base64.StdEncoding.EncodeToString(x509.MarshalPKCS1PrivateKey(key))
+	}
+	return nil
+}
+
+func (c OAuth2ServerRegistrationConfig) Validate() error {
+	return validation.ValidateStruct(&c, validation.Field(&c.RateLimit, validation.Min(0), validation.Max(10000)))
+}
+
+func isOAuth2ServerSecretHash(secret string) bool {
+	if !strings.HasPrefix(secret, "$pb$") {
+		return false
+	}
+	_, err := bcrypt.Cost([]byte(strings.TrimPrefix(secret, "$pb$")))
+	return err == nil
 }

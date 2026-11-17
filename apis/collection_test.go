@@ -47,7 +47,7 @@ func TestCollectionsList(t *testing.T) {
 			ExpectedContent: []string{
 				`"page":1`,
 				`"perPage":30`,
-				`"totalItems":19`,
+				`"totalItems":20`,
 				`"items":[{`,
 				`"name":"` + core.CollectionNameSuperusers + `"`,
 				`"name":"` + core.CollectionNameAuthOrigins + `"`,
@@ -90,7 +90,7 @@ func TestCollectionsList(t *testing.T) {
 			ExpectedContent: []string{
 				`"page":3`,
 				`"perPage":2`,
-				`"totalItems":19`,
+				`"totalItems":20`,
 				`"items":[{`,
 				`"name":"` + core.CollectionNameMFAs + `"`,
 			},
