@@ -155,6 +155,7 @@ migrate((app) => {
       "clients": [],
       "codeDuration": 120,
       "enabled": false,
+      "issuerURL": "",
       "popup": {
         "enabled": false,
         "origins": null
@@ -359,6 +360,7 @@ func init() {
 				"clients": [],
 				"codeDuration": 120,
 				"enabled": false,
+				"issuerURL": "",
 				"popup": {
 					"enabled": false,
 					"origins": null
@@ -652,6 +654,7 @@ migrate((app) => {
       "clients": [],
       "codeDuration": 120,
       "enabled": false,
+      "issuerURL": "",
       "popup": {
         "enabled": false,
         "origins": null
@@ -859,6 +862,7 @@ func init() {
 				"clients": [],
 				"codeDuration": 120,
 				"enabled": false,
+				"issuerURL": "",
 				"popup": {
 					"enabled": false,
 					"origins": null

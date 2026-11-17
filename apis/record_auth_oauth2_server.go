@@ -239,6 +239,12 @@ func oauth2ServerAuthorizePage(e *core.RequestEvent) error {
 
 	params := oauth2ServerParamsFromQuery(e.Request.URL.Query())
 
+	// apps sharing the database sign in on the one configured app; the popup
+	// sign-in stays local since its code returns over this app's realtime
+	if target := oauth2ServerSignInRedirect(e, collection); target != "" && !params.isPopup() {
+		return e.Redirect(http.StatusFound, target)
+	}
+
 	client, authErr := params.validate(e, collection)
 	if authErr != nil {
 		return oauth2ServerAuthorizeFailure(e, collection, params, authErr)
@@ -791,7 +797,10 @@ func oauth2ServerUserInfo(e *core.RequestEvent) error {
 }
 
 func oauth2ServerIssuer(e *core.RequestEvent, collection *core.Collection) string {
-	base := strings.TrimRight(e.App.Settings().Meta.AppURL, "/")
+	base := collection.OAuth2Server.IssuerBase()
+	if base == "" {
+		base = strings.TrimRight(e.App.Settings().Meta.AppURL, "/")
+	}
 	if base == "" {
 		scheme := "http"
 		if e.IsTLS() {
@@ -1326,4 +1335,29 @@ func oauth2ServerJWKS(e *core.RequestEvent) error {
 		return err
 	}
 	return e.JSON(200, map[string]any{"keys": []any{map[string]any{"kty": "RSA", "use": "sig", "alg": "RS256", "kid": "oauth2-server", "n": base64.RawURLEncoding.EncodeToString(key.N.Bytes()), "e": "AQAB"}}})
+}
+
+// oauth2ServerSignInRedirect returns the sign-in page URL on the configured
+// issuer app when this request is served by another app, or "".
+func oauth2ServerSignInRedirect(e *core.RequestEvent, collection *core.Collection) string {
+	base := collection.OAuth2Server.IssuerBase()
+	issuerOrigin := normalizedOrigin(base)
+	if issuerOrigin == "" {
+		return ""
+	}
+	if issuerOrigin == normalizedOrigin(e.App.Settings().Meta.AppURL) {
+		return ""
+	}
+	scheme := "http"
+	if e.IsTLS() {
+		scheme = "https"
+	}
+	if issuerOrigin == normalizedOrigin(scheme+"://"+e.Request.Host) {
+		return ""
+	}
+	target := base + "/api/collections/" + url.PathEscape(collection.Name) + "/oauth2-server/authorize"
+	if q := e.Request.URL.RawQuery; q != "" {
+		target += "?" + q
+	}
+	return target
 }

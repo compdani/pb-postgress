@@ -406,6 +406,29 @@ export function oauth2ServerAccordion(collection) {
             },
             t.div(
                 { className: "col-sm-12" },
+                t.div(
+                    { className: "field" },
+                    t.label({
+                        htmlFor: uniqueId + ".issuerURL",
+                        textContent: "Sign-in app URL",
+                    }),
+                    t.input({
+                        id: uniqueId + ".issuerURL",
+                        name: "oauth2Server.issuerURL",
+                        type: "url",
+                        spellcheck: false,
+                        placeholder: "https://pocket.example.com",
+                        value: () => data.config.issuerURL || "",
+                        onchange: (e) => data.config.issuerURL = e.target.value.trim(),
+                    }),
+                ),
+                t.div(
+                    { className: "field-help" },
+                    "Public address of the app that hosts the sign-in when several apps share this database. Every app then uses it as the issuer and redirects its sign-in page there (the popup sign-in stays on each app). Leave empty to use each app's Application URL.",
+                ),
+            ),
+            t.div(
+                { className: "col-sm-12" },
                 t.label(null, "Dynamic registration (unverified public clients)"),
                 t.input({
                     type: "checkbox",

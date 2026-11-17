@@ -42,6 +42,12 @@ type OAuth2ServerConfig struct {
 	Registration  OAuth2ServerRegistrationConfig `form:"registration" json:"registration"`
 	RootDiscovery bool                           `form:"rootDiscovery" json:"rootDiscovery"`
 
+	// IssuerURL is the public base URL of the app that hosts the sign-in
+	// (eg. "https://pocket.example.com"). Apps that share the database use it
+	// for the issuer, and their hosted sign-in page redirects there, so every
+	// client signs in on that one app. Empty uses each app's Application URL.
+	IssuerURL string `form:"issuerURL" json:"issuerURL"`
+
 	Enabled bool `form:"enabled" json:"enabled"`
 
 	// CodeDuration specifies how long an issued authorization code is valid (in seconds).
@@ -69,6 +75,7 @@ func (c OAuth2ServerConfig) Validate() error {
 	}
 
 	return validation.ValidateStruct(&c,
+		validation.Field(&c.IssuerURL, validation.By(checkOAuth2ServerIssuerURL)),
 		validation.Field(&c.Registration),
 		validation.Field(&c.CodeDuration, validation.Required, validation.Min(10), validation.Max(600)),
 		validation.Field(&c.SessionDuration, validation.When(c.SessionDuration != 0, validation.Min(int64(60)), validation.Max(int64(31536000)))), // 1min - 1y
@@ -350,4 +357,21 @@ func isOAuth2ServerSecretHash(secret string) bool {
 	}
 	_, err := bcrypt.Cost([]byte(strings.TrimPrefix(secret, "$pb$")))
 	return err == nil
+}
+
+// IssuerBase returns the normalized IssuerURL (no trailing slash), or "".
+func (c OAuth2ServerConfig) IssuerBase() string {
+	return strings.TrimRight(strings.TrimSpace(c.IssuerURL), "/")
+}
+
+func checkOAuth2ServerIssuerURL(value any) error {
+	v, _ := value.(string)
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	u, err := url.Parse(strings.TrimSpace(v))
+	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return validation.NewError("validation_invalid_issuer_url", "Must be an absolute http(s) URL without query or fragment.")
+	}
+	return nil
 }

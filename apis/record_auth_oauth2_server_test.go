@@ -708,3 +708,67 @@ func TestOAuth2ServerHashMigration(t *testing.T) {
 	}
 	t.Fatal("migration missing")
 }
+
+// Apps sharing the database sign in on the one configured app: the issuer
+// uses IssuerURL and the hosted sign-in page of any other app redirects there.
+func TestOAuth2ServerIssuerURL(t *testing.T) {
+	s := newOAuth2TestServer(t)
+	users, _ := s.app.FindCollectionByNameOrId("users")
+
+	for _, bad := range []string{"ftp://main.example", "https://main.example/?x=1", "main.example", "https://u:p@main.example"} {
+		users.OAuth2Server.IssuerURL = bad
+		if err := s.app.Save(users); err == nil {
+			t.Fatalf("issuerURL %q accepted", bad)
+		}
+	}
+
+	users.OAuth2Server.IssuerURL = "https://main.example/"
+	if err := s.app.Save(users); err != nil {
+		t.Fatal(err)
+	}
+	s.app.Settings().Meta.AppURL = "https://events.example"
+	if err := s.app.Save(s.app.Settings()); err != nil {
+		t.Fatal(err)
+	}
+
+	issuer := "https://main.example/api/collections/users/oauth2-server"
+	for _, path := range []string{
+		"/api/collections/users/oauth2-server/.well-known/openid-configuration",
+		"/.well-known/oauth-authorization-server/api/collections/users/oauth2-server",
+	} {
+		res := s.do(http.MethodGet, path, nil, nil)
+		data := map[string]any{}
+		_ = json.NewDecoder(res.Body).Decode(&data)
+		res.Body.Close()
+		if data["issuer"] != issuer || data["authorization_endpoint"] != issuer+"/authorize" {
+			t.Fatalf("%s: issuer %v endpoint %v", path, data["issuer"], data["authorization_endpoint"])
+		}
+	}
+
+	// another app: the sign-in page redirects to the issuer app with the same query
+	params := s.authorizeParams(nil)
+	res := s.do(http.MethodGet, "/api/collections/users/oauth2-server/authorize?"+params.Encode(), nil, nil)
+	res.Body.Close()
+	if res.StatusCode != http.StatusFound || res.Header.Get("Location") != issuer+"/authorize?"+params.Encode() {
+		t.Fatalf("expected redirect to the issuer app, got %d %q", res.StatusCode, res.Header.Get("Location"))
+	}
+
+	// the popup sign-in is never redirected (its code returns over this app's realtime)
+	popup := url.Values{"response_type": {"code"}, "client_id": {"@popup"}, "redirect_uri": {"https://events.example/api/oauth2-redirect"}, "state": {"s"}, "code_challenge": {oauth2TestChallenge(oauth2TestVerifier)}, "code_challenge_method": {"S256"}}
+	res = s.do(http.MethodGet, "/api/collections/users/oauth2-server/authorize?"+popup.Encode(), nil, nil)
+	res.Body.Close()
+	if res.StatusCode == http.StatusFound && strings.HasPrefix(res.Header.Get("Location"), issuer) {
+		t.Fatal("popup sign-in must not be redirected to the issuer app")
+	}
+
+	// the issuer app itself serves the page
+	s.app.Settings().Meta.AppURL = "https://main.example"
+	if err := s.app.Save(s.app.Settings()); err != nil {
+		t.Fatal(err)
+	}
+	res = s.do(http.MethodGet, "/api/collections/users/oauth2-server/authorize?"+params.Encode(), nil, nil)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("issuer app must serve its sign-in page, got %d %q", res.StatusCode, res.Header.Get("Location"))
+	}
+}
