@@ -158,6 +158,7 @@ func collectionUpdate(e *core.RequestEvent) error {
 
 	collection.RestoreImmutableExternalOptions(originalExternal)
 	collection.OAuth2Server.RestoreSecrets(originalOAuth2ServerClients)
+	collection.OAuth2Server.SigningKey = originalExternal.OAuth2Server.SigningKey
 
 	event := new(core.CollectionRequestEvent)
 	event.RequestEvent = e

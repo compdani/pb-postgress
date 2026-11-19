@@ -17,6 +17,10 @@ export function oauth2ServerAccordion(collection) {
                 collection.oauth2Server.popup = { enabled: false, origins: [] };
             }
 
+            if (!collection.oauth2Server.registration) {
+                collection.oauth2Server.registration = { enabled: false, allowedRedirectHosts: [], rateLimit: 10 };
+            }
+
             if (!Array.isArray(collection.oauth2Server.clients)) {
                 collection.oauth2Server.clients = [];
             }
@@ -99,6 +103,18 @@ export function oauth2ServerAccordion(collection) {
                     { className: "col-sm-12" },
                     t.div(
                         { className: "field" },
+                        t.input({
+                            type: "checkbox",
+                            checked: () => !!client.public,
+                            onchange: (e) => {
+                                client.public = e.target.checked;
+                                client.secret = client.public ? "" : app.utils.randomSecret(40);
+                            },
+                        }),
+                        t.span(null, "Public client (requires PKCE S256; no ID token)"),
+                    ),
+                    t.div(
+                        { className: "field", hidden: () => !!client.public },
                         t.label({ htmlFor: clientId + ".secret", textContent: "Client secret" }),
                         t.input({
                             id: clientId + ".secret",
@@ -106,7 +122,8 @@ export function oauth2ServerAccordion(collection) {
                             type: "text",
                             autocomplete: "off",
                             spellcheck: false,
-                            required: () => typeof client.secret != "undefined",
+                            disabled: () => !!client.public,
+                            required: () => !client.public && typeof client.secret != "undefined",
                             placeholder: () => (typeof client.secret == "undefined" ? "* * * * * * (stored)" : ""),
                             value: () => client.secret || "",
                             oninput: (e) => (client.secret = e.target.value.trim()),
@@ -115,6 +132,7 @@ export function oauth2ServerAccordion(collection) {
                             {
                                 type: "button",
                                 className: "btn secondary transparent sm m-t-5",
+                                disabled: () => !!client.public,
                                 onclick: () => (client.secret = app.utils.randomSecret(40)),
                             },
                             t.i({ className: "ri-refresh-line", ariaHidden: true }),
@@ -122,7 +140,7 @@ export function oauth2ServerAccordion(collection) {
                         ),
                     ),
                     t.div(
-                        { className: "field-help" },
+                        { className: "field-help", hidden: () => !!client.public },
                         () => {
                             if (typeof client.secret == "undefined") {
                                 return "The stored secret is never shown again. Leave it as is to keep it.";
@@ -173,7 +191,10 @@ export function oauth2ServerAccordion(collection) {
                                         clearClientErrors(index);
                                         data.config.clients.splice(index, 1);
 
-                                        if (data.config.clients.length == 0 && !data.config.popup.enabled) {
+                                        if (
+                                            data.config.clients.length == 0 && !data.config.popup.enabled
+                                            && !data.config.registration.enabled
+                                        ) {
                                             data.config.enabled = false;
                                         }
                                     },
@@ -383,6 +404,66 @@ export function oauth2ServerAccordion(collection) {
                     ),
                 );
             },
+            t.div(
+                { className: "col-sm-12" },
+                t.div(
+                    { className: "field" },
+                    t.label({
+                        htmlFor: uniqueId + ".issuerURL",
+                        textContent: "Sign-in app URL",
+                    }),
+                    t.input({
+                        id: uniqueId + ".issuerURL",
+                        name: "oauth2Server.issuerURL",
+                        type: "url",
+                        spellcheck: false,
+                        placeholder: "https://pocket.example.com",
+                        value: () => data.config.issuerURL || "",
+                        onchange: (e) => data.config.issuerURL = e.target.value.trim(),
+                    }),
+                ),
+                t.div(
+                    { className: "field-help" },
+                    "Public address of the app that hosts the sign-in when several apps share this database. Every app then uses it as the issuer and redirects its sign-in page there (the popup sign-in stays on each app). Leave empty to use each app's Application URL.",
+                ),
+            ),
+            t.div(
+                { className: "col-sm-12" },
+                t.label(null, "Dynamic registration (unverified public clients)"),
+                t.input({
+                    type: "checkbox",
+                    checked: () => data.config.registration.enabled,
+                    onchange: (e) => {
+                        data.config.registration.enabled = e.target.checked;
+                        ensureDefaults();
+                    },
+                }),
+                t.label(null, "Allowed redirect hosts (one per line; empty allows all HTTPS hosts)"),
+                t.textarea({
+                    value: () => (data.config.registration.allowedRedirectHosts || []).join("\n"),
+                    onchange: (e) =>
+                        data.config.registration.allowedRedirectHosts = e.target.value.split("\n").map(v => v.trim())
+                            .filter(Boolean),
+                }),
+                t.label(null, "Registrations per IP per hour (0 = default 10)"),
+                t.input({
+                    type: "number",
+                    min: 0,
+                    max: 10000,
+                    value: () => data.config.registration.rateLimit,
+                    oninput: (e) => data.config.registration.rateLimit = parseInt(e.target.value, 10) || 0,
+                }),
+                t.label(null, "Serve root discovery (only one auth collection)"),
+                t.input({
+                    type: "checkbox",
+                    checked: () => data.config.rootDiscovery,
+                    onchange: (e) => data.config.rootDiscovery = e.target.checked,
+                }),
+                t.p(
+                    null,
+                    "Manage self-registered clients in the _oauth2ServerClients system collection. Delete a record or set revoked to revoke future grants and exchanges. Existing access tokens remain valid.",
+                ),
+            ),
             () => data.config.clients.map((client, index) => clientCard(client, index)),
             t.div(
                 { className: "col-sm-12" },

@@ -47,7 +47,7 @@ func TestCollectionsList(t *testing.T) {
 			ExpectedContent: []string{
 				`"page":1`,
 				`"perPage":30`,
-				`"totalItems":19`,
+				`"totalItems":20`,
 				`"items":[{`,
 				`"name":"` + core.CollectionNameSuperusers + `"`,
 				`"name":"` + core.CollectionNameAuthOrigins + `"`,
@@ -80,8 +80,8 @@ func TestCollectionsList(t *testing.T) {
 		{
 			Name:   "authorized as superuser + paging and sorting",
 			Method: http.MethodGet,
-			// page 1-2 hold the 3 newest system collections created by the
-			// latest system migrations (oauth2 codes, passkeys, passkey sessions)
+			// page 1-2 hold the 4 newest system collections created by the
+			// latest migrations (OAuth clients/codes, passkeys, passkey sessions)
 			URL: "/api/collections?page=3&perPage=2&sort=-created",
 			Headers: map[string]string{
 				"Authorization": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY",
@@ -90,9 +90,9 @@ func TestCollectionsList(t *testing.T) {
 			ExpectedContent: []string{
 				`"page":3`,
 				`"perPage":2`,
-				`"totalItems":19`,
+				`"totalItems":20`,
 				`"items":[{`,
-				`"name":"` + core.CollectionNameMFAs + `"`,
+				`"name":"` + core.CollectionNameAuthOrigins + `"`,
 			},
 			ExpectedEvents: map[string]int{
 				"*":                        0,

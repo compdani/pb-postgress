@@ -155,10 +155,17 @@ migrate((app) => {
       "clients": [],
       "codeDuration": 120,
       "enabled": false,
+      "issuerURL": "",
       "popup": {
         "enabled": false,
         "origins": null
       },
+      "registration": {
+        "allowedRedirectHosts": null,
+        "enabled": false,
+        "rateLimit": 0
+      },
+      "rootDiscovery": false,
       "sessionDuration": 2592000
     },
     "otp": {
@@ -353,10 +360,17 @@ func init() {
 				"clients": [],
 				"codeDuration": 120,
 				"enabled": false,
+				"issuerURL": "",
 				"popup": {
 					"enabled": false,
 					"origins": null
 				},
+				"registration": {
+					"allowedRedirectHosts": null,
+					"enabled": false,
+					"rateLimit": 0
+				},
+				"rootDiscovery": false,
 				"sessionDuration": 2592000
 			},
 			"otp": {
@@ -640,10 +654,17 @@ migrate((app) => {
       "clients": [],
       "codeDuration": 120,
       "enabled": false,
+      "issuerURL": "",
       "popup": {
         "enabled": false,
         "origins": null
       },
+      "registration": {
+        "allowedRedirectHosts": null,
+        "enabled": false,
+        "rateLimit": 0
+      },
+      "rootDiscovery": false,
       "sessionDuration": 2592000
     },
     "otp": {
@@ -841,10 +862,17 @@ func init() {
 				"clients": [],
 				"codeDuration": 120,
 				"enabled": false,
+				"issuerURL": "",
 				"popup": {
 					"enabled": false,
 					"origins": null
 				},
+				"registration": {
+					"allowedRedirectHosts": null,
+					"enabled": false,
+					"rateLimit": 0
+				},
+				"rootDiscovery": false,
 				"sessionDuration": 2592000
 			},
 			"otp": {

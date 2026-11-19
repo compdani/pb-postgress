@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/x509"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -29,7 +30,7 @@ import (
 // code grant (with optional PKCE S256). The issued access_token is the
 // regular collection auth token, so it is accepted by every app instance
 // that shares the same database. When the "openid" scope is requested,
-// an HS256 id_token signed with the client secret is also returned.
+// an RS256 id_token signed with a separate collection key is also returned.
 
 const (
 	oauth2ServerIdTokenDuration = time.Hour
@@ -39,6 +40,8 @@ const (
 var oauth2ServerPKCERegex = regexp.MustCompile(`^[A-Za-z0-9\-\._~]{43,128}$`)
 
 func bindRecordAuthOAuth2ServerApi(sub *router.RouterGroup[*core.RequestEvent]) {
+	sub.GET("/oauth2-server/jwks", oauth2ServerJWKS)
+	sub.POST("/oauth2-server/register", oauth2ServerRegister).Bind(BodyLimit(16384), SkipSuccessActivityLog())
 	sub.GET("/oauth2-server/authorize", oauth2ServerAuthorizePage).Bind(
 		collectionPathRateLimit("", "oauth2ServerAuthorize"),
 	)
@@ -168,7 +171,7 @@ func (p *oauth2ServerAuthorizeParams) validate(e *core.RequestEvent, collection 
 		}
 	} else {
 		var ok bool
-		client, ok = collection.OAuth2Server.GetClient(p.ClientId)
+		client, ok = findOAuth2ServerClient(e.App, collection, p.ClientId)
 		if !ok {
 			return client, &oauth2ServerAuthorizeError{code: "invalid_client", description: "Unknown or missing client_id."}
 		}
@@ -178,6 +181,9 @@ func (p *oauth2ServerAuthorizeParams) validate(e *core.RequestEvent, collection 
 		}
 	}
 
+	if client.SelfRegistered && hasOAuth2ServerPrompt(p.Prompt, "none") {
+		return client, &oauth2ServerAuthorizeError{code: "interaction_required", description: "Unverified apps require interaction.", redirect: true}
+	}
 	if p.ResponseType != "code" {
 		return client, &oauth2ServerAuthorizeError{code: "unsupported_response_type", description: "Only response_type=code is supported.", redirect: true}
 	}
@@ -196,7 +202,7 @@ func (p *oauth2ServerAuthorizeParams) validate(e *core.RequestEvent, collection 
 	}
 
 	// there is no client secret in the popup sign-in, so PKCE is required
-	if p.CodeChallenge != "" || p.CodeChallengeMethod != "" || p.isPopup() {
+	if p.CodeChallenge != "" || p.CodeChallengeMethod != "" || p.isPopup() || client.Public {
 		if p.CodeChallengeMethod != "S256" {
 			return client, &oauth2ServerAuthorizeError{code: "invalid_request", description: "Only code_challenge_method=S256 is supported.", redirect: true}
 		}
@@ -233,6 +239,12 @@ func oauth2ServerAuthorizePage(e *core.RequestEvent) error {
 
 	params := oauth2ServerParamsFromQuery(e.Request.URL.Query())
 
+	// apps sharing the database sign in on the one configured app; the popup
+	// sign-in stays local since its code returns over this app's realtime
+	if target := oauth2ServerSignInRedirect(e, collection); target != "" && !params.isPopup() {
+		return e.Redirect(http.StatusFound, target)
+	}
+
 	client, authErr := params.validate(e, collection)
 	if authErr != nil {
 		return oauth2ServerAuthorizeFailure(e, collection, params, authErr)
@@ -242,7 +254,7 @@ func oauth2ServerAuthorizePage(e *core.RequestEvent) error {
 	//  - prompt=login  -> always show the sign-in form
 	//  - prompt=none   -> complete silently (no page can be shown)
 	//  - otherwise     -> let the user choose: continue, use another account or sign out
-	if !hasOAuth2ServerPrompt(params.Prompt, "login") {
+	if !client.SelfRegistered && !hasOAuth2ServerPrompt(params.Prompt, "login") {
 		if record := readOAuth2ServerSession(e, collection); record != nil {
 			message, err := checkOAuth2ServerSignIn(e, collection, record)
 			if err != nil {
@@ -345,6 +357,12 @@ func oauth2ServerAuthorizeSubmit(e *core.RequestEvent) error {
 
 	switch form.Action {
 	case "continue":
+		// unverified (self-registered) apps must never be authorized from the
+		// remembered session alone; the page doesn't offer it, so enforce it here too
+		if client.SelfRegistered {
+			return loginFailed("Please sign in to continue to this app.")
+		}
+
 		// continue with the remembered account
 		// (the session cookie is SameSite=Lax so it is not sent with cross-site posts)
 		record := readOAuth2ServerSession(e, collection)
@@ -594,8 +612,13 @@ func oauth2ServerToken(e *core.RequestEvent) error {
 		form.ClientSecret = basicSecret
 	}
 
-	client, ok := collection.OAuth2Server.GetClient(form.ClientId)
-	if !ok || !client.ValidateSecret(form.ClientSecret) {
+	info, infoErr := e.RequestInfo()
+	if infoErr != nil {
+		return oauth2ServerTokenError(e, 400, "invalid_request", "Invalid body.")
+	}
+	_, secretProvided := info.Body["client_secret"]
+	client, ok := findOAuth2ServerClient(e.App, collection, form.ClientId)
+	if !ok || (client.Public && (hasBasic || form.ClientSecret != "" || secretProvided)) || (!client.Public && !client.ValidateSecret(form.ClientSecret)) {
 		if hasBasic {
 			e.Response.Header().Set("WWW-Authenticate", `Basic realm="oauth2"`)
 		}
@@ -643,6 +666,9 @@ func oauth2ServerToken(e *core.RequestEvent) error {
 
 	// PKCE
 	// ---
+	if client.Public && code.CodeChallenge() == "" {
+		return invalidGrant()
+	}
 	if code.CodeChallenge() != "" {
 		if !oauth2ServerPKCERegex.MatchString(form.CodeVerifier) {
 			return invalidGrant()
@@ -678,7 +704,7 @@ func oauth2ServerToken(e *core.RequestEvent) error {
 		result["scope"] = code.Scope()
 	}
 
-	if hasOAuth2ServerScope(code.Scope(), "openid") {
+	if !client.Public && hasOAuth2ServerScope(code.Scope(), "openid") {
 		idToken, err := newOAuth2ServerIdToken(e, collection, client, record, code)
 		if err != nil {
 			return e.InternalServerError("Failed to create id_token.", err)
@@ -733,7 +759,18 @@ func newOAuth2ServerIdToken(e *core.RequestEvent, collection *core.Collection, c
 		claims[k] = v
 	}
 
-	return security.NewJWT(claims, client.Secret, oauth2ServerIdTokenDuration)
+	raw, err := base64.StdEncoding.DecodeString(collection.OAuth2Server.SigningKey)
+	if err != nil {
+		return "", err
+	}
+	key, err := x509.ParsePKCS1PrivateKey(raw)
+	if err != nil {
+		return "", err
+	}
+	claims["exp"] = time.Now().Add(oauth2ServerIdTokenDuration).Unix()
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims(claims))
+	token.Header["kid"] = "oauth2-server"
+	return token.SignedString(key)
 }
 
 // -------------------------------------------------------------------
@@ -760,7 +797,10 @@ func oauth2ServerUserInfo(e *core.RequestEvent) error {
 }
 
 func oauth2ServerIssuer(e *core.RequestEvent, collection *core.Collection) string {
-	base := strings.TrimRight(e.App.Settings().Meta.AppURL, "/")
+	base := collection.OAuth2Server.IssuerBase()
+	if base == "" {
+		base = strings.TrimRight(e.App.Settings().Meta.AppURL, "/")
+	}
 	if base == "" {
 		scheme := "http"
 		if e.IsTLS() {
@@ -780,23 +820,28 @@ func oauth2ServerDiscovery(e *core.RequestEvent) error {
 
 	issuer := oauth2ServerIssuer(e, collection)
 
-	return e.JSON(http.StatusOK, map[string]any{
+	md := map[string]any{
 		"issuer":                                         issuer,
+		"jwks_uri":                                       issuer + "/jwks",
 		"authorization_endpoint":                         issuer + "/authorize",
 		"token_endpoint":                                 issuer + "/token",
 		"userinfo_endpoint":                              issuer + "/userinfo",
 		"response_types_supported":                       []string{"code"},
 		"grant_types_supported":                          []string{"authorization_code"},
 		"subject_types_supported":                        []string{"public"},
-		"id_token_signing_alg_values_supported":          []string{"HS256"},
-		"token_endpoint_auth_methods_supported":          []string{"client_secret_basic", "client_secret_post"},
+		"id_token_signing_alg_values_supported":          []string{"RS256"},
+		"token_endpoint_auth_methods_supported":          []string{"client_secret_basic", "client_secret_post", "none"},
 		"code_challenge_methods_supported":               []string{"S256"},
 		"scopes_supported":                               []string{"openid", "email", "profile"},
 		"claims_supported":                               []string{"sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "email", "email_verified", "name", "preferred_username"},
 		"authorization_response_iss_parameter_supported": true,
 		"end_session_endpoint":                           issuer + "/logout",
 		"prompt_values_supported":                        []string{"none", "login", "consent", "select_account"},
-	})
+	}
+	if collection.OAuth2Server.Registration.Enabled {
+		md["registration_endpoint"] = issuer + "/register"
+	}
+	return e.JSON(http.StatusOK, md)
 }
 
 // -------------------------------------------------------------------
@@ -804,6 +849,9 @@ func oauth2ServerDiscovery(e *core.RequestEvent) error {
 // -------------------------------------------------------------------
 
 type oauth2ServerPageData struct {
+	Unverified   bool
+	RedirectHost string
+
 	// Mode is one of "" (sign-in form), "chooseAccount", "addPasskey";
 	// ErrorTitle switches to an error page.
 	Mode string
@@ -844,6 +892,16 @@ type oauth2ServerPageData struct {
 }
 
 func oauth2ServerClientName(client core.OAuth2ServerClient) string {
+	if client.SelfRegistered {
+		hosts := []string{}
+		for _, raw := range client.RedirectURIs {
+			u, _ := url.Parse(raw)
+			if u != nil {
+				hosts = append(hosts, u.Host)
+			}
+		}
+		return client.Name + " (unverified app) — redirect host: " + strings.Join(hosts, ", ")
+	}
 	if client.Name != "" {
 		return client.Name
 	}
@@ -961,6 +1019,10 @@ func oauth2ServerIdentityLabel(collection *core.Collection) string {
 }
 
 func renderOAuth2ServerPage(e *core.RequestEvent, status int, data oauth2ServerPageData) error {
+	data.Unverified = strings.HasPrefix(data.Params.ClientId, "dcr_")
+	if u, err := url.Parse(data.Params.RedirectURI); err == nil {
+		data.RedirectHost = u.Host
+	}
 	data.ScriptNonce = security.RandomString(24)
 
 	var buf bytes.Buffer
@@ -1037,6 +1099,7 @@ form.account{margin:0 0 14px}
 {{else if eq .Mode "chooseAccount"}}
 <h1>Choose an account</h1>
 <p class="sub">to continue to <strong>{{.ClientName}}</strong></p>
+{{if .Unverified}}<p role="alert">Warning: this is an unverified app. Only sign in if you trust it. Your authorization will be sent to {{.RedirectHost}}.</p>{{end}}
 {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
 <form method="post" action="{{.FormAction}}" class="account">
 {{template "params" .Params}}
@@ -1139,6 +1202,7 @@ form.account{margin:0 0 14px}
 {{else}}
 <h1>Sign in{{if .AppName}} to {{.AppName}}{{end}}</h1>
 <p class="sub">to continue to <strong>{{.ClientName}}</strong></p>
+{{if .Unverified}}<p role="alert">Warning: this is an unverified app. Only sign in if you trust it. Your authorization will be sent to {{.RedirectHost}}.</p>{{end}}
 {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
 <div class="error" role="alert" id="pk-error" hidden></div>
 {{if .PasskeyEnabled}}
@@ -1256,3 +1320,44 @@ form.account{margin:0 0 14px}
 </main>
 </body>
 </html>`))
+
+func oauth2ServerJWKS(e *core.RequestEvent) error {
+	col, err := findOAuth2ServerCollection(e)
+	if err != nil {
+		return err
+	}
+	raw, err := base64.StdEncoding.DecodeString(col.OAuth2Server.SigningKey)
+	if err != nil {
+		return err
+	}
+	key, err := x509.ParsePKCS1PrivateKey(raw)
+	if err != nil {
+		return err
+	}
+	return e.JSON(200, map[string]any{"keys": []any{map[string]any{"kty": "RSA", "use": "sig", "alg": "RS256", "kid": "oauth2-server", "n": base64.RawURLEncoding.EncodeToString(key.N.Bytes()), "e": "AQAB"}}})
+}
+
+// oauth2ServerSignInRedirect returns the sign-in page URL on the configured
+// issuer app when this request is served by another app, or "".
+func oauth2ServerSignInRedirect(e *core.RequestEvent, collection *core.Collection) string {
+	base := collection.OAuth2Server.IssuerBase()
+	issuerOrigin := normalizedOrigin(base)
+	if issuerOrigin == "" {
+		return ""
+	}
+	if issuerOrigin == normalizedOrigin(e.App.Settings().Meta.AppURL) {
+		return ""
+	}
+	scheme := "http"
+	if e.IsTLS() {
+		scheme = "https"
+	}
+	if issuerOrigin == normalizedOrigin(scheme+"://"+e.Request.Host) {
+		return ""
+	}
+	target := base + "/api/collections/" + url.PathEscape(collection.Name) + "/oauth2-server/authorize"
+	if q := e.Request.URL.RawQuery; q != "" {
+		target += "?" + q
+	}
+	return target
+}
