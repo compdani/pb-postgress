@@ -57,3 +57,20 @@ func TestLogDBExportTruncatesData(t *testing.T) {
 		t.Fatal("did not expect truncation under the default limit")
 	}
 }
+
+func TestLogDBExportSanitizesMessage(t *testing.T) {
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	log := &core.Log{Message: "GET /php-cgi?\xadd+x=\x00y"}
+
+	export, err := log.DBExport(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := "GET /php-cgi?\uFFFDd+x=\uFFFDy"
+	if msg := export["message"].(string); msg != expected {
+		t.Fatalf("expected %q, got %q", expected, msg)
+	}
+}

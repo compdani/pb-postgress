@@ -410,6 +410,58 @@ func TestBaseAppLoggerWrites(t *testing.T) {
 	})
 }
 
+// A log that fails to insert must not take the rest of its batch with it
+// (a failed statement aborts the whole postgres transaction).
+func TestBaseAppLoggerWritesSkipFailedLog(t *testing.T) {
+	t.Parallel()
+
+	app, _ := tests.NewTestApp(t)
+	defer app.Cleanup()
+
+	if err := app.DeleteOldLogs(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	// fails the "bad" log at the db level, like an invalid value would
+	app.OnModelCreateExecute(core.LogsTableName).BindFunc(func(e *core.ModelEvent) error {
+		if e.Model.(*core.Log).Message == "bad" {
+			_, err := e.App.AuxNonconcurrentDB().NewQuery("SELECT 1/0").Execute()
+			if err == nil {
+				t.Fatal("expected the forced query to fail")
+			}
+			return err
+		}
+		return e.Next()
+	})
+
+	synctest.Test(t, func(t *testing.T) {
+		app.Settings().Logs.MaxDays = 2
+
+		app.Logger().Error("first")
+		app.Logger().Error("bad")
+		app.Logger().Error("GET /php-cgi?\xadd+x") // invalid utf-8 (from a decoded %AD)
+		for i := 0; i < logsThreshold-3; i++ {
+			app.Logger().Error("test")
+		}
+
+		// short delay for the non-blocking write goroutine
+		time.Sleep(time.Nanosecond)
+
+		assertLogsCount(t, app, logsThreshold-1)
+	})
+
+	var messages []string
+	err := app.LogQuery().Select("message").AndWhere(dbx.NotIn("message", "test")).Column(&messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(messages)
+	expected := []string{"GET /php-cgi?\uFFFDd+x", "first"}
+	if !slices.Equal(messages, expected) {
+		t.Fatalf("expected messages %q, got %q", expected, messages)
+	}
+}
+
 func TestBaseAppLoggerWritesAwaited(t *testing.T) {
 	t.Parallel()
 
