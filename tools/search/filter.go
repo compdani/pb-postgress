@@ -335,23 +335,10 @@ func resolveToken(token fexpr.Token, fieldResolver FieldResolver) (*ResolverResu
 // with a seek while the COALESCE will induce a table scan.
 type equalExpression struct {
 	dbx.Expression
-	mysqlExpression dbx.Expression
-	equal           bool
 }
 
 func (e equalExpression) Build(db *dbx.DB, params dbx.Params) string {
 	sql := e.Expression.Build(db, params)
-	if db.DriverName() == "mysql" {
-		sql = e.mysqlExpression.Build(db, params)
-		sql = strings.ReplaceAll(sql, " IS NULL", " __PB_NULL__")
-		sql = strings.ReplaceAll(sql, " = ", " <=> ")
-		sql = strings.ReplaceAll(sql, " IS ", " <=> ")
-		sql = strings.ReplaceAll(sql, " __PB_NULL__", " IS NULL")
-		if !e.equal {
-			sql = "NOT (" + sql + ")"
-		}
-		return sql
-	}
 	if db.DriverName() != "pgx" && db.DriverName() != "postgres" {
 		return sql
 	}
@@ -366,7 +353,7 @@ func (e equalExpression) Build(db *dbx.DB, params dbx.Params) string {
 	return strings.ReplaceAll(sql, " __PB_NULL__", " IS NULL")
 }
 func resolveEqualExpr(equal bool, left, right *ResolverResult) dbx.Expression {
-	return equalExpression{Expression: resolveEqualExprRaw(equal, left, right), mysqlExpression: resolveEqualExprRaw(true, left, right), equal: equal}
+	return equalExpression{Expression: resolveEqualExprRaw(equal, left, right)}
 }
 func resolveEqualExprRaw(equal bool, left, right *ResolverResult) dbx.Expression {
 	equalOp := "="
@@ -830,18 +817,13 @@ type likeComparison struct {
 // Build implements [dbx.Expression].
 //
 // SQLite's LIKE ignores (ASCII) case, and the filter syntax relies on that, so
-// the other dialects are made case-insensitive too: PostgreSQL uses ILIKE, and
-// MySQL (binary text collation) compares LOWER() of both operands.
+// PostgreSQL uses ILIKE.
 func (e likeComparison) Build(db *dbx.DB, params dbx.Params) string {
 	postgres := db.DriverName() == "pgx" || db.DriverName() == "postgres"
-	mysql := db.DriverName() == "mysql"
 
 	asText := func(r *ResolverResult) string {
 		if postgres && r.LikeAsText {
 			return "CAST(" + r.Identifier + " AS TEXT)"
-		}
-		if mysql {
-			return "LOWER(" + r.Identifier + ")"
 		}
 		return r.Identifier
 	}
@@ -862,11 +844,7 @@ func (e likeComparison) Build(db *dbx.DB, params dbx.Params) string {
 		sql = fmt.Sprintf("%s %s ('%%' || %s || '%%') ESCAPE '\\'", asText(e.left), operator, asText(e.right))
 		exprParams = e.left.Params
 	} else {
-		right := e.right.Identifier
-		if mysql {
-			right = "LOWER(" + right + ")"
-		}
-		sql = fmt.Sprintf("%s %s %s ESCAPE '\\'", asText(e.left), operator, right)
+		sql = fmt.Sprintf("%s %s %s ESCAPE '\\'", asText(e.left), operator, e.right.Identifier)
 		exprParams = mergeParams(e.left.Params, wrapLikeParams(e.right.Params))
 	}
 

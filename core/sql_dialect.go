@@ -2,32 +2,25 @@ package core
 
 import "strings"
 
+// SQLDialect identifies the SQL dialect of the app database.
+//
+// PostgreSQL is the only supported database, so [DialectPostgres] is the
+// only value.
 type SQLDialect int
 
 const (
 	DialectPostgres SQLDialect = iota
-	DialectMySQL
 )
 
 func (app *BaseApp) CollectionDialect(c *Collection) SQLDialect { return app.SQLDialect() }
-func (app *BaseApp) SQLDialect() SQLDialect {
-	if app.config.DBDriver == "mysql" {
-		return DialectMySQL
-	}
-	return DialectPostgres
-}
+func (app *BaseApp) SQLDialect() SQLDialect                     { return DialectPostgres }
+
+// Quote quotes an identifier.
 func (d SQLDialect) Quote(name string) string {
-	q := "\""
-	if d == DialectMySQL {
-		q = "`"
-	}
-	return q + strings.ReplaceAll(name, q, q+q) + q
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
-// dialectName returns the configured driver name ("postgres" or "mysql").
+// dialectName returns the database driver name.
 func (app *BaseApp) dialectName() string {
-	if app.SQLDialect() == DialectMySQL {
-		return "mysql"
-	}
 	return "postgres"
 }

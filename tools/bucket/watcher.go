@@ -27,7 +27,7 @@ type ChangeSource interface {
 }
 
 // Watcher applies _fileChanges rows to a Store. Postgres can wake it with
-// LISTEN/NOTIFY; MySQL and a quiet Postgres connection rely on polling.
+// LISTEN/NOTIFY; a quiet connection relies on polling.
 type Watcher struct {
 	Source    ChangeSource
 	Store     *Store

@@ -219,46 +219,6 @@ func TestBackupRequiresUnscopedInstance(t *testing.T) {
 	}
 }
 
-// A value that does not fit MySQL's VARCHAR(255) fails before anything
-// is changed, since MySQL schema changes cannot be rolled back.
-func TestRestoreChecksMySQLTextLength(t *testing.T) {
-	app, _ := tests.NewTestApp(t)
-	defer app.Cleanup()
-
-	if os.Getenv("PB_TEST_DB_DRIVER") != "mysql" {
-		t.Skip("MySQL only")
-	}
-
-	if err := app.CreateBackup(context.Background(), "long.zip"); err != nil {
-		t.Fatal(err)
-	}
-
-	demo1, err := app.FindCollectionByNameOrId("demo1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	entries := readBackupEntries(t, app, "long.zip")
-	recordsFile := "records/" + demo1.Id + ".jsonl"
-	lines := strings.SplitN(string(entries[recordsFile]), "\n", 2)
-	row := map[string]any{}
-	if err := json.Unmarshal([]byte(lines[0]), &row); err != nil {
-		t.Fatal(err)
-	}
-	row["text"] = strings.Repeat("x", 300)
-	first, _ := json.Marshal(row)
-	entries[recordsFile] = []byte(string(first) + "\n" + lines[1])
-	uploadZip(t, app, "long_edited.zip", entries)
-
-	before := recordCounts(t, app)
-	err = app.RestoreBackup(context.Background(), "long_edited.zip")
-	if err == nil || !strings.Contains(err.Error(), "VARCHAR(255)") {
-		t.Fatalf("expected a VARCHAR(255) error, got %v", err)
-	}
-	if after := recordCounts(t, app); after["demo1"] != before["demo1"] {
-		t.Fatal("expected the data to be unchanged")
-	}
-}
-
 // -------------------------------------------------------------------
 
 func recordCounts(t testing.TB, app core.App) map[string]int {

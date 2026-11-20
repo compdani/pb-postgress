@@ -139,7 +139,7 @@ func (c Config) withDefaults() Config {
 }
 
 func (c Config) validate() error {
-	if _, err := normalizeDriver(c.DBDriver); err != nil {
+	if err := validateDriver(c.DBDriver); err != nil {
 		return err
 	}
 	if strings.TrimSpace(c.DBDSN) == "" {

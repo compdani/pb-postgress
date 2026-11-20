@@ -8,10 +8,8 @@ import (
 	"github.com/pocketbase/pocketbase/tools/fileschema"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -30,10 +28,9 @@ type Host struct {
 	RegisteredAt time.Time
 }
 
-// DB is a Postgres or MySQL connection used for the file-host registry and
-// the _fileChanges feed. It never opens SQLite.
+// DB is the Postgres connection used for the file-host registry and the
+// _fileChanges feed.
 type DB struct {
-	driver       string
 	dsn          string
 	sql          *sql.DB
 	hostsTable   string
@@ -42,22 +39,15 @@ type DB struct {
 	changesRaw   string
 }
 
-// OpenDB connects with database/sql. driver is "postgres" or "mysql".
+// OpenDB connects with database/sql. driver must be "postgres" (or empty).
 func OpenDB(ctx context.Context, driver, dsn string) (*DB, error) {
-	norm, err := normalizeDriver(driver)
-	if err != nil {
+	if err := validateDriver(driver); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(dsn) == "" {
 		return nil, errors.New("database dsn is required")
 	}
-	openDSN := dsn
-	sqlDriver := "pgx"
-	if norm == "mysql" {
-		openDSN = normalizeMySQLDSN(dsn)
-		sqlDriver = "mysql"
-	}
-	sqlDB, err := sql.Open(sqlDriver, openDSN)
+	sqlDB, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +61,7 @@ func OpenDB(ctx context.Context, driver, dsn string) (*DB, error) {
 		_ = sqlDB.Close()
 		return nil, fmt.Errorf("database ping failed: %w", err)
 	}
-	return &DB{driver: norm, dsn: dsn, sql: sqlDB}, nil
+	return &DB{dsn: dsn, sql: sqlDB}, nil
 }
 
 func (d *DB) Close() error {
@@ -81,29 +71,15 @@ func (d *DB) Close() error {
 	return d.sql.Close()
 }
 
-func normalizeDriver(driver string) (string, error) {
+// validateDriver accepts the postgres driver names and an empty value
+// (PostgreSQL is the only supported database).
+func validateDriver(driver string) error {
 	switch strings.ToLower(strings.TrimSpace(driver)) {
-	case "postgres", "postgresql", "pgx":
-		return "postgres", nil
-	case "mysql":
-		return "mysql", nil
-	case "sqlite", "sqlite3":
-		return "", errors.New("sqlite is not supported; use postgres or mysql")
-	case "":
-		return "", errors.New("database driver is required")
+	case "", "postgres", "postgresql", "pgx":
+		return nil
 	default:
-		return "", fmt.Errorf("unsupported database driver %q", driver)
+		return fmt.Errorf("unsupported database driver %q; only postgres is supported", driver)
 	}
-}
-
-func normalizeMySQLDSN(dsn string) string {
-	if strings.Contains(dsn, "parseTime=") {
-		return dsn
-	}
-	if strings.Contains(dsn, "?") {
-		return dsn + "&parseTime=true"
-	}
-	return dsn + "?parseTime=true"
 }
 
 // EnsureSchema creates _fileHosts and _fileChanges when they are missing and
@@ -117,8 +93,8 @@ func (d *DB) EnsureSchema(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	d.hostsRaw, d.hostsTable = hosts, quoteIdent(d.driver, hosts)
-	d.changesRaw, d.changesTable = changes, quoteIdent(d.driver, changes)
+	d.hostsRaw, d.hostsTable = hosts, quoteIdent(hosts)
+	d.changesRaw, d.changesTable = changes, quoteIdent(changes)
 	return nil
 }
 
@@ -143,21 +119,12 @@ func (d *DB) Register(ctx context.Context, h Host) error {
 
 	// Serialize with other registrations and with PgBase's SetFileHost,
 	// which takes the same lock, so the check and the replace are atomic.
-	release := func() {}
-	if d.driver == "mysql" {
-		if release, err = lockFileHostsMySQL(ctx, tx); err != nil {
-			return err
-		}
-		defer release() // error paths; runs before the deferred Rollback
-	} else if _, err := tx.ExecContext(ctx, fmt.Sprintf(`LOCK TABLE %s IN EXCLUSIVE MODE`, d.hostsTable)); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`LOCK TABLE %s IN EXCLUSIVE MODE`, d.hostsTable)); err != nil {
 		return err
 	}
 
 	var other string
-	// A locking (current) read: on MySQL the named lock is released before
-	// commit, so a plain REPEATABLE READ snapshot could miss a full/s3 row
-	// whose writer has not committed yet. FOR UPDATE waits for that commit.
-	err = tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT mode FROM %s WHERE mode <> %s LIMIT 1 FOR UPDATE`, d.hostsTable, d.ph(1)), h.Mode).Scan(&other)
+	err = tx.QueryRowContext(ctx, fmt.Sprintf(`SELECT mode FROM %s WHERE mode <> %s LIMIT 1`, d.hostsTable, d.ph(1)), h.Mode).Scan(&other)
 	if err == nil {
 		return fmt.Errorf("a %q file host is already registered; remove it from _fileHosts before starting a bucket", other)
 	}
@@ -172,9 +139,6 @@ func (d *DB) Register(ctx context.Context, h Host) error {
 	if _, err := tx.ExecContext(ctx, q, h.ID, h.URL, h.Mode, h.Secret, h.RegisteredAt); err != nil {
 		return err
 	}
-	// Release on the still-open transaction; the next writer then blocks on
-	// the inserted row until this commit.
-	release()
 	return tx.Commit()
 }
 
@@ -212,12 +176,9 @@ func (d *DB) FetchAfter(ctx context.Context, afterID int64, limit int) ([]Change
 	return out, rows.Err()
 }
 
-// Notify implements ChangeSource. Postgres LISTENs on pb_file_changes and
-// reconnects after errors. MySQL returns nil so the watcher polls.
+// Notify implements ChangeSource. It LISTENs on pb_file_changes and
+// reconnects after errors.
 func (d *DB) Notify(ctx context.Context) <-chan struct{} {
-	if d.driver != "postgres" {
-		return nil
-	}
 	ch := make(chan struct{}, 1)
 	go func() {
 		defer close(ch)
@@ -277,31 +238,30 @@ func (d *DB) listenOnce(ctx context.Context, ch chan<- struct{}) error {
 
 type columnDef struct {
 	name string
-	pg   string
-	my   string
+	ddl  string
 }
 
 func hostColumns() []columnDef {
 	return []columnDef{
-		{name: "url", pg: "TEXT NOT NULL DEFAULT ''", my: "TEXT NULL"},
-		{name: "mode", pg: "VARCHAR(32) NOT NULL DEFAULT ''", my: "VARCHAR(32) NOT NULL DEFAULT ''"},
-		{name: "secret", pg: "VARCHAR(512) NOT NULL DEFAULT ''", my: "VARCHAR(512) NOT NULL DEFAULT ''"},
-		{name: "registered_at", pg: "TIMESTAMPTZ NOT NULL DEFAULT NOW()", my: "DATETIME(6) NULL"},
+		{name: "url", ddl: "TEXT NOT NULL DEFAULT ''"},
+		{name: "mode", ddl: "VARCHAR(32) NOT NULL DEFAULT ''"},
+		{name: "secret", ddl: "VARCHAR(512) NOT NULL DEFAULT ''"},
+		{name: "registered_at", ddl: "TIMESTAMPTZ NOT NULL DEFAULT NOW()"},
 	}
 }
 
 func changeColumns() []columnDef {
 	return []columnDef{
-		{name: "op", pg: "VARCHAR(16) NOT NULL DEFAULT ''", my: "VARCHAR(16) NOT NULL DEFAULT ''"},
-		{name: "collection", pg: "TEXT NOT NULL DEFAULT ''", my: "VARCHAR(255) NOT NULL DEFAULT ''"},
-		{name: "record_id", pg: "TEXT NOT NULL DEFAULT ''", my: "VARCHAR(255) NOT NULL DEFAULT ''"},
-		{name: "filename", pg: "TEXT NOT NULL DEFAULT ''", my: "VARCHAR(1024) NOT NULL DEFAULT ''"},
-		{name: "created_at", pg: "TIMESTAMPTZ NOT NULL DEFAULT NOW()", my: "DATETIME(6) NULL"},
+		{name: "op", ddl: "VARCHAR(16) NOT NULL DEFAULT ''"},
+		{name: "collection", ddl: "TEXT NOT NULL DEFAULT ''"},
+		{name: "record_id", ddl: "TEXT NOT NULL DEFAULT ''"},
+		{name: "filename", ddl: "TEXT NOT NULL DEFAULT ''"},
+		{name: "created_at", ddl: "TIMESTAMPTZ NOT NULL DEFAULT NOW()"},
 	}
 }
 
-func (d *DB) createHostsSQL(quoted string) string   { return fileschema.Hosts(d.driver, quoted) }
-func (d *DB) createChangesSQL(quoted string) string { return fileschema.Changes(d.driver, quoted) }
+func (d *DB) createHostsSQL(quoted string) string   { return fileschema.Hosts(quoted) }
+func (d *DB) createChangesSQL(quoted string) string { return fileschema.Changes(quoted) }
 
 func (d *DB) ensureTable(ctx context.Context, canonical string, create func(string) string, cols []columnDef) (string, error) {
 	name, err := d.findTable(ctx, canonical)
@@ -309,7 +269,7 @@ func (d *DB) ensureTable(ctx context.Context, canonical string, create func(stri
 		return "", err
 	}
 	if name == "" {
-		quoted := quoteIdent(d.driver, canonical)
+		quoted := quoteIdent(canonical)
 		if _, err := d.sql.ExecContext(ctx, create(quoted)); err != nil {
 			return "", err
 		}
@@ -322,7 +282,7 @@ func (d *DB) ensureTable(ctx context.Context, canonical string, create func(stri
 }
 
 func (d *DB) ensureColumns(ctx context.Context, raw string, cols []columnDef) error {
-	quoted := quoteIdent(d.driver, raw)
+	quoted := quoteIdent(raw)
 	for _, col := range cols {
 		ok, err := d.columnExists(ctx, raw, col.name)
 		if err != nil {
@@ -331,11 +291,7 @@ func (d *DB) ensureColumns(ctx context.Context, raw string, cols []columnDef) er
 		if ok {
 			continue
 		}
-		ddl := col.pg
-		if d.driver == "mysql" {
-			ddl = col.my
-		}
-		stmt := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", quoted, quoteIdent(d.driver, col.name), ddl)
+		stmt := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", quoted, quoteIdent(col.name), col.ddl)
 		if _, err := d.sql.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("add column %s.%s: %w", raw, col.name, err)
 		}
@@ -344,25 +300,12 @@ func (d *DB) ensureColumns(ctx context.Context, raw string, cols []columnDef) er
 }
 
 func (d *DB) findTable(ctx context.Context, want string) (string, error) {
-	var (
-		q    string
-		args []any
-	)
-	if d.driver == "mysql" {
-		q = `SELECT table_name FROM information_schema.tables
-			WHERE table_schema = DATABASE() AND lower(table_name) = lower(?)
-			ORDER BY CASE WHEN table_name = ? THEN 0 ELSE 1 END
-			LIMIT 1`
-		args = []any{want, want}
-	} else {
-		q = `SELECT table_name FROM information_schema.tables
-			WHERE table_schema = current_schema() AND lower(table_name) = lower($1)
-			ORDER BY CASE WHEN table_name = $1 THEN 0 ELSE 1 END
-			LIMIT 1`
-		args = []any{want}
-	}
+	q := `SELECT table_name FROM information_schema.tables
+		WHERE table_schema = current_schema() AND lower(table_name) = lower($1)
+		ORDER BY CASE WHEN table_name = $1 THEN 0 ELSE 1 END
+		LIMIT 1`
 	var name string
-	err := d.sql.QueryRowContext(ctx, q, args...).Scan(&name)
+	err := d.sql.QueryRowContext(ctx, q, want).Scan(&name)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -370,19 +313,10 @@ func (d *DB) findTable(ctx context.Context, want string) (string, error) {
 }
 
 func (d *DB) columnExists(ctx context.Context, table, column string) (bool, error) {
-	var q string
-	var args []any
-	if d.driver == "mysql" {
-		q = `SELECT 1 FROM information_schema.columns
-			WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ? LIMIT 1`
-		args = []any{table, column}
-	} else {
-		q = `SELECT 1 FROM information_schema.columns
-			WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2 LIMIT 1`
-		args = []any{table, column}
-	}
+	q := `SELECT 1 FROM information_schema.columns
+		WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2 LIMIT 1`
 	var one int
-	err := d.sql.QueryRowContext(ctx, q, args...).Scan(&one)
+	err := d.sql.QueryRowContext(ctx, q, table, column).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -393,42 +327,9 @@ func (d *DB) columnExists(ctx context.Context, table, column string) (bool, erro
 }
 
 func (d *DB) ph(n int) string {
-	if d.driver == "mysql" {
-		return "?"
-	}
 	return fmt.Sprintf("$%d", n)
 }
 
-func quoteIdent(driver, name string) string {
-	if driver == "mysql" {
-		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
-	}
+func quoteIdent(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
-}
-
-// FileHostsLockName prefixes the MySQL named lock that serializes writers of
-// _fileHosts (the bucket's Register and PgBase's SetFileHost). Named locks
-// are server-wide, so the current database name is appended; both sides build
-// the name the same way in SQL.
-const FileHostsLockName = "pb_file_hosts:"
-
-// lockFileHostsMySQL takes the named lock on the transaction's connection.
-// A row lock cannot do this: on an empty table MySQL's gap locks are shared,
-// so two first registrations deadlock instead of waiting. The lock belongs to
-// the connection, so release must run while the transaction is still open
-// (before Commit or Rollback), or the pooled connection keeps it.
-func lockFileHostsMySQL(ctx context.Context, tx *sql.Tx) (func(), error) {
-	var got sql.NullInt64
-	if err := tx.QueryRowContext(ctx, "SELECT GET_LOCK(CONCAT(?, DATABASE()), 30)", FileHostsLockName).Scan(&got); err != nil {
-		return nil, err
-	}
-	if !got.Valid || got.Int64 != 1 {
-		return nil, errors.New("timed out waiting for the _fileHosts lock")
-	}
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			_, _ = tx.ExecContext(context.Background(), "SELECT RELEASE_LOCK(CONCAT(?, DATABASE()))", FileHostsLockName)
-		})
-	}, nil
 }

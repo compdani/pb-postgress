@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json"
 	"sort"
 	"strings"
@@ -17,10 +18,8 @@ var (
 const LogsTableName = "_logs"
 
 const (
-	defaultMaxLogDataSize = 16 << 10 // ~16kb
-	// the _logs.message column is VARCHAR(255) on PostgreSQL/MySQL; a longer
-	// value fails the insert and aborts the whole batch transaction
-	defaultMaxLogMessageSize = 255 // characters
+	defaultMaxLogDataSize    = 16 << 10 // ~16kb
+	defaultMaxLogMessageSize = 8000     // characters
 )
 
 type Log struct {
@@ -82,9 +81,33 @@ func (m *Log) DBExport(app App) (map[string]any, error) {
 		}
 	}
 
-	result["data"] = types.JSONRaw(rawData)
+	result["data"] = types.JSONRaw(replaceJSONNul(rawData))
 
 	return result, nil
+}
+
+// replaceJSONNul replaces the \u0000 escapes of the encoded json with
+// \ufffd, since a jsonb column rejects them. The escapes are scanned in
+// pairs, so an escaped backslash followed by "u0000" is left unchanged.
+func replaceJSONNul(raw []byte) []byte {
+	if !bytes.Contains(raw, []byte(`\u0000`)) {
+		return raw
+	}
+	out := make([]byte, 0, len(raw))
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '\\' || i+1 >= len(raw) {
+			out = append(out, raw[i])
+			continue
+		}
+		if bytes.HasPrefix(raw[i:], []byte(`\u0000`)) {
+			out = append(out, `\ufffd`...)
+			i += 5
+			continue
+		}
+		out = append(out, raw[i], raw[i+1])
+		i++
+	}
+	return out
 }
 
 // truncateLogData keeps as many whole top-level entries (in key order)

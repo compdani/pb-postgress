@@ -380,12 +380,9 @@ func TestLikeParamsWrapping(t *testing.T) {
 
 	expectedQuery := `SELECT * WHERE ([[test1]] LIKE '%abc%' ESCAPE '\' OR [[test2]] LIKE 'ab%c' ESCAPE '\' OR [[test3]] LIKE '%ab\%c%' ESCAPE '\' OR [[test4]] LIKE '%ab\%c' ESCAPE '\' OR [[test5]] LIKE 'ab\\%c' ESCAPE '\' OR [[test6]] LIKE '%ab\\\%c%' ESCAPE '\' OR [[test7]] LIKE '%ab\_c%' ESCAPE '\' OR [[test8]] LIKE '%ab\_c%' ESCAPE '\' OR [[test9]] LIKE '%ab_c' ESCAPE '\' OR [[test10]] LIKE '%ab\\c%' ESCAPE '\' OR [[test11]] LIKE '%\_ab\\c\_%' ESCAPE '\' OR [[test12]] LIKE 'ab\c%' ESCAPE '\' OR [[test13]] LIKE '%a`
 	expectedQuery += "\n" + `b\\%' ESCAPE '\')`
-	// "~" is case-insensitive everywhere: ILIKE on PostgreSQL, LOWER() on MySQL.
-	switch driver {
-	case "pgx":
+	// "~" is case-insensitive: ILIKE on PostgreSQL.
+	if driver == "pgx" {
 		expectedQuery = strings.ReplaceAll(expectedQuery, " LIKE ", " ILIKE ")
-	case "mysql":
-		expectedQuery = regexp.MustCompile(`(\[\[test\d+\]\]) LIKE ('[^']*') ESCAPE`).ReplaceAllString(expectedQuery, "LOWER($1) LIKE LOWER($2) ESCAPE")
 	}
 	if expectedQuery != calledQueries[0] {
 		t.Fatalf("Expected query \n%s, \ngot \n%s", expectedQuery, calledQueries[0])

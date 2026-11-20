@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -203,20 +202,12 @@ func (app *BaseApp) restoreFromSource(ctx context.Context, src backupSource, bac
 		return app.restoreData(ctx, txApp, src, plan)
 	}
 
-	if app.SQLDialect() == DialectPostgres {
-		err = app.RunInTransaction(func(txApp App) error {
-			if err := schema(txApp); err != nil {
-				return err
-			}
-			return data(txApp)
-		})
-	} else {
-		// MySQL commits DDL implicitly, so only the data step is atomic.
-		err = app.RunInTransaction(schema)
-		if err == nil {
-			err = app.RunInTransaction(data)
+	err = app.RunInTransaction(func(txApp App) error {
+		if err := schema(txApp); err != nil {
+			return err
 		}
-	}
+		return data(txApp)
+	})
 	if err != nil {
 		// keep a failed restore retryable
 		if previousScope != nil {
@@ -307,9 +298,6 @@ func (app *BaseApp) planRestore(ctx context.Context, src backupSource, opts Rest
 			continue
 		}
 		plan.origin[c.Id] = &orig
-		if err := app.checkRestorableIndexes(c); err != nil {
-			return nil, err
-		}
 		if c.IsView() {
 			if plan.viewFallback {
 				view := &restoreView{data: data, id: c.Id, name: c.Name, original: c.ViewQuery}
@@ -389,7 +377,6 @@ func (app *BaseApp) planRestore(ctx context.Context, src backupSource, opts Rest
 
 	// Decode every record now so a bad value fails before anything changes.
 	for _, c := range plan.collections {
-		varchar := app.varcharColumns(c)
 		err := src.Rows(plan.origin[c.Id], func(row dbx.NullStringMap) error {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -401,7 +388,7 @@ func (app *BaseApp) planRestore(ctx context.Context, src backupSource, opts Rest
 			if record.Id == "" {
 				return errors.New("a record has no id")
 			}
-			return checkVarcharValues(record, varchar)
+			return nil
 		})
 		if err != nil {
 			return nil, fmt.Errorf("collection %q: %w", c.Name, err)
@@ -594,76 +581,6 @@ func (app *BaseApp) keepMissingCollections(plan *restorePlan, all bool) error {
 		plan.rawCollections = append(plan.rawCollections, data)
 	}
 	return nil
-}
-
-// checkRestorableIndexes rejects indexes this database cannot create, so
-// MySQL fails before its non-transactional schema changes start.
-func (app *BaseApp) checkRestorableIndexes(c *Collection) error {
-	if app.SQLDialect() != DialectMySQL {
-		return nil
-	}
-	for _, raw := range c.Indexes {
-		idx := dbutils.ParseIndex(raw)
-		if !idx.IsValid() {
-			continue // reported by the collection validator
-		}
-		if _, err := indexCreateSQL(app, idx); err != nil {
-			return fmt.Errorf("collection %q index %q: %w", c.Name, idx.IndexName, err)
-		}
-	}
-	return nil
-}
-
-// varcharColumns lists the fields stored as VARCHAR(255) on MySQL.
-func (app *BaseApp) varcharColumns(c *Collection) []string {
-	if app.SQLDialect() != DialectMySQL {
-		return nil
-	}
-	names := []string{}
-	for _, f := range c.Fields {
-		if f.GetName() != FieldNameId && strings.Contains(f.ColumnType(app), "VARCHAR(255)") {
-			names = append(names, f.GetName())
-		}
-	}
-	return names
-}
-
-func checkVarcharValues(record *Record, fields []string) error {
-	if len(fields) == 0 {
-		return nil
-	}
-	values, err := record.dbExport()
-	if err != nil {
-		return err
-	}
-	for _, name := range fields {
-		s, err := driverString(values[name])
-		if err != nil {
-			return err
-		}
-		if n := len([]rune(s)); n > mysqlVarcharMax {
-			return fmt.Errorf("record %q field %q has %d characters; MySQL stores this field as VARCHAR(%d) (set a larger max on the field before restoring)", record.Id, name, n, mysqlVarcharMax)
-		}
-	}
-	return nil
-}
-
-func driverString(v any) (string, error) {
-	if valuer, ok := v.(driver.Valuer); ok {
-		dv, err := valuer.Value()
-		if err != nil {
-			return "", err
-		}
-		v = dv
-	}
-	switch s := v.(type) {
-	case string:
-		return s, nil
-	case []byte:
-		return string(s), nil
-	default:
-		return "", nil
-	}
 }
 
 // restoreFiles copies the files of the collections in byOrigin (backup
@@ -901,9 +818,8 @@ func (app *BaseApp) importViewsWithFallback(txApp App, views []*restoreView) Res
 	return report
 }
 
-// tryImportView imports one view and undoes a failed attempt: PostgreSQL
-// rolls back to a savepoint; MySQL (implicit DDL commits) removes the view
-// and its collection row if they were created.
+// tryImportView imports one view and undoes a failed attempt by rolling
+// back to a savepoint.
 func (app *BaseApp) tryImportView(txApp App, v *restoreView) (err error) {
 	// ImportCollections may modify the map it is given.
 	encoded, err := json.Marshal(v.data)
@@ -915,29 +831,21 @@ func (app *BaseApp) tryImportView(txApp App, v *restoreView) (err error) {
 		return err
 	}
 
-	if app.SQLDialect() == DialectPostgres {
-		savepoint := "pb_restore_view"
-		if _, err := txApp.DB().NewQuery("SAVEPOINT " + savepoint).Execute(); err != nil {
-			return err
+	savepoint := "pb_restore_view"
+	if _, err := txApp.DB().NewQuery("SAVEPOINT " + savepoint).Execute(); err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			if _, rbErr := txApp.DB().NewQuery("ROLLBACK TO SAVEPOINT " + savepoint).Execute(); rbErr != nil {
+				err = errors.Join(err, rbErr)
+			}
 		}
-		defer func() {
-			if err != nil {
-				if _, rbErr := txApp.DB().NewQuery("ROLLBACK TO SAVEPOINT " + savepoint).Execute(); rbErr != nil {
-					err = errors.Join(err, rbErr)
-				}
-			}
-			if _, relErr := txApp.DB().NewQuery("RELEASE SAVEPOINT " + savepoint).Execute(); relErr != nil {
-				err = errors.Join(err, relErr)
-			}
-		}()
-		return txApp.ImportCollections([]map[string]any{data}, false)
-	}
-
-	if err = txApp.ImportCollections([]map[string]any{data}, false); err != nil {
-		_, delErr := txApp.DB().Delete((&Collection{}).TableName(), dbx.HashExp{"id": v.id}).Execute()
-		return errors.Join(err, delErr, txApp.DeleteView(v.name))
-	}
-	return nil
+		if _, relErr := txApp.DB().NewQuery("RELEASE SAVEPOINT " + savepoint).Execute(); relErr != nil {
+			err = errors.Join(err, relErr)
+		}
+	}()
+	return txApp.ImportCollections([]map[string]any{data}, false)
 }
 
 // localCollectionFor returns the collection of this database a backup

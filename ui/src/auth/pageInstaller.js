@@ -325,27 +325,8 @@ function databaseStep(data, testDb, connectDb) {
             className: "grid installer-form",
             onsubmit: connectDb,
         },
-        t.div({ className: "col-12 txt-center" }, "Connect this instance to PostgreSQL or MySQL."),
+        t.div({ className: "col-12 txt-center" }, "Connect this instance to PostgreSQL."),
         errorAlert(data),
-        t.div(
-            { className: "col-12" },
-            t.div(
-                { className: "field" },
-                t.label({ htmlFor: "installer_driver" }, "Database driver"),
-                t.select(
-                    {
-                        id: "installer_driver",
-                        name: "driver",
-                        required: true,
-                        disabled: () => data.isBusy,
-                        value: () => data.driver,
-                        onchange: (e) => (data.driver = e.target.value),
-                    },
-                    t.option({ value: "postgres" }, "PostgreSQL"),
-                    t.option({ value: "mysql" }, "MySQL"),
-                ),
-            ),
-        ),
         t.div(
             { className: "col-12" },
             t.div(
@@ -358,10 +339,7 @@ function databaseStep(data, testDb, connectDb) {
                     required: true,
                     autocomplete: "off",
                     disabled: () => data.isBusy,
-                    placeholder: () =>
-                        data.driver === "mysql"
-                            ? "user:password@tcp(127.0.0.1:3306)/pgbase"
-                            : "postgres://user:password@127.0.0.1:5432/pgbase?sslmode=disable",
+                    placeholder: "postgres://user:password@127.0.0.1:5432/pgbase?sslmode=disable",
                     value: () => data.dsn,
                     oninput: (e) => (data.dsn = e.target.value),
                 }),

@@ -14,11 +14,7 @@ import (
 func ensureNoTempViews(app core.App, t *testing.T) {
 	var total int
 
-	schema := "current_schema()"
-	if app.SQLDialect() == core.DialectMySQL {
-		schema = "DATABASE()"
-	}
-	err := app.DB().NewQuery("SELECT count(*) FROM information_schema.views WHERE table_schema=" + schema + " AND table_name LIKE {:pattern}").Bind(dbx.Params{"pattern": "_temp_%"}).Row(&total)
+	err := app.DB().NewQuery("SELECT count(*) FROM information_schema.views WHERE table_schema=current_schema() AND table_name LIKE {:pattern}").Bind(dbx.Params{"pattern": "_temp_%"}).Row(&total)
 
 	if err != nil {
 		t.Fatalf("Failed to check for temp views: %v", err)
@@ -48,10 +44,6 @@ func TestDeleteView(t *testing.T) {
 
 	for i, s := range scenarios {
 		err := app.DeleteView(s.viewName)
-		if s.viewName == "demo1" && app.SQLDialect() == core.DialectMySQL {
-			s.expectError = false
-		}
-
 		hasErr := err != nil
 		if hasErr != s.expectError {
 			t.Errorf("[%d - %q] Expected hasErr %v, got %v (%v)", i, s.viewName, s.expectError, hasErr, err)

@@ -136,10 +136,9 @@ func TestBucketProcessFileLifecycle(t *testing.T) {
 }
 
 // Concurrent bucket registrations leave exactly one _fileHosts row, and a
-// bucket never replaces a full host registered by PgBase. On MySQL the
-// concurrent part reproduces the empty-table deadlock without the named lock;
-// on PostgreSQL the transactions are too short to collide reliably, so there
-// it is a smoke check and LOCK TABLE is what guarantees it.
+// bucket never replaces a full host registered by PgBase. The transactions
+// are too short to collide reliably, so this is a smoke check and LOCK TABLE
+// is what guarantees it.
 func TestFileHostRegistrationIsSerialized(t *testing.T) {
 	cfg := tests.NewDatabaseConfig(t)
 	app := core.NewBaseApp(cfg)

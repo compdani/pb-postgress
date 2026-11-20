@@ -7843,7 +7843,7 @@ namespace core {
  interface authIdentityExpression {
   /**
    * AuthIdentityExpression uses the same expression as the configured unique
-   * index, including the optional-email functional index on MySQL.
+   * index.
    */
   (app: App, index: dbutils.Index, field: string, parameter: string, value: any): dbx.Expression
  }
@@ -8674,7 +8674,7 @@ namespace core {
    * S3 and remote file hosts are expected to keep their own copies.
    *
    * Backups are created on demand only. Scheduled protection belongs to the
-   * PostgreSQL/MySQL server (base backups, PITR, binlogs, managed snapshots).
+   * PostgreSQL server (base backups, PITR, managed snapshots).
    */
   createBackup(ctx: context.Context, name: string): void
  }
@@ -8685,16 +8685,15 @@ namespace core {
    *
    * Two archive types are accepted:
    * ```
-   *   - a portable backup created by [BaseApp.CreateBackup] on PostgreSQL or MySQL;
+   *   - a portable backup created by [BaseApp.CreateBackup];
    *   - a standard PocketBase backup (a pb_data zip with data.db), from
    *     PocketBase v0.23.0 through v0.39.x (see [PocketBaseImportVersions]).
    * ```
    *
    * The archive is fully read and checked before anything is changed. Files
    * are copied into the configured file storage first, then collections,
-   * records, settings and migrations are replaced. On PostgreSQL that second
-   * step is one transaction; on MySQL schema changes commit implicitly, so
-   * only the record data is atomic.
+   * records, settings and migrations are replaced. That second step is one
+   * transaction.
    *
    * The instance's file mode, file host, S3 storage and backups settings, and
    * instance scopes are kept. Superusers and their sessions come from the
@@ -14881,7 +14880,8 @@ namespace core {
  }
  interface executeSchema {
   /**
-   * ExecuteSchema executes individual DDL statements without enabling multiStatements on MySQL connections.
+   * ExecuteSchema executes the semicolon separated DDL statements one by one
+   * (the extended query protocol runs a single statement per query).
    */
   (app: App, sql: string): void
  }
@@ -15079,7 +15079,7 @@ namespace core {
  /**
   * BackupsConfig configures where on-demand backups are stored.
   *
-  * There are no scheduled backups: the PostgreSQL/MySQL server is
+  * There are no scheduled backups: the PostgreSQL server is
   * responsible for regular database backups.
   */
  interface BackupsConfig {

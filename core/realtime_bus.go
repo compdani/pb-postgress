@@ -99,23 +99,6 @@ type realtimeBusEvent struct {
 
 // InitRealtimeBus creates the tables of the realtime bus.
 func InitRealtimeBus(app App) error {
-	ba := asBaseApp(app)
-
-	if ba.SQLDialect() == DialectMySQL {
-		return ExecuteSchema(app, "CREATE TABLE IF NOT EXISTS {{_realtimeEvents}} ("+
-			"[[boot]] VARCHAR(64) NOT NULL, "+
-			"[[seq]] BIGINT NOT NULL, "+
-			"[[collection_id]] VARCHAR(255) NOT NULL, "+
-			"[[record_id]] VARCHAR(255) NOT NULL, "+
-			"[[action]] VARCHAR(16) NOT NULL, "+
-			"[[created_at]] DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6), "+
-			"PRIMARY KEY ([[boot]], [[seq]]));"+
-			"CREATE INDEX IF NOT EXISTS idx_realtime_events_created ON {{_realtimeEvents}} ([[created_at]]);"+
-			"CREATE TABLE IF NOT EXISTS {{_realtimeBoots}} ("+
-			"[[boot]] VARCHAR(64) NOT NULL PRIMARY KEY, "+
-			"[[beat]] DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6))")
-	}
-
 	return ExecuteSchema(app, "CREATE TABLE IF NOT EXISTS {{_realtimeEvents}} ("+
 		"[[boot]] VARCHAR(64) NOT NULL, "+
 		"[[seq]] BIGINT NOT NULL, "+
@@ -296,13 +279,8 @@ func (app *BaseApp) signalRealtimeGap() {
 
 // registerRealtimeBoot lists this process in _realtimeBoots, so the other instances poll its events.
 func (s *cacheSync) registerRealtimeBoot() error {
-	now := "NOW()"
-	if s.app.SQLDialect() == DialectMySQL {
-		now = "CURRENT_TIMESTAMP(6)"
-	}
-
 	_, err := s.app.NonconcurrentDB().
-		NewQuery("INSERT INTO {{_realtimeBoots}} ([[boot]], [[beat]]) VALUES ({:boot}, " + now + ")").
+		NewQuery("INSERT INTO {{_realtimeBoots}} ([[boot]], [[beat]]) VALUES ({:boot}, NOW())").
 		Bind(dbx.Params{"boot": s.boot()}).
 		Execute()
 
@@ -321,13 +299,8 @@ func (s *cacheSync) unregisterRealtimeBoot() {
 }
 
 func (s *cacheSync) heartbeatRealtimeBoot() {
-	now := "NOW()"
-	if s.app.SQLDialect() == DialectMySQL {
-		now = "CURRENT_TIMESTAMP(6)"
-	}
-
 	if res, err := s.app.NonconcurrentDB().
-		NewQuery("UPDATE {{_realtimeBoots}} SET [[beat]] = " + now + " WHERE [[boot]] = {:boot}").
+		NewQuery("UPDATE {{_realtimeBoots}} SET [[beat]] = NOW() WHERE [[boot]] = {:boot}").
 		Bind(dbx.Params{"boot": s.boot()}).
 		Execute(); err == nil {
 		if n, _ := res.RowsAffected(); n == 0 {
@@ -582,14 +555,8 @@ func (s *cacheSync) callRealtimeHook(storeKey string) {
 func (s *cacheSync) pruneRealtime() {
 	seconds := strconv.Itoa(int(RealtimeBusRetention.Seconds()))
 
-	var eventsQuery, bootsQuery string
-	if s.app.SQLDialect() == DialectMySQL {
-		eventsQuery = "DELETE FROM {{_realtimeEvents}} WHERE [[created_at]] < (NOW(6) - INTERVAL " + seconds + " SECOND) LIMIT 1000"
-		bootsQuery = "DELETE FROM {{_realtimeBoots}} WHERE [[beat]] < (NOW(6) - INTERVAL " + seconds + " SECOND)"
-	} else {
-		eventsQuery = "DELETE FROM {{_realtimeEvents}} WHERE ([[boot]], [[seq]]) IN (SELECT [[boot]], [[seq]] FROM {{_realtimeEvents}} WHERE [[created_at]] < (NOW() - INTERVAL '" + seconds + " seconds') LIMIT 1000)"
-		bootsQuery = "DELETE FROM {{_realtimeBoots}} WHERE [[beat]] < (NOW() - INTERVAL '" + seconds + " seconds')"
-	}
+	eventsQuery := "DELETE FROM {{_realtimeEvents}} WHERE ([[boot]], [[seq]]) IN (SELECT [[boot]], [[seq]] FROM {{_realtimeEvents}} WHERE [[created_at]] < (NOW() - INTERVAL '" + seconds + " seconds') LIMIT 1000)"
+	bootsQuery := "DELETE FROM {{_realtimeBoots}} WHERE [[beat]] < (NOW() - INTERVAL '" + seconds + " seconds')"
 
 	for i := 0; i < 20; i++ {
 		res, err := s.app.NonconcurrentDB().NewQuery(eventsQuery).Execute()

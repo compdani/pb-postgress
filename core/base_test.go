@@ -64,7 +64,7 @@ func TestBaseAppBootstrap(t *testing.T) {
 
 	app := core.NewBaseApp(core.BaseAppConfig{
 		DataDir: testDataDir,
-		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: testDriver(),
+		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: "postgres",
 	})
 	defer app.ClearBootstrap()
 
@@ -141,7 +141,7 @@ func TestNewBaseAppTx(t *testing.T) {
 
 	app := core.NewBaseApp(core.BaseAppConfig{
 		DataDir: testDataDir,
-		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: testDriver(),
+		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: "postgres",
 	})
 	defer app.ClearBootstrap()
 
@@ -216,7 +216,7 @@ func TestBaseAppNewFilesystem(t *testing.T) {
 
 	app := core.NewBaseApp(core.BaseAppConfig{
 		DataDir: testDataDir,
-		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: testDriver(),
+		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: "postgres",
 	})
 	defer app.ClearBootstrap()
 
@@ -246,7 +246,7 @@ func TestBaseAppNewFilesystemForCollection(t *testing.T) {
 
 	app := core.NewBaseApp(core.BaseAppConfig{
 		DataDir: testDataDir,
-		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: testDriver(),
+		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: "postgres",
 	})
 	defer app.ResetBootstrapState()
 
@@ -311,7 +311,7 @@ func TestBaseAppNewBackupsFilesystem(t *testing.T) {
 
 	app := core.NewBaseApp(core.BaseAppConfig{
 		DataDir: testDataDir,
-		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: testDriver(),
+		DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: "postgres",
 	})
 	defer app.ClearBootstrap()
 
@@ -593,7 +593,7 @@ func TestBaseAppRefreshSettingsLoggerMinLevelEnabled(t *testing.T) {
 
 			app := core.NewBaseApp(core.BaseAppConfig{
 				DataDir: testDataDir,
-				DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: testDriver(),
+				DBDSN:   tests.NewDatabaseConfig(t).DBDSN, DBDriver: "postgres",
 				IsDev: s.isDev,
 			})
 			defer app.ClearBootstrap()
@@ -794,11 +794,4 @@ func TestBaseAppTriggerOnTerminate(t *testing.T) {
 	app.OnTerminate().Trigger(event)
 	app.OnTerminate().Trigger(event)
 	app.OnTerminate().Trigger(event)
-}
-
-func testDriver() string {
-	if d := os.Getenv("PB_TEST_DB_DRIVER"); d != "" {
-		return d
-	}
-	return "postgres"
 }

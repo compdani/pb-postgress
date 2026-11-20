@@ -210,7 +210,7 @@ func (pb *PocketBase) Execute() error {
 // eagerParseFlags parses the global app flags before calling pb.RootCmd.Execute().
 // so we can have all PgBase flags ready for use on initialization.
 func (pb *PocketBase) eagerParseFlags(config *Config) error {
-	pb.RootCmd.PersistentFlags().StringVar(&config.DBDriver, "dbDriver", config.DBDriver, "database driver (postgres or mysql; PB_DB_DRIVER)")
+	pb.RootCmd.PersistentFlags().StringVar(&config.DBDriver, "dbDriver", config.DBDriver, "database driver; only postgres is supported and it is the default (PB_DB_DRIVER)")
 	pb.RootCmd.PersistentFlags().StringVar(&config.DBDSN, "dbDSN", config.DBDSN, "database connection string (PB_DB_DSN)")
 	pb.RootCmd.PersistentFlags().StringVar(
 		&pb.dataDirFlag,

@@ -21,11 +21,7 @@ import (
 // NB! Be aware that this method is vulnerable to SQL injection and the
 // "dangerousViewName" argument must come only from trusted input!
 func (app *BaseApp) DeleteView(dangerousViewName string) error {
-	sql := fmt.Sprintf("DROP VIEW IF EXISTS {{%s}}", dangerousViewName)
-	if app.SQLDialect() == DialectPostgres {
-		sql += " CASCADE"
-	}
-	_, err := app.DB().NewQuery(sql).Execute()
+	_, err := app.DB().NewQuery(fmt.Sprintf("DROP VIEW IF EXISTS {{%s}} CASCADE", dangerousViewName)).Execute()
 
 	return err
 }
@@ -37,7 +33,7 @@ func (app *BaseApp) DeleteView(dangerousViewName string) error {
 func (app *BaseApp) SaveView(dangerousViewName string, dangerousSelectQuery string) (err error) {
 	// PostgreSQL errors abort the transaction, including when callers discard a
 	// failed introspection. Isolate the DDL so its failure is recoverable.
-	if _, nested := app.DB().(*dbx.Tx); nested && app.SQLDialect() == DialectPostgres {
+	if _, nested := app.DB().(*dbx.Tx); nested {
 		name := "pb_view_" + security.RandomString(10)
 		if _, err = app.DB().NewQuery("SAVEPOINT " + name).Execute(); err != nil {
 			return err

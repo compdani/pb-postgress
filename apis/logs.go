@@ -6,7 +6,6 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"github.com/pocketbase/pocketbase/tools/router"
 	"github.com/pocketbase/pocketbase/tools/search"
 )
@@ -30,7 +29,7 @@ var logFilterFields = []string{
 }
 
 // logFieldResolver adds a portable "@rowid" sort for the logs table
-// (PostgreSQL and MySQL have no SQLite-style _rowid_ column).
+// (PostgreSQL has no SQLite-style _rowid_ column).
 type logFieldResolver struct {
 	*search.SimpleFieldResolver
 }
@@ -68,9 +67,6 @@ func (r *logStatsFieldResolver) Resolve(field string) (*search.ResolverResult, e
 
 func logsList(e *core.RequestEvent) error {
 	fieldResolver := &logFieldResolver{search.NewSimpleFieldResolver(logFilterFields...)}
-	if e.App.SQLDialect() == core.DialectMySQL {
-		fieldResolver.JSONExtract = dbutils.JSONExtractMySQL
-	}
 
 	result, err := search.NewProvider(fieldResolver).
 		Query(e.App.AuxModelQuery(&core.Log{})).
@@ -84,11 +80,7 @@ func logsList(e *core.RequestEvent) error {
 }
 
 func logsStats(e *core.RequestEvent) error {
-	base := search.NewSimpleFieldResolver(logFilterFields...)
-	if e.App.SQLDialect() == core.DialectMySQL {
-		base.JSONExtract = dbutils.JSONExtractMySQL
-	}
-	fieldResolver := &logStatsFieldResolver{base}
+	fieldResolver := &logStatsFieldResolver{search.NewSimpleFieldResolver(logFilterFields...)}
 
 	filter := e.Request.URL.Query().Get(search.FilterQueryParam)
 

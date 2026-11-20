@@ -292,20 +292,18 @@ func recordCreate(responseWriteAfterTx bool, optFinalizer func(data any) error) 
 				param = "__pb_create__" + k
 				dummyParams[param] = v
 				valueExpr := "{:" + param + "}"
-				if e.App.SQLDialect() == core.DialectPostgres {
-					typ := "TEXT"
-					if f := collection.Fields.GetByName(k); f != nil {
-						switch f.Type() {
-						case core.FieldTypeNumber:
-							typ = "DOUBLE PRECISION"
-						case core.FieldTypeBool:
-							typ = "BOOLEAN"
-						case core.FieldTypeJSON:
-							typ = "JSONB"
-						}
+				typ := "TEXT"
+				if f := collection.Fields.GetByName(k); f != nil {
+					switch f.Type() {
+					case core.FieldTypeNumber:
+						typ = "DOUBLE PRECISION"
+					case core.FieldTypeBool:
+						typ = "BOOLEAN"
+					case core.FieldTypeJSON:
+						typ = "JSONB"
 					}
-					valueExpr = "CAST(" + valueExpr + " AS " + typ + ")"
 				}
+				valueExpr = "CAST(" + valueExpr + " AS " + typ + ")"
 				selects = append(selects, valueExpr+" AS [["+k+"]]")
 			}
 

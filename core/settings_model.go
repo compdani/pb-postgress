@@ -554,7 +554,7 @@ func (c BatchConfig) Validate() error {
 
 // BackupsConfig configures where on-demand backups are stored.
 //
-// There are no scheduled backups: the PostgreSQL/MySQL server is
+// There are no scheduled backups: the PostgreSQL server is
 // responsible for regular database backups.
 type BackupsConfig struct {
 	// S3 is an optional S3 storage config specifying where to store the app backups.

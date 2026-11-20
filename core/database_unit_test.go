@@ -2,21 +2,19 @@ package core
 
 import (
 	"encoding/json"
-	"github.com/pocketbase/pocketbase/tools/dbutils"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
 func TestDatabaseConfigAndDialect(t *testing.T) {
-	for _, driver := range []string{"sqlite", "pgx", "", "mariadb"} {
+	for _, driver := range []string{"sqlite", "pgx", "mysql", "mariadb"} {
 		if (DatabaseConfig{Driver: driver, DSN: "dsn"}).Validate() == nil {
 			t.Fatalf("accepted driver %s", driver)
 		}
 	}
 	dir := t.TempDir()
-	c := DatabaseConfig{Driver: "mysql", DSN: "secret", InstanceID: "instance"}
+	c := DatabaseConfig{Driver: "postgres", DSN: "secret", InstanceID: "instance"}
 	if err := SaveDatabaseConfig(dir, c); err != nil {
 		t.Fatal(err)
 	}
@@ -29,16 +27,11 @@ func TestDatabaseConfigAndDialect(t *testing.T) {
 	if json.Unmarshal(raw, &got) != nil || got != c {
 		t.Fatalf("bootstrap config: %+v", got)
 	}
-	if DialectMySQL.Quote("a`b") != "`a``b`" {
+	if DialectPostgres.Quote(`a"b`) != `"a""b"` {
 		t.Fatal("identifier escaping")
 	}
-	app := NewBaseApp(BaseAppConfig{DBDriver: "mysql"})
-	sql, err := indexCreateSQL(app, dbutils.ParseIndex("CREATE UNIQUE INDEX idx ON users (email) WHERE email != ''"))
-	if err != nil || !strings.Contains(sql, "NULLIF") {
-		t.Fatalf("auth unique index %s %v", sql, err)
-	}
-	if !strings.Contains((&JSONField{}).ColumnType(app), "JSON") {
-		t.Fatal("mysql json type")
+	if err := (DatabaseConfig{DSN: "x"}).Validate(); err != nil {
+		t.Fatalf("expected an empty driver to mean postgres: %v", err)
 	}
 }
 func TestFileChangeDiff(t *testing.T) {

@@ -4,10 +4,10 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tests/testdb"
 	"github.com/pocketbase/pocketbase/tools/security"
 	"net/url"
 	"os"
@@ -21,52 +21,33 @@ var fixtureFS embed.FS
 // Each app owns an entire database, including migrations and auxiliary tables.
 // The configured user must have CREATE DATABASE permission on a test server.
 func newTestDatabase(tb testing.TB) (string, string, func(), error) {
-	driver := os.Getenv("PB_TEST_DB_DRIVER")
-	if driver == "" {
-		driver = "postgres"
-	}
+	driver := "postgres"
 	dsn := os.Getenv("PB_TEST_DB_DSN")
 	admin, err := core.ConnectDatabase(driver, dsn)
 	if err != nil {
 		return "", "", nil, err
 	}
 	name := "pb_test_" + security.RandomStringWithAlphabet(20, "abcdefghijklmnopqrstuvwxyz")
-	if _, err = admin.NewQuery("CREATE DATABASE " + name).Execute(); err != nil {
+	if _, err = admin.NewQuery("CREATE DATABASE " + name + testdb.CreateDatabaseOptions).Execute(); err != nil {
 		admin.Close()
 		return "", "", nil, err
 	}
 	cleanup := func() {
 		defer admin.Close()
-		if driver == "postgres" {
-			_, err = admin.NewQuery("DROP DATABASE " + name + " WITH (FORCE)").Execute()
-		} else {
-			_, err = admin.NewQuery("DROP DATABASE " + name).Execute()
-		}
+		_, err = admin.NewQuery("DROP DATABASE " + name + " WITH (FORCE)").Execute()
 		if err != nil {
 			tb.Errorf("drop test database %s: %v", name, err)
 		}
 	}
-	if driver == "mysql" {
-		c, e := mysql.ParseDSN(dsn)
-		if e != nil {
-			cleanup()
-			return "", "", nil, e
-		}
-		c.DBName = name
-		dsn = c.FormatDSN()
+	if _, e := pgx.ParseConfig(dsn); e != nil {
+		cleanup()
+		return "", "", nil, e
+	}
+	if u, e := url.Parse(dsn); e == nil && (u.Scheme == "postgres" || u.Scheme == "postgresql") {
+		u.Path = "/" + name
+		dsn = u.String()
 	} else {
-		c, e := pgx.ParseConfig(dsn)
-		if e != nil {
-			cleanup()
-			return "", "", nil, e
-		}
-		c.Database = name
-		if u, e := url.Parse(dsn); e == nil && (u.Scheme == "postgres" || u.Scheme == "postgresql") {
-			u.Path = "/" + name
-			dsn = u.String()
-		} else {
-			dsn += " dbname='" + name + "'"
-		}
+		dsn += " dbname='" + name + "'"
 	}
 	return dsn, driver, cleanup, nil
 }

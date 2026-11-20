@@ -2,11 +2,8 @@ package core
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"os"
@@ -25,14 +22,15 @@ type DatabaseConfig struct {
 	// SetupPending is set while this instance has connected to a database
 	// that was already set up, and its role (replica or new instance) has not
 	// been chosen yet. The installer keeps being served until it is cleared.
-	SetupPending bool   `json:"setupPending,omitempty"`
-	Driver       string `json:"driver"`
-	DSN          string `json:"dsn"`
+	SetupPending bool `json:"setupPending,omitempty"`
+	// Driver is always "postgres" (an empty value means the same).
+	Driver string `json:"driver"`
+	DSN    string `json:"dsn"`
 }
 
 func (c DatabaseConfig) Validate() error {
-	if c.Driver != "postgres" && c.Driver != "mysql" {
-		return errors.New("dbDriver must be postgres or mysql")
+	if c.Driver != "" && c.Driver != "postgres" {
+		return errors.New("dbDriver must be postgres (PostgreSQL is the only supported database)")
 	}
 	if strings.TrimSpace(c.DSN) == "" {
 		return errors.New("dbDSN is required")
@@ -45,46 +43,24 @@ func ConnectDatabase(driver, dsn string) (*dbx.DB, error) {
 	if err := (DatabaseConfig{Driver: driver, DSN: dsn}).Validate(); err != nil {
 		return nil, err
 	}
-	sqlDriver := driver
-	if driver == "postgres" {
-		sqlDriver = "pgx"
-	}
-	var db *dbx.DB
-	var err error
-	if driver == "postgres" {
-		var cfg *pgx.ConnConfig
-		cfg, err = pgx.ParseConfig(dsn)
-		if err == nil {
-			// Server-side cached statements break "SELECT table.*" queries
-			// after a column is dropped or added ("cached plan must not
-			// change result type"), and collection schema changes do that
-			// by design. Describe each query on execution instead of caching,
-			// unless the DSN explicitly sets the mode.
-			if !strings.Contains(dsn, "default_query_exec_mode") {
-				cfg.DefaultQueryExecMode = pgx.QueryExecModeDescribeExec
-			}
-			db = dbx.NewFromDB(stdlib.OpenDB(*cfg), sqlDriver)
-		}
-	} else {
-		var cfg *mysql.Config
-		cfg, err = mysql.ParseDSN(dsn)
-		if err == nil {
-			cfg.ParseTime = true
-			var raw *sql.DB
-			raw, err = sql.Open(sqlDriver, cfg.FormatDSN())
-			if err == nil {
-				db = dbx.NewFromDB(raw, sqlDriver)
-			}
-		}
-	}
+	cfg, err := pgx.ParseConfig(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("open %s database failed", driver)
+		return nil, errors.New("open postgres database failed")
 	}
+	// Server-side cached statements break "SELECT table.*" queries
+	// after a column is dropped or added ("cached plan must not
+	// change result type"), and collection schema changes do that
+	// by design. Describe each query on execution instead of caching,
+	// unless the DSN explicitly sets the mode.
+	if !strings.Contains(dsn, "default_query_exec_mode") {
+		cfg.DefaultQueryExecMode = pgx.QueryExecModeDescribeExec
+	}
+	db := dbx.NewFromDB(stdlib.OpenDB(*cfg), "pgx")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := db.DB().PingContext(ctx); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("connect to %s database failed", driver)
+		return nil, errors.New("connect to postgres database failed")
 	}
 	return db, nil
 }
@@ -112,7 +88,7 @@ func (app *BaseApp) loadDatabaseConfig() error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
-	app.config.DBDriver, app.config.DBDSN = c.Driver, c.DSN
+	app.config.DBDriver, app.config.DBDSN = "postgres", c.DSN
 	return nil
 }
 
@@ -121,6 +97,7 @@ func SaveDatabaseConfig(dataDir string, c DatabaseConfig) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
+	c.Driver = "postgres" // an empty driver means the same
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return err
 	}

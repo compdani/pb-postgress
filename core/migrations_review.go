@@ -102,8 +102,8 @@ type PendingMigration struct {
 // MigrationsPreview is the result of [BaseApp.PreviewPendingMigrations].
 type MigrationsPreview struct {
 	Items []PendingMigration `json:"items"`
-	// Preview is false when the migrations could not be dry-run (MySQL cannot
-	// roll back schema changes), so Items only lists the files.
+	// Preview reports whether the migrations were dry-run. It is always true
+	// (PostgreSQL rolls back schema changes); kept for API compatibility.
 	Preview bool `json:"preview"`
 }
 
@@ -124,16 +124,6 @@ func (app *BaseApp) PreviewPendingMigrations() (*MigrationsPreview, error) {
 	runner := NewMigrationsRunner(app, AppMigrations)
 	result := &MigrationsPreview{Items: []PendingMigration{}}
 
-	if app.SQLDialect() != DialectPostgres {
-		files, err := runner.Pending()
-		if err != nil {
-			return nil, err
-		}
-		for _, f := range files {
-			result.Items = append(result.Items, PendingMigration{File: f, Changes: []MigrationCollectionChange{}})
-		}
-		return result, nil
-	}
 	result.Preview = true
 
 	failed := false

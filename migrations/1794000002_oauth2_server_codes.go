@@ -15,8 +15,6 @@ func init() {
 		col := core.NewBaseCollection(core.CollectionNameOAuth2Codes)
 		col.System = true
 
-		// note: explicit max lengths because on MySQL a text field
-		// without max is stored as VARCHAR(255)
 		for _, name := range []string{"collectionRef", "recordRef", "clientId", "codeHash"} {
 			col.Fields.Add(&core.TextField{
 				Name:     name,

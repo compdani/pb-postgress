@@ -1026,10 +1026,10 @@ func (s *cacheSync) settingsFingerprint() (string, error) {
 }
 
 // listen wakes the sync loop on postgres NOTIFY. Polling alone is always
-// enough (it is the only mechanism for MySQL and for poolers that cannot LISTEN).
+// enough (it is the only mechanism for poolers that cannot LISTEN).
 func (s *cacheSync) listen(ctx context.Context, wake chan struct{}) {
 	cfg := s.app.config
-	if s.app.SQLDialect() != DialectPostgres || cfg.DBConnect != nil || cfg.DBDSN == "" {
+	if cfg.DBConnect != nil || cfg.DBDSN == "" {
 		return
 	}
 

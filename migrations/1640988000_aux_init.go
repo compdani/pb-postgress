@@ -11,13 +11,12 @@ func init() {
 				CREATE TABLE IF NOT EXISTS {{_logs}} (
 					[[id]]      VARCHAR(255) PRIMARY KEY NOT NULL,
 					[[level]]   INTEGER DEFAULT 0 NOT NULL,
-					[[message]] VARCHAR(255) DEFAULT '' NOT NULL,
+					[[message]] TEXT DEFAULT '' NOT NULL,
 					[[data]]    JSON DEFAULT ('{}') NOT NULL,
 					[[created]] TEXT DEFAULT '' NOT NULL
 				);
 
 				CREATE INDEX IF NOT EXISTS idx_logs_level on {{_logs}} ([[level]]);
-				CREATE INDEX IF NOT EXISTS idx_logs_message on {{_logs}} ([[message]]);
 				CREATE INDEX IF NOT EXISTS idx_logs_created_hour on {{_logs}} ([[created]]);
 			`)
 
