@@ -1,5 +1,6 @@
 ## Unreleased (upstream v0.42.x backports)
 
+- Fixed request logs being lost on PostgreSQL when a URL decodes to invalid UTF-8 or a NUL byte (e.g. scanner probes like `/php-cgi.exe?%ADd+...`). The message is now sanitized, and a batch in which one log fails to insert is written again with each log under its own savepoint, so one failing log no longer aborts and rolls back the whole batch (`SQLSTATE 25P02`).
 - Fixed S3 multipart uploads being reported as successful when `CompleteMultipartUpload` returns `200 OK` with an XML `<Error>` body (upstream v0.42.3).
 - Requests with an unknown, invalid or expired `Authorization` token are now rejected with 401 by the new `pbRejectUnknownToken` middleware instead of silently continuing as guest (upstream v0.42.0/v0.42.1). Unlike upstream, non-Bearer schemes (e.g. `Basic` client credentials for the OAuth2 server token endpoint) are left to the route handlers. The superuser UI clears stale tokens and retries accordingly.
 - Relaxed the realtime subscription IP check: a subscription request no longer has to come from the connection IP, which caused false positives for roaming/mobile clients. The OAuth2 redirect IP check now also accepts the IP of the `@oauth2` subscription request (`apis.RealtimeOAuth2SubscriptionClientIPKey`). OAuth2 redirect failures are logged as WARN instead of DEBUG (upstream v0.42.3).

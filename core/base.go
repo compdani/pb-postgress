@@ -1597,6 +1597,10 @@ func getLoggerMinLevel(app App) slog.Level {
 	return minLevel
 }
 
+// errLogWriteRetry rolls back a logs batch write that failed on one of its
+// logs, so that it is written again with each log under a savepoint.
+var errLogWriteRetry = errors.New("retry the logs write with savepoints")
+
 func (app *BaseApp) initLogger() error {
 	var stopped atomic.Bool
 
@@ -1604,6 +1608,51 @@ func (app *BaseApp) initLogger() error {
 	ticker := time.NewTicker(duration)
 
 	done := make(chan struct{}, 1)
+
+	writeLogs := func(logs []*logger.Log, withSavepoints bool) error {
+		const savepoint = "pb_log_write"
+
+		return app.AuxRunInTransaction(func(txApp App) error {
+			tx := txApp.AuxNonconcurrentDB()
+
+			for _, l := range logs {
+				// a new model per log, since the model hooks queued until the
+				// transaction ends keep a reference to it
+				model := &Log{}
+				model.MarkAsNew()
+				model.Id = GenerateDefaultRandomId()
+				model.Level = int(l.Level)
+				model.Message = l.Message
+				model.Data = l.Data
+				model.Created, _ = types.ParseDateTime(l.Time)
+
+				if !withSavepoints {
+					if err := txApp.AuxSave(model); err != nil {
+						return errLogWriteRetry // roll back and retry with savepoints
+					}
+					continue
+				}
+
+				if _, err := tx.NewQuery("SAVEPOINT " + savepoint).Execute(); err != nil {
+					return err // the transaction is unusable
+				}
+
+				if err := txApp.AuxSave(model); err != nil {
+					log.Println("Failed to write log", model, err)
+
+					if _, err := tx.NewQuery("ROLLBACK TO SAVEPOINT " + savepoint).Execute(); err != nil {
+						return err
+					}
+				}
+
+				if _, err := tx.NewQuery("RELEASE SAVEPOINT " + savepoint).Execute(); err != nil {
+					return err
+				}
+			}
+
+			return nil
+		})
+	}
 
 	runLogsWrite := func(logs []*logger.Log) {
 		if !app.IsBootstrapped() || app.Settings().Logs.MaxDays == 0 {
@@ -1615,23 +1664,22 @@ func (app *BaseApp) initLogger() error {
 		// note: based on several local tests there is no
 		// significant performance difference between small number
 		// of separate write queries vs 1 big INSERT
-		app.AuxRunInTransaction(func(txApp App) error {
-			model := &Log{}
-			for _, l := range logs {
-				model.MarkAsNew()
-				model.Id = GenerateDefaultRandomId()
-				model.Level = int(l.Level)
-				model.Message = l.Message
-				model.Data = l.Data
-				model.Created, _ = types.ParseDateTime(l.Time)
-
-				if err := txApp.AuxSave(model); err != nil {
-					log.Println("Failed to write log", model, err)
-				}
-			}
-
-			return nil
-		})
+		//
+		// A failed statement aborts a postgres transaction, so one bad log
+		// would fail (and roll back) every other log of the batch. The batch
+		// is written as is first; only if an insert fails, it is written
+		// again with each insert under a savepoint, skipping the bad logs.
+		//
+		// note: on such a retry the _logs model hooks of the first attempt
+		// have already run (the after create error hooks with the
+		// errLogWriteRetry error), and they run again for the second one.
+		err := writeLogs(logs, false)
+		if errors.Is(err, errLogWriteRetry) {
+			err = writeLogs(logs, true)
+		}
+		if err != nil {
+			log.Println("Failed to write logs", err)
+		}
 	}
 
 	handler := logger.NewBatchHandler(logger.BatchOptions{

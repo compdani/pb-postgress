@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/pocketbase/pocketbase/tools/types"
@@ -46,11 +47,18 @@ func (m *Log) DBExport(app App) (map[string]any, error) {
 		"level":   m.Level,
 	}
 
+	// PostgreSQL text columns reject invalid UTF-8 and NUL bytes (SQLite
+	// accepts both). Request log messages contain the path-unescaped URL,
+	// so a probe like "/?%ADd" or "/%00" would fail the insert and abort
+	// the whole batch transaction.
+	message := strings.ToValidUTF8(m.Message, "\uFFFD")
+	message = strings.ReplaceAll(message, "\x00", "\uFFFD")
+
 	// truncate the message (by characters, to not split multi-byte runes)
-	result["message"] = m.Message
-	if utf8.RuneCountInString(m.Message) > defaultMaxLogMessageSize {
-		result["message"] = string([]rune(m.Message)[:defaultMaxLogMessageSize])
+	if utf8.RuneCountInString(message) > defaultMaxLogMessageSize {
+		message = string([]rune(message)[:defaultMaxLogMessageSize])
 	}
+	result["message"] = message
 
 	if len(m.Data) == 0 {
 		result["data"] = m.Data
