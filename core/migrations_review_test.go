@@ -46,12 +46,6 @@ func TestMigrationsReviewPreviewAndApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if app.SQLDialect() != core.DialectPostgres {
-		if preview.Preview || len(preview.Items) != 2 {
-			t.Fatalf("unexpected preview %+v", preview)
-		}
-		return
-	}
 	if !preview.Preview || len(preview.Items) != 2 {
 		t.Fatalf("unexpected preview %+v", preview)
 	}

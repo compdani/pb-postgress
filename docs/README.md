@@ -1,7 +1,7 @@
 # Documentation
 
 - [Getting started](getting-started.md): build, run, use as a Go framework
-- [Database](database.md): PostgreSQL / MySQL setup and the installer
+- [Database](database.md): PostgreSQL setup and the installer
 - [Backups](backups.md): on-demand backups and restoring PocketBase backups
 - [OAuth2 server](oauth2-server.md): single sign-on and popup sign-in
 - [Passkeys](passkeys.md): usernameless WebAuthn sign-in

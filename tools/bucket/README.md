@@ -1,27 +1,19 @@
 # Bucket
 
-`bucket` is a standalone file server for one PgBase database. It stores bytes on disk and serves them to other instances. It does not import the PgBase app, and it does not use SQLite. A process is either Postgres or MySQL, the same single database as the main instance.
+`bucket` is a standalone file server for one PgBase database. It stores bytes on disk and serves them to other instances. It does not import the PgBase app, and it does not use SQLite. It connects to the same PostgreSQL database as the main instance.
 
 S3 mode is configured on the main instance. This process is only the filesystem file server (`mode=bucket`).
 
 ## Run
 
 ```sh
-export PB_DB_DRIVER=postgres
 export PB_DB_DSN='postgres://user:pass@127.0.0.1:5432/app?sslmode=disable'
 export PB_BUCKET_PUBLIC_URL='https://files.example'
 
 go run ./cmd/bucket --dir ./pb_bucket --http 127.0.0.1:8091
 ```
 
-MySQL uses a `go-sql-driver` DSN:
-
-```sh
-export PB_DB_DRIVER=mysql
-export PB_DB_DSN='user:pass@tcp(127.0.0.1:3306)/app'
-```
-
-Flags override the environment: `--dir` (`PB_BUCKET_DIR`), `--http` (`PB_BUCKET_HTTP`), `--apiKey` (`PB_BUCKET_API_KEY`), `--publicURL` (`PB_BUCKET_PUBLIC_URL`), `--dbDriver` (`PB_DB_DRIVER`), `--dbDSN` (`PB_DB_DSN`), `--maxBytes` (`PB_BUCKET_MAX_BYTES`), `--cors` (`PB_BUCKET_CORS`).
+Flags override the environment: `--dir` (`PB_BUCKET_DIR`), `--http` (`PB_BUCKET_HTTP`), `--apiKey` (`PB_BUCKET_API_KEY`), `--publicURL` (`PB_BUCKET_PUBLIC_URL`), `--dbDriver` (`PB_DB_DRIVER`, optional, only `postgres`), `--dbDSN` (`PB_DB_DSN`), `--maxBytes` (`PB_BUCKET_MAX_BYTES`), `--cors` (`PB_BUCKET_CORS`).
 
 If `--apiKey` is omitted, a bearer secret is generated, stored in `<dir>/.secret`, and printed once as `PB_BUCKET_API_KEY=...`.
 
@@ -69,11 +61,11 @@ The token is expired when `now >= expiry`. A main instance that can read `_fileH
 
 | Column | |
 | --- | --- |
-| `id` | `BIGSERIAL` or `BIGINT AUTO_INCREMENT` |
+| `id` | `BIGSERIAL` |
 | `op` | `upsert` or `delete` |
 | `collection`, `record_id`, `filename` | object key |
 | `created_at` | insert time |
 
-The bucket reads `id` greater than its cursor. Ids are allocated at insert but visible at commit, so a row behind a missing id waits 30 seconds from when the watcher first sees the gap for the earlier id to commit; after that the gap is treated as a rollback, and a transaction still open by then is not replayed. `delete` removes the object unless it was written more than 5 seconds (clock-skew tolerance) after the row's `created_at`, or the whole record directory when `filename` is empty or `*`. PgBase also deletes files directly through `_fileDeleteQueue`, so the feed is a backstop. `upsert` recomputes the ETag from the file on disk and drops the cached metadata. Postgres uses `LISTEN pb_file_changes` and also polls. MySQL polls. The cursor is `<dir>/.cursor`. If it cannot be read, the watcher stops instead of replaying from 0; remove the file to replay deliberately.
+The bucket reads `id` greater than its cursor. Ids are allocated at insert but visible at commit, so a row behind a missing id waits 30 seconds from when the watcher first sees the gap for the earlier id to commit; after that the gap is treated as a rollback, and a transaction still open by then is not replayed. `delete` removes the object unless it was written more than 5 seconds (clock-skew tolerance) after the row's `created_at`, or the whole record directory when `filename` is empty or `*`. PgBase also deletes files directly through `_fileDeleteQueue`, so the feed is a backstop. `upsert` recomputes the ETag from the file on disk and drops the cached metadata. The watcher uses `LISTEN pb_file_changes` and also polls. The cursor is `<dir>/.cursor`. If it cannot be read, the watcher stops instead of replaying from 0; remove the file to replay deliberately.
 
-Real database tests run only when `PB_TEST_PG_DSN` or `PB_TEST_MYSQL_DSN` is set.
+Real database tests run only when `PB_TEST_PG_DSN` is set.

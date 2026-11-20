@@ -8,10 +8,10 @@ Build it from this repository (releases are tags only, with no prebuilt binaries
 git clone --branch v0.41.1 https://github.com/compdani/pb-postgress.git
 cd pb-postgress
 go build -o pgbase ./examples/base
-./pgbase serve --dbDriver postgres --dbDSN "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
+./pgbase serve --dbDSN "postgres://user:pass@localhost:5432/mydb?sslmode=disable"
 ```
 
-Without `--dbDriver` / `--dbDSN`, `serve` starts the installer and prints a setup URL. The dashboard is at `/_/`. To update, check out a newer tag and build again.
+Without `--dbDSN`, `serve` starts the installer and prints a setup URL. The dashboard is at `/_/`. To update, check out a newer tag and build again.
 
 The executable is based on [`examples/base/main.go`](../examples/base/main.go) and has the JS VM plugin enabled, so it can be extended with JavaScript (see [Extend with JavaScript](https://pocketbase.io/docs/js-overview/) in the PocketBase docs).
 
@@ -27,7 +27,7 @@ go mod edit -replace github.com/pocketbase/pocketbase=github.com/compdani/pb-pos
 go mod tidy
 ```
 
-(`v0.41.1` is the [latest release](https://github.com/compdani/pb-postgress/releases/tag/v0.41.1); use a newer tag, a commit or `master` to move to a newer version.) Your app's `go.mod` must also say `go 1.27` or later. Then set `pocketbase.Config{DBDriver, DBDSN}` or the `PB_DB_DRIVER` / `PB_DB_DSN` variables. The server database is required.
+(`v0.41.1` is the [latest release](https://github.com/compdani/pb-postgress/releases/tag/v0.41.1); use a newer tag, a commit or `master` to move to a newer version.) Your app's `go.mod` must also say `go 1.27` or later. Then set `pocketbase.Config{DBDSN}` or the `PB_DB_DSN` variable. A PostgreSQL database is required.
 
 Here is a minimal example:
 

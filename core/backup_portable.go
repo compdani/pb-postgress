@@ -35,8 +35,7 @@ import (
 //	                          record files (thumbnails are not included)
 //
 // Record values use the text form a database returns for each column,
-// which is also the form PgBase loads records from. The same archive
-// therefore restores on PostgreSQL and MySQL.
+// which is also the form PgBase loads records from.
 const (
 	PortableBackupFormat        = "pocketbase-portable"
 	PortableBackupFormatVersion = 1

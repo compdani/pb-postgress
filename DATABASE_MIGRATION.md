@@ -1,7 +1,9 @@
 # Server database transition
 
-Configure one PostgreSQL or MySQL database with `--dbDriver` and `--dbDSN`,
-`PB_DB_DRIVER` and `PB_DB_DSN`, or `pocketbase.Config.DBDriver` / `DBDSN`.
+Configure one PostgreSQL database with `--dbDSN`, `PB_DB_DSN`, or
+`pocketbase.Config.DBDSN`. PostgreSQL is the only supported database; MySQL
+support was removed (`--dbDriver` / `PB_DB_DRIVER` remain optional and accept
+only `postgres`).
 Main records, metadata, migrations, logs, and auxiliary operations use the same
 configured database. SQLite is no longer opened and modernc dependencies are
 removed (the SQLite driver is used only to read `data.db` from imported
@@ -19,7 +21,7 @@ configured database has no superuser yet.
 
 * `GET /api/installer/status`: dbConnected, installed. With the token, also
   fileServer and fileMode.
-* `POST /api/installer/test-db`: `{driver, dsn}`.
+* `POST /api/installer/test-db`: `{dsn}` (an optional `driver` must be `postgres`).
 * `POST /api/installer/connect`: tests, persists owner-only `pb_data/db.json`,
   then bootstraps the database. The bootstrap also stores this instance's id.
 * `POST /api/installer/test-s3`: `{endpoint,bucket,region,accessKey,secret,forcePathStyle}`;
@@ -32,8 +34,7 @@ configured database has no superuser yet.
 id, HTTP URL, full/bucket/s3 mode, and shared secret. It holds at most one row;
 more than one is an error. A bucket replaces earlier bucket rows on startup but
 refuses to start while a full or s3 host is registered. Both writers lock
-the table around the check and replace (PostgreSQL `LOCK TABLE`; MySQL the named lock
-`pb_file_hosts:<database>` via `GET_LOCK`). A bucket host is used
+the table around the check and replace (`LOCK TABLE`). A bucket host is used
 only in fileServer mode; a full host serves the other instances. Secret is
 excluded from API status serialization. Remote object storage uses
 authenticated HTTP PUT/GET/HEAD/DELETE at
@@ -43,8 +44,8 @@ returns `{items,truncated}` and pages with `&after=<last key>`; a full instance
 returns a JSON array of blob list objects. The client accepts both. Thumbnails and copy use the same blob
 backend. Uploads finish before record commit. File deletions are retried from
 `_fileDeleteQueue`; `_fileChanges` is retained as an immutable reconciliation
-feed. PostgreSQL emits transactional `pb_file_changes` notifications. MySQL
-consumers poll `_fileChanges.id`. S3 uses the existing backend globally.
+feed. PostgreSQL emits transactional `pb_file_changes` notifications, and
+consumers also poll `_fileChanges.id`. S3 uses the existing backend globally.
 
 `_instances` stores instance identity and all/allow/deny collection scope.
 Superusers can GET/PUT `/api/instance/scope` with `{mode,collections:[]}` and
@@ -65,11 +66,10 @@ rewrites the scopes of all instances in the same transaction.
 Instances sharing a database keep their cached collections (API rules, schema,
 auth token secrets) and settings in line through `_cacheVersions`. A
 transaction that changes collections or settings bumps the matching version
-row once, as its last statements, so a rollback never bumps it (on MySQL DDL
-commits implicitly, so a failed transaction may still bump). PostgreSQL also
+row once, as its last statements, so a rollback never bumps it. It also
 sends a `pb_cache` NOTIFY; every instance polls the versions anyway
-(`core.CacheSyncInterval`, 2s), which is the only mechanism on MySQL or behind
-a pooler that cannot LISTEN. A slower reconcile (`core.CacheSyncReconcileInterval`,
+(`core.CacheSyncInterval`, 2s), which is the only mechanism behind a pooler
+that cannot LISTEN. A slower reconcile (`core.CacheSyncReconcileInterval`,
 45s) repairs a lost bump. A reloaded cache is normally not published while a
 local collection write is running; if one runs longer than `core.CacheSyncMaxDeferral`
 (30s) the publication is forced anyway.
@@ -137,8 +137,7 @@ Known limits (accepted for the first release):
   instance renames a collection can write the old name back into that scope: the scope
   edit isn't serialized with renames. Scope is not a security boundary.
 * A collections version bump or its savepoint that fails aborts the collection
-  transaction. On MySQL, DDL commits implicitly, so the schema change itself
-  cannot be undone.
+  transaction.
 * A settings change committed on one instance reaches the others within one
   poll (2s by default), and within 45s if its version bump was lost.
 
@@ -147,11 +146,11 @@ Known limits (accepted for the first release):
 The PostgreSQL integration test requires an **empty disposable database**:
 
 ```
-PB_TEST_DB_DRIVER=postgres PB_TEST_DB_DSN='postgres://localhost/pb_test?sslmode=disable' \
+PB_TEST_DB_DSN='postgres://localhost/pb_test?sslmode=disable' \
   go test ./core -run '^TestServerDatabaseFileChanges$' -count=1
 ```
 
-The same test accepts mysql and a MySQL DSN. It writes schema and data; never
+It writes schema and data; never
 point it at production. It tests bootstrap, rollback of file events, replace,
 delete, host registration, immutable file mode, and two instances sharing a
 DB with different scopes. Remote HTTP and S3 probes have httptest coverage.
@@ -161,23 +160,14 @@ This change is incomplete and should not be treated as production ready:
 * The fixture harness runs against disposable server databases. The full
   PostgreSQL suite and the no-DSN suite pass; see DATABASE_TEST_RESULTS.md for
   exact counts and the remaining opt-in integration skips.
-* MySQL 8 has been verified against a live server in the expanded subset.
-  Arbitrary partial indexes are rejected; the built-in optional email unique
-  index is translated to a NULLIF functional index (MySQL 8 required).
-  MySQL DDL implicitly commits and cannot provide PostgreSQL's transactional
-  schema migration guarantees. Indexing unrestricted TEXT fields needs review.
-  A text field without a max is `VARCHAR(255)` on MySQL, so it accepts at
-  most 255 characters there (5000 on PostgreSQL). Set a max above 255 to get
-  a `TEXT` column. URL fields are also `VARCHAR(255)` on MySQL and validate
-  at 255 characters.
 * Collection hooks and collection-tagged cron jobs enforce instance scope.
   Untagged custom jobs remain global. Cross-scope cascades use application-level integrity
   implementation; database foreign keys/triggers have not been implemented.
   Scope is therefore not yet a complete isolation/security boundary.
 * Legacy sidecar PostgreSQL introspection/import APIs remain in source, with
   sidecar initialization disabled. Full retirement/adaptation is outstanding.
-* User-authored SQL, view SQL, geo/date filter compatibility, large MySQL text
-  fields, and existing-schema upgrades need broader integration coverage.
+* User-authored SQL, view SQL, geo/date filter compatibility, and
+  existing-schema upgrades need broader integration coverage.
 * The pre-database server uses a basic HTTP listener; full Serve lifecycle,
   TLS, cancellation, startup cron hooks, and setup across existing multi-instance
   deployments need further integration. Use a trusted local setup network.
@@ -188,14 +178,15 @@ This change is incomplete and should not be treated as production ready:
 The harness now takes `testing.TB` (`tests.NewTestApp(t)`), skips database
 callers when `PB_TEST_DB_DSN` is absent, allocates a uniquely named database
 per app, and closes/drops it during idempotent `Cleanup`. The configured user
-needs CREATE/DROP DATABASE permission. `PB_TEST_DB_DRIVER` defaults to postgres;
-set it to mysql for a MySQL DSN. Connection options are preserved. Both main
+needs CREATE/DROP DATABASE permission. Test databases are created as `UTF8`
+(from `template0`) whatever the server default is, like a production
+database. Connection options are preserved. Both main
 and auxiliary state belong to that isolated database. Fixtures are seeded
 from `tests/data/fixtures.json`; `tests/data/export_fixtures.py` documents the
 one-time export of the historical data. Go tests do not open SQLite files.
 
 `tools/fileschema` is now the canonical DDL for core and bucket. Both use real
-TIMESTAMPTZ/DATETIME(6) columns and time.Time values, matching IDs, modes and
+TIMESTAMPTZ columns and time.Time values, matching IDs, modes and
 secret sizes, and no restrictive CHECKs. The merged bucket branch consumes
 that same definition. `TestBucketProcessFileLifecycle` builds and runs the
 actual cmd/bucket process and verifies both schema creation orders, core
@@ -221,21 +212,15 @@ cannot provide a working split-database configuration. Removing these exported
 APIs and their UI clients together remains follow-up work; retaining their
 source must not be interpreted as supported sidecar operation.
 
-MySQL live testing fixed TEXT defaults in bootstrap DDL, optional-index creation,
-JSON-array uniqueness in the fixture, time scanning, and null-safe comparisons.
 Encrypted settings are stored in a text column, since ciphertext is not JSON.
 
 ## Runtime compatibility follow-up (2026-11-07)
 
-Generic log filters and request-array filters now use PostgreSQL/MySQL JSON
+Generic log filters and request-array filters now use PostgreSQL JSON
 helpers. PostgreSQL relation and multi-match joins include explicit conditions;
 numeric JSON comparisons and virtual create-rule rows use explicit SQL types.
 Case-insensitive identity lookups use the same LOWER expression as their unique
-index. Case-insensitive optional-email MySQL indexes and lookups use
-NULLIF(LOWER(email), '').
-New MySQL text columns use binary collation so case-sensitive unique indexes
-retain their configured meaning. Existing-schema collation upgrades still need
-an explicit migration.
+index.
 
 PostgreSQL view replacement and record-table changes detach/recreate dependent
 views transactionally. Incompatible replacements roll back. View introspection
@@ -248,11 +233,9 @@ View records remain read-only even when PostgreSQL considers a view updatable.
 
 Backups are on demand only: the backup cron and its `backups.cron` /
 `backups.cronMaxKeep` settings are removed. Regular protection is the job of
-the database server (PostgreSQL base backups and PITR, MySQL binlogs,
-managed snapshots). `backups.s3` still selects where archives are stored.
+the database server (PostgreSQL base backups and PITR, managed snapshots). `backups.s3` still selects where archives are stored.
 
-`CreateBackup` (`POST /api/backups`) writes a **portable backup**, a zip
-that restores on PostgreSQL and MySQL alike:
+`CreateBackup` (`POST /api/backups`) writes a **portable backup**, a zip:
 
 ```
 manifest.json      {"format":"pocketbase-portable","formatVersion":1,
@@ -266,8 +249,7 @@ storage/<collectionId>/<recordId>/<file>   record files, no thumbnails
 ```
 
 Record values are the text a database returns for each column, which is
-the form PgBase already loads records from, so no type is tied to one
-driver. Every table is read in one REPEATABLE READ, read-only transaction.
+the form PgBase already loads records from. Every table is read in one REPEATABLE READ, read-only transaction.
 Files are included only for collections stored in this instance's
 `pb_data/storage`; S3 and file-server files are not copied.
 
@@ -282,14 +264,12 @@ rejected too. `auxiliary.db` (logs) is not imported.
 Restore runs synchronously and in this order:
 
 1. Read and check everything: collections, settings (decrypted with the
-   current key), every record, and on MySQL the indexes and `VARCHAR(255)`
-   lengths. Nothing changes if this fails.
+   current key) and every record. Nothing changes if this fails.
 2. Copy files into the configured file storage (local, S3 or file server),
    which also migrates PocketBase files into remote storage.
 3. Replace the collections (missing ones are deleted), records (raw inserts,
-   no hooks), settings, and add migration entries the database lacks.
-   PostgreSQL does this in one transaction. MySQL commits schema changes
-   implicitly, so only the record step is atomic there.
+   no hooks), settings, and add migration entries the database lacks, in
+   one transaction.
 4. Reload the cached collections and settings.
 
 Kept from the target: file mode, `_fileHosts`, `_instances` scopes, and the
@@ -306,14 +286,11 @@ each view query is translated token by token (`core/view_translate.go`):
 quoted identifiers, `IFNULL`, `IIF`, `TOTAL`, `CAST` types,
 `GROUP_CONCAT`, `json_extract` and `json_array_length`, `date`/`time`/
 `datetime`/`strftime` without modifiers (`%Y %m %d %H %M %S %j`), `==`,
-`INSTR` and `LENGTH`, `ROUND(x, n)` on PostgreSQL, `||` as `CONCAT` on MySQL,
-and case-insensitive `LIKE` (`ILIKE` on PostgreSQL, `LOWER(a) LIKE LOWER(b)`
-on MySQL, whose text columns use a binary collation).
+`INSTR`, `ROUND(x, n)`, and case-insensitive `LIKE` (as `ILIKE`).
 
 Views are then created one at a time, in passes so a view can follow the
-views it selects from. A view the database still rejects is undone
-(PostgreSQL savepoint; on MySQL its view and collection row are removed)
-and skipped; everything else is restored. The restore response lists
+views it selects from. A view the database still rejects is rolled
+back to a savepoint and skipped; everything else is restored. The restore response lists
 `translatedViews` and `skippedViews` with the original and translated
 queries, the dashboard shows them, and skipped views are also logged.
 Recreate skipped views by hand. Not translated: date modifiers (`'+1 day'`),
@@ -323,8 +300,7 @@ translated view can differ slightly (for example integer division or text
 sorting), so check them. Portable backups restore views unchanged.
 
 The SQL API executes multiple statements individually in a transaction and
-returns the final statement's result. PostgreSQL DDL rollback is verified;
-MySQL's implicit DDL commits remain an engine limitation. Notify files remain
+returns the final statement's result. DDL rollback is verified. Notify files remain
 present until cleanup so macOS cannot coalesce a create/delete pair away.
 
 ## App migrations review
@@ -336,11 +312,10 @@ ones stay pending until a superuser reviews them in the dashboard popup, or
 `migrate up` is run.
 
 * `GET /api/migrations/pending`: `{files}`; nothing is executed.
-* `POST /api/migrations/preview`: on PostgreSQL the pending migrations run in
-  a transaction that is rolled back, and each one's collection changes
+* `POST /api/migrations/preview`: the pending migrations run in a
+  transaction that is rolled back, and each one's collection changes
   (created, updated, deleted, with field/rule/index details) are returned.
-  Record and raw SQL changes are not listed. MySQL cannot roll back schema
-  changes, so it only lists the files (`preview:false`).
+  Record and raw SQL changes are not listed.
 * `POST /api/migrations/apply`: `{ignore:{"<file>":["<collection id or name>"]}}`.
   Writes to an ignored collection (create, update, delete through the app) are
   skipped while that migration runs. If a migration then fails, for example

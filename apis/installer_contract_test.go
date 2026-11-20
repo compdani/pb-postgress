@@ -40,7 +40,7 @@ func TestInstallerDisconnectedContract(t *testing.T) {
 		}
 	}
 
-	for _, body := range []string{`{"driver":"sqlite","dsn":"secret"}`, `{"driver":"mysql","dsn":"not-a-valid-dsn-secret"}`} {
+	for _, body := range []string{`{"driver":"sqlite","dsn":"secret"}`, `{"driver":"mysql","dsn":"secret"}`, `{"driver":"postgres","dsn":"not-a-valid-dsn-secret"}`} {
 		r = httptest.NewRequest("POST", "/api/installer/test-db", strings.NewReader(body))
 		r.Header.Set("X-Installer-Token", InstallerToken())
 		w = httptest.NewRecorder()

@@ -274,16 +274,10 @@ func normalizeViewQueryId(app App, query string) (string, error) {
 		return "", err
 	}
 
-	// MySQL has no CAST(... AS TEXT); CHAR is its unbounded string cast.
-	castType := "TEXT"
-	if ba := asBaseApp(app); ba != nil && ba.SQLDialect() == DialectMySQL {
-		castType = "CHAR"
-	}
-
 	columns := make([]string, 0, len(rawParsed.columns))
 	for _, col := range rawParsed.columns {
 		if col.alias == FieldNameId {
-			columns = append(columns, fmt.Sprintf("CAST([[%s]] as %s) [[%s]]", col.alias, castType, col.alias))
+			columns = append(columns, fmt.Sprintf("CAST([[%s]] as TEXT) [[%s]]", col.alias, col.alias))
 		} else {
 			columns = append(columns, "[["+col.alias+"]]")
 		}

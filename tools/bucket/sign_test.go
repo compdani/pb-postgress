@@ -69,14 +69,14 @@ func TestRejectSQLiteDriver(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "sqlite") {
 		t.Fatalf("err %v", err)
 	}
-	_, err = normalizeDriver("sqlite3")
-	if err == nil {
-		t.Fatal("expected sqlite3 to be rejected")
+	for _, driver := range []string{"sqlite3", "mysql"} {
+		if err := validateDriver(driver); err == nil {
+			t.Fatalf("expected %s to be rejected", driver)
+		}
 	}
-	if _, err := normalizeDriver("postgres"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := normalizeDriver("mysql"); err != nil {
-		t.Fatal(err)
+	for _, driver := range []string{"", "postgres", "pgx"} {
+		if err := validateDriver(driver); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -115,7 +115,7 @@ export function backupsForm(propsArg = {}) {
                             { className: "col-lg-12" },
                             t.p(
                                 { className: "txt-hint" },
-                                "Backups are created on demand. Scheduled backups belong to your PostgreSQL or MySQL server (base backups, point-in-time recovery, binlogs or managed snapshots).",
+                                "Backups are created on demand. Scheduled backups belong to your PostgreSQL server (base backups, point-in-time recovery or managed snapshots).",
                             ),
                         ),
                         t.div(

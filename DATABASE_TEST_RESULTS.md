@@ -1,5 +1,10 @@
 # Server database verification — 2026-11-07
 
+> [!NOTE]
+> This is a historical report. MySQL support was removed later (2026-11-20),
+> so the MySQL runs, `PB_TEST_DB_DRIVER` and `PB_TEST_MYSQL_DSN` below no
+> longer apply; tests run on PostgreSQL only (`PB_TEST_DB_DSN`).
+
 The full suite passes against real PostgreSQL. The no-DSN suite and expanded
 MySQL subset also pass. Counts below are top-level Go tests; subtests are
 excluded so parent tests and children are not counted as independent tests.

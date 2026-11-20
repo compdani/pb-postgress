@@ -33,8 +33,19 @@ var PostgresTokenFunctions = map[string]func(
 	argTokenResolverFunc func(fexpr.Token) (*ResolverResult, error),
 	args ...fexpr.Token,
 ) (*ResolverResult, error){
-	"geoDistance": MySQLTokenFunctions["geoDistance"],
+	"geoDistance": postgresGeoDistance,
 	"strftime":    postgresStrftime,
+}
+
+// postgresGeoDistance is the default geoDistance with the SQLite scalar
+// min/max (which PostgreSQL doesn't have) replaced by LEAST/GREATEST.
+func postgresGeoDistance(resolve func(fexpr.Token) (*ResolverResult, error), args ...fexpr.Token) (*ResolverResult, error) {
+	result, err := TokenFunctions["geoDistance"](resolve, args...)
+	if err != nil {
+		return nil, err
+	}
+	result.Identifier = strings.ReplaceAll(strings.ReplaceAll(result.Identifier, "min(1, max(-1,", "LEAST(1, GREATEST(-1,"), "min(1,max(-1,", "LEAST(1,GREATEST(-1,")
+	return result, nil
 }
 
 func postgresStrftime(argTokenResolverFunc func(fexpr.Token) (*ResolverResult, error), args ...fexpr.Token) (*ResolverResult, error) {

@@ -15,14 +15,6 @@ func TestPostgresFileFeed(t *testing.T) {
 	testFileFeed(t, "postgres", dsn, true)
 }
 
-func TestMySQLFileFeed(t *testing.T) {
-	dsn := os.Getenv("PB_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Skip("PB_TEST_MYSQL_DSN not set")
-	}
-	testFileFeed(t, "mysql", dsn, false)
-}
-
 func testFileFeed(t *testing.T, driver, dsn string, notify bool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -74,26 +66,14 @@ func testFileFeed(t *testing.T, driver, dsn string, notify bool) {
 		t.Fatalf("registered url=%s mode=%s secret=%s", gotURL, gotMode, gotSecret)
 	}
 
-	var insert string
-	if driver == "mysql" {
-		insert = "INSERT INTO " + db.changesTable + " (op, collection, record_id, filename) VALUES (?, ?, ?, ?)"
-	} else {
-		insert = "INSERT INTO " + db.changesTable + " (op, collection, record_id, filename) VALUES ($1, $2, $3, $4)"
-	}
-	res, err := db.sql.ExecContext(ctx, insert, "upsert", collection, "rec", "a.txt")
+	insert := "INSERT INTO " + db.changesTable + " (op, collection, record_id, filename) VALUES ($1, $2, $3, $4)"
+	_, err = db.sql.ExecContext(ctx, insert, "upsert", collection, "rec", "a.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var insertedID int64
-	if driver == "mysql" {
-		insertedID, err = res.LastInsertId()
-		if err != nil {
-			t.Fatal(err)
-		}
-	} else {
-		if err := db.sql.QueryRowContext(ctx, "SELECT id FROM "+db.changesTable+" WHERE collection = $1 ORDER BY id DESC LIMIT 1", collection).Scan(&insertedID); err != nil {
-			t.Fatal(err)
-		}
+	if err := db.sql.QueryRowContext(ctx, "SELECT id FROM "+db.changesTable+" WHERE collection = $1 ORDER BY id DESC LIMIT 1", collection).Scan(&insertedID); err != nil {
+		t.Fatal(err)
 	}
 
 	changes, err := db.FetchAfter(ctx, insertedID-1, 20)

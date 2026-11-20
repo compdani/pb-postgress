@@ -30,7 +30,7 @@ var ErrBackupScoped = errors.New("backups need an instance with the \"all\" coll
 // S3 and remote file hosts are expected to keep their own copies.
 //
 // Backups are created on demand only. Scheduled protection belongs to the
-// PostgreSQL/MySQL server (base backups, PITR, binlogs, managed snapshots).
+// PostgreSQL server (base backups, PITR, managed snapshots).
 func (app *BaseApp) CreateBackup(ctx context.Context, name string) error {
 	release, err := app.acquireBackupOp(name)
 	if err != nil {
@@ -105,15 +105,14 @@ func (app *BaseApp) acquireBackupOp(name string) (release func(), err error) {
 // under name in the backups filesystem.
 //
 // Two archive types are accepted:
-//   - a portable backup created by [BaseApp.CreateBackup] on PostgreSQL or MySQL;
+//   - a portable backup created by [BaseApp.CreateBackup];
 //   - a standard PocketBase backup (a pb_data zip with data.db), from
 //     PocketBase v0.23.0 through v0.41.x (see [PocketBaseImportVersions]).
 //
 // The archive is fully read and checked before anything is changed.
 // Collections, records, settings and migrations are replaced first; the files
-// are copied into the configured file storage after that committed. On
-// PostgreSQL the database step is one transaction; on MySQL schema changes
-// commit implicitly, so only the record data is atomic.
+// are copied into the configured file storage after that committed. The
+// database step is one transaction.
 //
 // The instance's file mode, file host, S3 storage and backups settings, and
 // instance scopes are kept. Superusers and their sessions come from the

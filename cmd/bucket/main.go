@@ -39,7 +39,7 @@ func parseConfig(args []string) (bucket.Config, error) {
 	httpAddr := fs.String("http", env("PB_BUCKET_HTTP", "127.0.0.1:8091"), "TCP address for the HTTP server")
 	apiKey := fs.String("apiKey", env("PB_BUCKET_API_KEY", ""), "bearer secret; generated and printed once when empty")
 	publicURL := fs.String("publicURL", env("PB_BUCKET_PUBLIC_URL", ""), "URL registered in _fileHosts (default http://<listen>)")
-	dbDriver := fs.String("dbDriver", env("PB_DB_DRIVER", ""), "database driver: postgres or mysql")
+	dbDriver := fs.String("dbDriver", env("PB_DB_DRIVER", ""), "database driver; only postgres is supported and it is the default")
 	dbDSN := fs.String("dbDSN", env("PB_DB_DSN", ""), "database DSN for the shared instance database")
 	maxBytes := fs.Int64("maxBytes", envInt64("PB_BUCKET_MAX_BYTES", 100<<20), "maximum upload size in bytes")
 	cors := fs.String("cors", env("PB_BUCKET_CORS", "*"), "comma-separated CORS origins, or *")

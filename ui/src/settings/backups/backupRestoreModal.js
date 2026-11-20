@@ -280,10 +280,7 @@ function backupRestoreModal(key) {
                             t.p(null, "Two kinds of backups can be restored:"),
                             t.ul(
                                 null,
-                                t.li(
-                                    null,
-                                    "Backups created on this page, from PostgreSQL or MySQL (either database).",
-                                ),
+                                t.li(null, "Backups created on this page."),
                                 t.li(
                                     null,
                                     "Standard PocketBase backups (a ",
@@ -296,10 +293,6 @@ function backupRestoreModal(key) {
                             t.p(
                                 null,
                                 "The backup is fully checked before anything changes. Files are copied to the configured file storage. The file storage, S3 and backups settings of this deployment are kept.",
-                            ),
-                            t.p(
-                                null,
-                                "On MySQL, schema changes cannot be rolled back if a later step fails. Take a database snapshot first.",
                             ),
                         ),
                     ),

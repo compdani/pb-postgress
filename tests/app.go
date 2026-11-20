@@ -107,7 +107,7 @@ func NewTestApp(tb testing.TB, optTestDataDir ...string) (*TestApp, error) {
 func NewTestAppWithConfig(tb testing.TB, config core.BaseAppConfig) (*TestApp, error) {
 	tb.Helper()
 	if os.Getenv("PB_TEST_DB_DSN") == "" {
-		tb.Skip("database test requires PB_TEST_DB_DSN (a disposable Postgres or MySQL server)")
+		tb.Skip("database test requires PB_TEST_DB_DSN (a disposable Postgres server)")
 	}
 	if config.DataDir == "" {
 		// fallback to the default test data directory

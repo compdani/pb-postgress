@@ -30,9 +30,6 @@ const (
 
 // InitCacheVersions creates the shared cache versions table.
 func InitCacheVersions(app App) error {
-	if asBaseApp(app).SQLDialect() == DialectMySQL {
-		return ExecuteSchema(app, "CREATE TABLE IF NOT EXISTS {{_cacheVersions}} ([[name]] VARCHAR(64) NOT NULL PRIMARY KEY, [[version]] BIGINT NOT NULL DEFAULT 0, [[updated_at]] DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6))")
-	}
 	return ExecuteSchema(app, "CREATE TABLE IF NOT EXISTS {{_cacheVersions}} ([[name]] VARCHAR(64) NOT NULL PRIMARY KEY, [[version]] BIGINT NOT NULL DEFAULT 0, [[updated_at]] TIMESTAMPTZ NOT NULL DEFAULT NOW())")
 }
 
@@ -77,29 +74,19 @@ func (app *BaseApp) writeCacheVersions(db dbx.Builder, names []string) error {
 	names = slices.Clone(names)
 	slices.Sort(names)
 
-	mysql := app.SQLDialect() == DialectMySQL
-
 	for _, name := range names {
-		var q string
-		if mysql {
-			q = "INSERT INTO {{_cacheVersions}} ([[name]], [[version]], [[updated_at]]) VALUES ({:name}, 1, CURRENT_TIMESTAMP(6)) " +
-				"ON DUPLICATE KEY UPDATE [[version]] = [[version]] + 1, [[updated_at]] = CURRENT_TIMESTAMP(6)"
-		} else {
-			q = "INSERT INTO {{_cacheVersions}} ([[name]], [[version]], [[updated_at]]) VALUES ({:name}, 1, NOW()) " +
-				"ON CONFLICT ([[name]]) DO UPDATE SET [[version]] = {{_cacheVersions}}.[[version]] + 1, [[updated_at]] = NOW()"
-		}
+		q := "INSERT INTO {{_cacheVersions}} ([[name]], [[version]], [[updated_at]]) VALUES ({:name}, 1, NOW()) " +
+			"ON CONFLICT ([[name]]) DO UPDATE SET [[version]] = {{_cacheVersions}}.[[version]] + 1, [[updated_at]] = NOW()"
 		if _, err := db.NewQuery(q).Bind(dbx.Params{"name": name}).Execute(); err != nil {
 			return err
 		}
 	}
 
-	if !mysql {
-		// delivered on commit and discarded on rollback
-		if _, err := db.NewQuery("SELECT pg_notify({:channel}, {:payload})").
-			Bind(dbx.Params{"channel": cacheNotifyChannel, "payload": names[0]}).
-			Execute(); err != nil {
-			return err
-		}
+	// delivered on commit and discarded on rollback
+	if _, err := db.NewQuery("SELECT pg_notify({:channel}, {:payload})").
+		Bind(dbx.Params{"channel": cacheNotifyChannel, "payload": names[0]}).
+		Execute(); err != nil {
+		return err
 	}
 
 	return nil

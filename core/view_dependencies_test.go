@@ -1,7 +1,6 @@
 package core_test
 
 import (
-	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 	"testing"
 )
@@ -9,9 +8,6 @@ import (
 func TestSaveViewPreservesDependencies(t *testing.T) {
 	app, _ := tests.NewTestApp(t)
 	defer app.Cleanup()
-	if app.SQLDialect() != core.DialectPostgres {
-		t.Skip("transactional PostgreSQL view dependency handling")
-	}
 	if err := app.SaveView("dependency_source", "select id from demo1"); err != nil {
 		t.Fatal(err)
 	}

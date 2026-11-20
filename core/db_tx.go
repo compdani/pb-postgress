@@ -76,14 +76,6 @@ func (app *BaseApp) runInTransaction(db dbx.Builder, fn func(txApp App) error, i
 			app.cacheSync.applyBaselineChanges(txApp.txInfo.takeBaselineChanges())
 		}
 
-		// mysql DDL commits implicitly, so a failed transaction may still have
-		// changed the schema; a spurious bump only costs the others a reload
-		if txErr != nil && len(dirtyCaches) > 0 && app.SQLDialect() == DialectMySQL {
-			if err := app.writeCacheVersions(app.NonconcurrentDB(), dirtyCaches); err != nil {
-				app.Logger().Warn("Failed to bump the shared cache version after a failed transaction", "error", err)
-			}
-		}
-
 		// execute all after event calls on transaction complete
 		if txApp != nil && txApp.txInfo != nil {
 			afterFuncErr := txApp.txInfo.runAfterFuncs(txErr)

@@ -78,11 +78,8 @@ func TestTextFieldValidateValue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Without a max, text is 5000 characters, but VARCHAR(255) on MySQL.
+	// Without a max, text is 5000 characters.
 	defaultMax := 5000
-	if app.SQLDialect() == core.DialectMySQL {
-		defaultMax = 255
-	}
 
 	scenarios := []struct {
 		name        string

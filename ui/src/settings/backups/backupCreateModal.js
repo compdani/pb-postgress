@@ -96,7 +96,7 @@ function backupCreateModal(settings) {
                             { className: "content" },
                             t.p(
                                 null,
-                                `The backup is a portable archive of all collections, records and settings, read from one consistent database snapshot. It can be restored on PostgreSQL or MySQL.`,
+                                `The backup is a portable archive of all collections, records and settings, read from one consistent database snapshot.`,
                             ),
                             t.p(
                                 { className: "txt-bold" },

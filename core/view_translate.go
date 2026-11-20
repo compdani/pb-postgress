@@ -7,7 +7,7 @@ import (
 )
 
 // translateSQLiteView rewrites the common SQLite-only constructs of a
-// PocketBase view query for PostgreSQL or MySQL. It is used only when
+// PocketBase view query for PostgreSQL. It is used only when
 // importing PocketBase backups.
 //
 // It works on tokens, not a full SQL grammar: anything it does not
@@ -218,11 +218,6 @@ func (t *viewTranslator) rewrite(nodes []*sqlNode) []*sqlNode {
 		out = append(out, t.keyword(n))
 	}
 
-	if t.dialect == DialectMySQL {
-		out = t.concat(out)
-		out = t.like(out)
-	}
-
 	return out
 }
 
@@ -240,7 +235,7 @@ func (t *viewTranslator) keyword(n *sqlNode) *sqlNode {
 	switch {
 	case n.kind == sqlPunct && n.text == "==":
 		return t.raw("=")
-	case n.kind == sqlWord && strings.EqualFold(n.text, "like") && t.dialect == DialectPostgres:
+	case n.kind == sqlWord && strings.EqualFold(n.text, "like"):
 		// SQLite LIKE ignores ASCII case.
 		return t.raw("ILIKE")
 	}
@@ -292,11 +287,9 @@ func (t *viewTranslator) function(name string, group *sqlNode) *sqlNode {
 	for i, a := range args {
 		r[i] = t.render(a)
 	}
-	pg := t.dialect == DialectPostgres
-
 	switch name {
 	case "ifnull":
-		if pg && len(r) == 2 {
+		if len(r) == 2 {
 			return t.raw("COALESCE(" + r[0] + ", " + r[1] + ")")
 		}
 	case "iif":
@@ -308,15 +301,11 @@ func (t *viewTranslator) function(name string, group *sqlNode) *sqlNode {
 			return t.raw("COALESCE(SUM(" + r[0] + "), 0)")
 		}
 	case "instr":
-		if pg && len(r) == 2 {
+		if len(r) == 2 {
 			return t.raw("STRPOS(" + r[0] + ", " + r[1] + ")")
 		}
-	case "length":
-		if !pg && len(r) == 1 {
-			return t.raw("CHAR_LENGTH(" + r[0] + ")")
-		}
 	case "round":
-		if pg && len(r) == 2 {
+		if len(r) == 2 {
 			return t.raw("ROUND(CAST(" + r[0] + " AS NUMERIC), " + r[1] + ")")
 		}
 	case "cast":
@@ -325,17 +314,11 @@ func (t *viewTranslator) function(name string, group *sqlNode) *sqlNode {
 		return t.groupConcat(args)
 	case "json_extract":
 		if len(r) == 2 {
-			if pg {
-				return t.raw("(jsonb_path_query_first(CAST(" + r[0] + " AS jsonb), CAST(" + r[1] + " AS jsonpath)) #>> '{}')")
-			}
-			return t.raw("JSON_UNQUOTE(JSON_EXTRACT(" + r[0] + ", " + r[1] + "))")
+			return t.raw("(jsonb_path_query_first(CAST(" + r[0] + " AS jsonb), CAST(" + r[1] + " AS jsonpath)) #>> '{}')")
 		}
 	case "json_array_length":
 		if len(r) == 1 {
-			if pg {
-				return t.raw("jsonb_array_length(CAST(" + r[0] + " AS jsonb))")
-			}
-			return t.raw("JSON_LENGTH(" + r[0] + ")")
+			return t.raw("jsonb_array_length(CAST(" + r[0] + " AS jsonb))")
 		}
 	case "date", "time", "datetime", "strftime":
 		return t.dateFunc(name, args)
@@ -360,20 +343,11 @@ func (t *viewTranslator) cast(args [][]*sqlNode) *sqlNode {
 	typ := strings.ToUpper(t.render(arg[as+1:]))
 	expr := t.render(arg[:as])
 
-	var mapped string
-	if t.dialect == DialectPostgres {
-		mapped = map[string]string{
-			"INT": "BIGINT", "INTEGER": "BIGINT",
-			"REAL": "DOUBLE PRECISION", "FLOAT": "DOUBLE PRECISION", "DOUBLE": "DOUBLE PRECISION",
-			"BLOB": "BYTEA",
-		}[typ]
-	} else {
-		mapped = map[string]string{
-			"INT": "SIGNED", "INTEGER": "SIGNED", "BIGINT": "SIGNED", "BOOLEAN": "SIGNED",
-			"REAL": "DOUBLE", "FLOAT": "DOUBLE", "NUMERIC": "DECIMAL(65,30)",
-			"TEXT": "CHAR", "VARCHAR": "CHAR", "BLOB": "BINARY",
-		}[typ]
-	}
+	mapped := map[string]string{
+		"INT": "BIGINT", "INTEGER": "BIGINT",
+		"REAL": "DOUBLE PRECISION", "FLOAT": "DOUBLE PRECISION", "DOUBLE": "DOUBLE PRECISION",
+		"BLOB": "BYTEA",
+	}[typ]
 	if mapped == "" {
 		return nil
 	}
@@ -395,13 +369,7 @@ func (t *viewTranslator) groupConcat(args [][]*sqlNode) *sqlNode {
 	if len(args) == 2 {
 		sep = t.render(args[1])
 	}
-	if t.dialect == DialectPostgres {
-		return t.raw("STRING_AGG(" + distinct + "CAST(" + expr + " AS TEXT), " + sep + ")")
-	}
-	if len(args) == 1 {
-		return nil // MySQL's default separator is also ","
-	}
-	return t.raw("GROUP_CONCAT(" + distinct + expr + " SEPARATOR " + sep + ")")
+	return t.raw("STRING_AGG(" + distinct + "CAST(" + expr + " AS TEXT), " + sep + ")")
 }
 
 // dateFunc translates date/time/datetime/strftime without modifiers.
@@ -435,29 +403,15 @@ func (t *viewTranslator) dateFunc(name string, args [][]*sqlNode) *sqlNode {
 		}
 	}
 
-	if t.dialect == DialectPostgres {
-		pattern, ok := postgresDatePattern(format)
-		if !ok {
-			return nil
-		}
-		ts := "(now() AT TIME ZONE 'UTC')"
-		if !isNow {
-			ts = "(CAST(NULLIF(" + t.render(args[0]) + ", '') AS timestamptz) AT TIME ZONE 'UTC')"
-		}
-		return t.raw("to_char(" + ts + ", " + sqlQuote(pattern) + ")")
-	}
-
-	pattern, ok := mysqlDatePattern(format)
+	pattern, ok := postgresDatePattern(format)
 	if !ok {
 		return nil
 	}
-	ts := "UTC_TIMESTAMP()"
+	ts := "(now() AT TIME ZONE 'UTC')"
 	if !isNow {
-		// No NULLIF here: MySQL casts a NULLIF result as an integer first.
-		// An empty value already casts to NULL.
-		ts = "CAST(REPLACE(REPLACE(" + t.render(args[0]) + ", 'T', ' '), 'Z', '') AS DATETIME(3))"
+		ts = "(CAST(NULLIF(" + t.render(args[0]) + ", '') AS timestamptz) AT TIME ZONE 'UTC')"
 	}
-	return t.raw("DATE_FORMAT(" + ts + ", " + sqlQuote(pattern) + ")")
+	return t.raw("to_char(" + ts + ", " + sqlQuote(pattern) + ")")
 }
 
 func postgresDatePattern(format string) (string, bool) {
@@ -486,71 +440,6 @@ func postgresDatePattern(format string) (string, bool) {
 	return sb.String(), true
 }
 
-func mysqlDatePattern(format string) (string, bool) {
-	codes := map[rune]string{'Y': "%Y", 'm': "%m", 'd': "%d", 'H': "%H", 'M': "%i", 'S': "%s", 'j': "%j", '%': "%%"}
-	var sb strings.Builder
-	r := []rune(format)
-	for i := 0; i < len(r); i++ {
-		if r[i] == '%' {
-			if i+1 >= len(r) {
-				return "", false
-			}
-			code, ok := codes[r[i+1]]
-			if !ok {
-				return "", false
-			}
-			sb.WriteString(code)
-			i++
-			continue
-		}
-		sb.WriteRune(r[i])
-	}
-	return sb.String(), true
-}
-
-// concat rewrites a || b || c as CONCAT(a, b, c) for MySQL, where || is OR.
-// Only simple operands are handled: columns, literals, function calls and
-// parenthesized expressions. Anything else is left for the fallback.
-func (t *viewTranslator) concat(nodes []*sqlNode) []*sqlNode {
-	for {
-		op := -1
-		for i, n := range nodes {
-			if n.kind == sqlPunct && n.text == "||" {
-				op = i
-				break
-			}
-		}
-		if op < 0 {
-			return nodes
-		}
-
-		start, ok := operandStart(nodes, op)
-		if !ok {
-			return nodes
-		}
-		operands := []string{t.render(nodes[start:op])}
-		end := op
-		for {
-			s := nextNonSpace(nodes, end+1)
-			e, ok := operandEnd(nodes, s)
-			if !ok {
-				return nodes
-			}
-			operands = append(operands, t.render(nodes[s:e+1]))
-			end = e
-			if n := nextNonSpace(nodes, end+1); n >= 0 && nodes[n].kind == sqlPunct && nodes[n].text == "||" {
-				end = n
-				continue
-			}
-			break
-		}
-
-		replaced := append([]*sqlNode{}, nodes[:start]...)
-		replaced = append(replaced, t.raw("CONCAT("+strings.Join(operands, ", ")+")"))
-		nodes = append(replaced, nodes[end+1:]...)
-	}
-}
-
 func nextNonSpace(nodes []*sqlNode, i int) int {
 	for ; i >= 0 && i < len(nodes); i++ {
 		if nodes[i].kind != sqlSpace && nodes[i].kind != sqlComment {
@@ -558,66 +447,6 @@ func nextNonSpace(nodes []*sqlNode, i int) int {
 		}
 	}
 	return -1
-}
-
-func prevNonSpace(nodes []*sqlNode, i int) int {
-	for ; i >= 0 && i < len(nodes); i-- {
-		if nodes[i].kind != sqlSpace && nodes[i].kind != sqlComment {
-			return i
-		}
-	}
-	return -1
-}
-
-func isOperandName(n *sqlNode) bool {
-	return n.kind == sqlQuoted || (n.kind == sqlWord && !isSQLKeyword(n.text))
-}
-
-func isDot(n *sqlNode) bool {
-	return n.kind == sqlPunct && n.text == "."
-}
-
-// operandStart finds the first node of the operand left of nodes[op].
-func operandStart(nodes []*sqlNode, op int) (int, bool) {
-	p := prevNonSpace(nodes, op-1)
-	if p < 0 {
-		return 0, false
-	}
-	switch n := nodes[p]; {
-	case n.kind == sqlGroup:
-		if w := prevNonSpace(nodes, p-1); w >= 0 && nodes[w].kind == sqlWord && !isSQLKeyword(nodes[w].text) {
-			return w, true // function call
-		}
-		return p, true
-	case n.kind == sqlString || n.kind == sqlNumber || n.kind == sqlRaw:
-		return p, true
-	case isOperandName(n):
-		for p >= 2 && isDot(nodes[p-1]) && isOperandName(nodes[p-2]) {
-			p -= 2
-		}
-		return p, true
-	}
-	return 0, false
-}
-
-// operandEnd finds the last node of the operand starting at nodes[s].
-func operandEnd(nodes []*sqlNode, s int) (int, bool) {
-	if s < 0 {
-		return 0, false
-	}
-	switch n := nodes[s]; {
-	case n.kind == sqlGroup || n.kind == sqlString || n.kind == sqlNumber || n.kind == sqlRaw:
-		return s, true
-	case isOperandName(n):
-		if g := nextNonSpace(nodes, s+1); n.kind == sqlWord && g >= 0 && nodes[g].kind == sqlGroup {
-			return g, true // function call
-		}
-		for s+2 < len(nodes) && isDot(nodes[s+1]) && isOperandName(nodes[s+2]) {
-			s += 2
-		}
-		return s, true
-	}
-	return 0, false
 }
 
 var sqlKeywords = map[string]bool{
@@ -633,40 +462,4 @@ var sqlKeywords = map[string]bool{
 
 func isSQLKeyword(word string) bool {
 	return sqlKeywords[strings.ToLower(word)]
-}
-
-// like makes MySQL LIKE ignore case as SQLite does: text columns use a
-// binary collation, so a [NOT] LIKE b becomes LOWER(a) [NOT] LIKE LOWER(b).
-// Operands it cannot delimit are left for the fallback.
-func (t *viewTranslator) like(nodes []*sqlNode) []*sqlNode {
-	for i := 0; i < len(nodes); i++ {
-		n := nodes[i]
-		if n.kind != sqlWord || !strings.EqualFold(n.text, "like") {
-			continue
-		}
-
-		leftOf := i
-		not := ""
-		if p := prevNonSpace(nodes, i-1); p >= 0 && nodes[p].kind == sqlWord && strings.EqualFold(nodes[p].text, "not") {
-			leftOf = p
-			not = "NOT "
-		}
-		start, ok := operandStart(nodes, leftOf)
-		if !ok {
-			continue
-		}
-		s := nextNonSpace(nodes, i+1)
-		end, ok := operandEnd(nodes, s)
-		if !ok {
-			continue
-		}
-
-		left := t.render(nodes[start:leftOf])
-		right := t.render(nodes[s : end+1])
-		replaced := append([]*sqlNode{}, nodes[:start]...)
-		replaced = append(replaced, t.raw("LOWER("+left+") "+not+"LIKE LOWER("+right+")"))
-		i = len(replaced) - 1
-		nodes = append(replaced, nodes[end+1:]...)
-	}
-	return nodes
 }

@@ -14,11 +14,7 @@ import (
 
 // InitFileTables creates the shared host registry and durable, append-only file feed.
 func InitFileTables(app App) error {
-	driver := "postgres"
-	if asBaseApp(app).SQLDialect() == DialectMySQL {
-		driver = "mysql"
-	}
-	return ExecuteSchema(app, `CREATE TABLE IF NOT EXISTS {{_fileDeleteQueue}} ([[id]] VARCHAR(32) PRIMARY KEY, [[path]] TEXT NOT NULL);`+fileschema.Hosts(driver, "{{_fileHosts}}")+";"+fileschema.Changes(driver, "{{_fileChanges}}"))
+	return ExecuteSchema(app, `CREATE TABLE IF NOT EXISTS {{_fileDeleteQueue}} ([[id]] VARCHAR(32) PRIMARY KEY, [[path]] TEXT NOT NULL);`+fileschema.Hosts("{{_fileHosts}}")+";"+fileschema.Changes("{{_fileChanges}}"))
 }
 
 type FileChange struct {
@@ -82,7 +78,7 @@ func appendFileChanges(app App, changes []FileChange) error {
 			return err
 		}
 	}
-	if len(changes) > 0 && asBaseApp(app).SQLDialect() == DialectPostgres {
+	if len(changes) > 0 {
 		_, err := app.DB().NewQuery(`SELECT pg_notify('pb_file_changes', '')`).Execute()
 		return err
 	}

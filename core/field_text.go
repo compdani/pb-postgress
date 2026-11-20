@@ -167,9 +167,6 @@ func (f *TextField) ColumnType(app App) string {
 		return fieldColumnType(app, "VARCHAR(255) PRIMARY KEY NOT NULL")
 	}
 
-	if ba := asBaseApp(app); ba != nil && ba.SQLDialect() == DialectMySQL && f.Max > 255 {
-		return "TEXT DEFAULT ('') NOT NULL"
-	}
 	return fieldColumnType(app, "TEXT DEFAULT '' NOT NULL")
 }
 
@@ -216,15 +213,6 @@ func (f *TextField) ValidateValue(ctx context.Context, app App, record *Record) 
 					return validation.NewError("validation_pk_invalid", "The record primary key is invalid or already exists.")
 				}
 			}
-		}
-	}
-
-	// MySQL stores a text field without an explicit max as VARCHAR(255)
-	// (see ColumnType), so reject longer values here instead of failing or
-	// truncating in the database.
-	if f.Max == 0 && !f.PrimaryKey {
-		if err := validateMySQLVarchar(app, newVal); err != nil {
-			return err
 		}
 	}
 

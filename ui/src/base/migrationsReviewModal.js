@@ -208,13 +208,6 @@ function migrationsReviewModal(files) {
                                 "Uncheck a collection to skip its changes. Only collection changes are listed; record changes and raw SQL are not, and are not skipped.",
                             )
                             : null,
-                    () =>
-                        !data.isLoading && !data.preview && !data.error
-                            ? t.p(
-                                null,
-                                "A preview is only available on PostgreSQL, so the changes cannot be listed here.",
-                            )
-                            : null,
                 ),
             ),
             () => (data.error ? t.div({ className: "alert danger" }, data.error) : null),

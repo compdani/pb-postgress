@@ -141,11 +141,7 @@ func (r *RecordFieldResolver) Dialect() SQLDialect {
 
 // RowidSortExpr implements [search.RowidSortResolver].
 func (r *RecordFieldResolver) RowidSortExpr(direction string) (string, error) {
-	col := "id"
-	if r.dialect == DialectPostgres {
-		col = "id"
-	}
-	return fmt.Sprintf("[[%s]] %s", col, direction), nil
+	return fmt.Sprintf("[[id]] %s", direction), nil
 }
 
 // TokenFunctionsMap implements search.TokenFunctionsProvider.
@@ -153,31 +149,19 @@ func (r *RecordFieldResolver) TokenFunctionsMap() map[string]func(
 	argTokenResolverFunc func(fexpr.Token) (*search.ResolverResult, error),
 	args ...fexpr.Token,
 ) (*search.ResolverResult, error) {
-	if r.dialect == DialectPostgres {
-		return search.PostgresTokenFunctions
-	}
-	return search.MySQLTokenFunctions
+	return search.PostgresTokenFunctions
 }
 
 func (r *RecordFieldResolver) jsonEach(column string) string {
-	if r.dialect == DialectPostgres {
-		return dbutils.JSONEachPostgres(column)
-	}
-	return dbutils.JSONEachMySQL(column)
+	return dbutils.JSONEachPostgres(column)
 }
 
 func (r *RecordFieldResolver) jsonArrayLength(column string) string {
-	if r.dialect == DialectPostgres {
-		return dbutils.JSONArrayLengthPostgres(column)
-	}
-	return dbutils.JSONArrayLengthMySQL(column)
+	return dbutils.JSONArrayLengthPostgres(column)
 }
 
 func (r *RecordFieldResolver) jsonExtract(column, path string) string {
-	if r.dialect == DialectPostgres {
-		return dbutils.JSONExtractPostgres(column, path)
-	}
-	return dbutils.JSONExtractMySQL(column, path)
+	return dbutils.JSONExtractPostgres(column, path)
 }
 
 // @todo think of a better a way how to call it automatically after BuildExpr
@@ -656,8 +640,5 @@ func splitModifier(combined string) (string, string, error) {
 }
 
 func (r *RecordFieldResolver) jsonEachParameter(name string) string {
-	if r.dialect == DialectMySQL {
-		return "JSON_TABLE(CAST({:" + name + "} AS JSON), '$[*]' COLUMNS(value VARCHAR(4096) PATH '$'))"
-	}
 	return "LATERAL (SELECT jsonb_array_elements_text(CAST({:" + name + "} AS jsonb)) AS value)"
 }

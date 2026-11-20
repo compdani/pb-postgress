@@ -6,9 +6,6 @@ import "github.com/pocketbase/dbx"
 // a view or altering its source columns. The caller must restore inside the
 // same transaction, so incompatible definitions roll back the schema change.
 func detachDependentViews(app App, name string) (func() error, error) {
-	if app.SQLDialect() != DialectPostgres {
-		return func() error { return nil }, nil
-	}
 	var views []struct {
 		Name       string
 		Definition string
