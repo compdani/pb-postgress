@@ -213,37 +213,42 @@ func recordAuthWithSSO(e *core.RequestEvent, collection *core.Collection, form *
 		return err
 	}
 
-	invalidCode := func() error {
+	invalidCode := func(reason string) error {
+		logFailedSSO(e, collection, "code_exchange", "sso", reason)
 		return e.BadRequestError("Invalid, expired or already used sign-in code.", nil)
 	}
 
 	if form.Code == "" || !oauth2ServerPKCERegex.MatchString(form.CodeVerifier) {
-		return invalidCode()
+		return invalidCode("Missing code or invalid PKCE verifier.")
 	}
 
 	// validate everything before consuming, so that a wrong request can't burn
 	// the code of someone else (or of a registered client)
 	code, err := e.App.FindOAuth2CodeByCode(form.Code)
 	if err != nil {
-		return invalidCode()
+		return invalidCode("Unknown or already used sign-in code.")
 	}
 
 	// the code was issued for the frontend origin that listed the provider, and
 	// browsers always send the Origin header with this post
 	origin := normalizedOrigin(e.Request.Header.Get("Origin"))
-	if code.CollectionRef() != collection.Id ||
-		code.ClientId() != oauth2ServerPopupClientId ||
-		code.CodeChallenge() == "" ||
-		code.HasExpired(collection.OAuth2Server.CodeDurationTime()) ||
-		origin == "" || origin != code.Nonce() || // the origin is kept in the (otherwise unused) nonce
-		subtle.ConstantTimeCompare([]byte(code.RedirectURI()), []byte(form.RedirectURL)) != 1 {
-		return invalidCode()
+	switch {
+	case code.CollectionRef() != collection.Id || code.ClientId() != oauth2ServerPopupClientId:
+		return invalidCode("Sign-in code belongs to another collection or client.")
+	case code.CodeChallenge() == "":
+		return invalidCode("Sign-in code has no PKCE challenge.")
+	case code.HasExpired(collection.OAuth2Server.CodeDurationTime()):
+		return invalidCode("Sign-in code has expired.")
+	case origin == "" || origin != code.Nonce():
+		return invalidCode("Sign-in origin is missing or does not match.")
+	case subtle.ConstantTimeCompare([]byte(code.RedirectURI()), []byte(form.RedirectURL)) != 1:
+		return invalidCode("Sign-in redirect URL does not match.")
 	}
 
 	hash := sha256.Sum256([]byte(form.CodeVerifier))
 	challenge := base64.RawURLEncoding.EncodeToString(hash[:])
 	if subtle.ConstantTimeCompare([]byte(challenge), []byte(code.CodeChallenge())) != 1 {
-		return invalidCode()
+		return invalidCode("PKCE verification failed.")
 	}
 
 	// single use
@@ -252,12 +257,12 @@ func recordAuthWithSSO(e *core.RequestEvent, collection *core.Collection, form *
 		return e.InternalServerError("Failed to consume the sign-in code.", err)
 	}
 	if !consumed {
-		return invalidCode()
+		return invalidCode("Sign-in code was already used.")
 	}
 
 	record, err := e.App.FindRecordById(collection, code.RecordRef())
 	if err != nil {
-		return invalidCode()
+		return invalidCode("The sign-in account no longer exists.")
 	}
 
 	return RecordAuthResponse(e, record, core.MFAMethodOAuth2, map[string]any{"isNew": false})

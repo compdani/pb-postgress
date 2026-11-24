@@ -1602,6 +1602,11 @@ func getLoggerMinLevel(app App) slog.Level {
 var errLogWriteRetry = errors.New("retry the logs write with savepoints")
 
 func (app *BaseApp) initLogger() error {
+	instanceID, err := app.InstanceID()
+	if err != nil {
+		return fmt.Errorf("initialize log instance: %w", err)
+	}
+
 	var stopped atomic.Bool
 
 	duration := 3 * time.Second
@@ -1618,7 +1623,7 @@ func (app *BaseApp) initLogger() error {
 			for _, l := range logs {
 				// a new model per log, since the model hooks queued until the
 				// transaction ends keep a reference to it
-				model := &Log{}
+				model := &Log{InstanceID: instanceID}
 				model.MarkAsNew()
 				model.Id = GenerateDefaultRandomId()
 				model.Level = int(l.Level)
@@ -1777,7 +1782,7 @@ func (app *BaseApp) initLogger() error {
 				"date":  createdBefore.String(),
 				"level": e.App.Settings().Logs.MinLevel,
 			})
-			_, err = e.App.AuxNonconcurrentDB().Delete((&Log{}).TableName(), expr).Execute()
+			_, err = e.App.AuxNonconcurrentDB().Delete((&Log{}).TableName(), dbx.And(LogInstanceScope(e.App), expr)).Execute()
 			if err != nil {
 				e.App.Logger().Debug("Failed to cleanup old logs", "error", err)
 			}

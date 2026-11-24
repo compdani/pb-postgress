@@ -26,7 +26,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func recordAuthWithOAuth2(e *core.RequestEvent) error {
+func recordAuthWithOAuth2(e *core.RequestEvent) (resultErr error) {
 	collection, err := findAuthCollection(e)
 	if err != nil {
 		return err
@@ -36,6 +36,7 @@ func recordAuthWithOAuth2(e *core.RequestEvent) error {
 
 	form := new(recordOAuth2LoginForm)
 	form.collection = collection
+	defer func() { logFailedSSOError(e, collection, "code_exchange", form.Provider, resultErr) }()
 	if err = e.BindBody(form); err != nil {
 		return firstApiError(err, e.BadRequestError("An error occurred while loading the submitted data.", err))
 	}

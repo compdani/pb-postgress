@@ -272,6 +272,25 @@ function logsSettingsModal(modalSettings) {
                                 { className: "field" },
                                 t.input({
                                     type: "checkbox",
+                                    id: "logs.logFailedSSO",
+                                    name: "logs.logFailedSSO",
+                                    className: "switch",
+                                    checked: () => data.formSettings.logs.logFailedSSO,
+                                    onchange: (e) => (data.formSettings.logs.logFailedSSO = e.target.checked),
+                                }),
+                                t.label({ htmlFor: "logs.logFailedSSO" }, "Enable failed SSO login logging"),
+                                t.div(
+                                    { className: "help" },
+                                    "Record SSO failure reasons as warnings in Logs. Requires log retention and a minimum log level of WARN or lower. Passwords, codes and tokens are excluded.",
+                                ),
+                            ),
+                        ),
+                        t.div(
+                            { className: "col-lg-12" },
+                            t.field(
+                                { className: "field" },
+                                t.input({
+                                    type: "checkbox",
                                     id: "logs.logIP",
                                     name: "logs.logIP",
                                     className: "switch",

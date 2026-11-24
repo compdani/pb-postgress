@@ -114,6 +114,10 @@ func StubMFARecords(app core.App) error {
 }
 
 func StubLogsData(app *TestApp) error {
+	instanceID, err := app.InstanceID()
+	if err != nil {
+		return err
+	}
 	return app.RunInTransaction(func(tx core.App) error {
 		if _, err := tx.DB().Delete("_logs", nil).Execute(); err != nil {
 			return err
@@ -122,6 +126,7 @@ func StubLogsData(app *TestApp) error {
 			{"id": "873f2133-9f38-44fb-bf82-c8f53b310d91", "level": 0, "message": "test_message1", "data": `{"status":200}`, "created": "2022-05-01 10:00:00.123Z"},
 			{"id": "f2133873-44fb-9f38-bf82-c918f53b310d", "level": 8, "message": "test_message2", "data": `{"status":400}`, "created": "2022-05-02 10:00:00.123Z"},
 		} {
+			row["instanceId"] = instanceID
 			if _, err := tx.DB().Insert("_logs", row).Execute(); err != nil {
 				return err
 			}

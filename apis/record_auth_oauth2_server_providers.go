@@ -150,6 +150,7 @@ func oauth2ServerProviderStart(
 	providerName string,
 ) error {
 	unavailable := func() error {
+		logFailedSSO(e, collection, "provider_start", providerName, "This sign-in option is not available.")
 		return renderOAuth2ServerLoginPage(e, http.StatusBadRequest, collection, client, params, "", "This sign-in option is not available.")
 	}
 
@@ -208,8 +209,10 @@ func oauth2ServerProviderStart(
 // oauth2ServerProviderCallback completes the provider sign-in started from the hosted page.
 //
 // It is called by the "/api/oauth2-redirect" handler.
-func oauth2ServerProviderCallback(e *core.RequestEvent, sessionId string, data oauth2RedirectData) error {
+func oauth2ServerProviderCallback(e *core.RequestEvent, sessionId string, data oauth2RedirectData) (resultErr error) {
+	defer func() { logFailedSSOError(e, nil, "provider_callback", "", resultErr) }()
 	invalid := func(reason string) error {
+		logFailedSSO(e, nil, "provider_callback", "", reason)
 		e.App.Logger().Debug("Invalid hosted page OAuth2 redirect", "reason", reason, "sessionId", sessionId)
 
 		return renderOAuth2ServerPage(e, http.StatusBadRequest, oauth2ServerPageData{
@@ -270,10 +273,19 @@ func oauth2ServerProviderCallback(e *core.RequestEvent, sessionId string, data o
 	}
 
 	loginFailed := func(message string) error {
+		logFailedSSO(e, collection, "provider_callback", pending.Provider, message)
 		return renderOAuth2ServerLoginPage(e, http.StatusBadRequest, collection, client, pending.Params, "", message)
 	}
 
 	if data.Error != "" || data.Code == "" {
+		reason := "Provider sign-in failed or returned no authorization code."
+		// Keep only standard error codes, never arbitrary provider response text.
+		switch data.Error {
+		case "access_denied", "invalid_request", "unauthorized_client", "unsupported_response_type", "invalid_scope", "server_error", "temporarily_unavailable", "login_required", "interaction_required", "consent_required":
+			reason = "Provider returned OAuth2 error: " + data.Error
+		}
+		logFailedSSO(e, collection, "provider_callback", pending.Provider, reason)
+
 		return loginFailed("The sign-in with " + providerLabel + " was canceled or failed.")
 	}
 
@@ -331,6 +343,7 @@ func oauth2ServerProviderCallback(e *core.RequestEvent, sessionId string, data o
 		return loginFailed(blocked)
 	}
 	if err != nil || record == nil {
+		logFailedSSOError(e, collection, "provider_callback", pending.Provider, err)
 		e.App.Logger().Debug("Failed hosted page OAuth2 sign-in", "error", err, "provider", pending.Provider)
 
 		return loginFailed("The sign-in with " + providerLabel + " failed.")

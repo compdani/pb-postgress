@@ -24,7 +24,7 @@ func bindLogsApi(app core.App, rg *router.RouterGroup[*core.RequestEvent]) {
 }
 
 var logFilterFields = []string{
-	"id", "created", "level", "message", "data",
+	"id", "instanceId", "created", "level", "message", "data",
 	`^data\.[\w\.\:]*\w+$`,
 }
 
@@ -69,7 +69,7 @@ func logsList(e *core.RequestEvent) error {
 	fieldResolver := &logFieldResolver{search.NewSimpleFieldResolver(logFilterFields...)}
 
 	result, err := search.NewProvider(fieldResolver).
-		Query(e.App.AuxModelQuery(&core.Log{})).
+		Query(e.App.LogQuery()).
 		ParseAndExec(e.Request.URL.Query().Encode(), &[]*core.Log{})
 
 	if err != nil {
@@ -117,7 +117,7 @@ func logsView(e *core.RequestEvent) error {
 
 func logsTruncate(e *core.RequestEvent) error {
 	// delete all rows directly (aka. no model hooks will be fired)
-	_, err := e.App.AuxNonconcurrentDB().Delete((&core.Log{}).TableName(), nil).Execute()
+	_, err := e.App.AuxNonconcurrentDB().Delete((&core.Log{}).TableName(), core.LogInstanceScope(e.App)).Execute()
 	if err != nil {
 		return e.InternalServerError("Failed to truncate all logs.", err)
 	}

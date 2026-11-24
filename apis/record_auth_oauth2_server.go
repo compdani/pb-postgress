@@ -231,7 +231,8 @@ func oauth2ServerRedirectURL(redirectURI string, params map[string]string) strin
 	return u.String()
 }
 
-func oauth2ServerAuthorizePage(e *core.RequestEvent) error {
+func oauth2ServerAuthorizePage(e *core.RequestEvent) (resultErr error) {
+	defer func() { logFailedSSOError(e, nil, "authorize", "", resultErr) }()
 	collection, err := findOAuth2ServerCollection(e)
 	if err != nil {
 		return err
@@ -321,7 +322,8 @@ func isOAuth2ServerSameSitePost(e *core.RequestEvent) bool {
 	return true
 }
 
-func oauth2ServerAuthorizeSubmit(e *core.RequestEvent) error {
+func oauth2ServerAuthorizeSubmit(e *core.RequestEvent) (resultErr error) {
+	defer func() { logFailedSSOError(e, nil, "authorize", "", resultErr) }()
 	collection, err := findOAuth2ServerCollection(e)
 	if err != nil {
 		return err
@@ -330,6 +332,7 @@ func oauth2ServerAuthorizeSubmit(e *core.RequestEvent) error {
 	// the forms are posted by the hosted page itself; a cross-site post could otherwise
 	// start a provider sign-in (and get a code back) without the user seeing the page
 	if !isOAuth2ServerSameSitePost(e) {
+		logFailedSSO(e, collection, "authorize", "", "The sign-in form must be submitted from this page.")
 		return renderOAuth2ServerPage(e, http.StatusForbidden, oauth2ServerPageData{
 			AppName:    e.App.Settings().Meta.AppName,
 			ErrorTitle: "Invalid sign-in request",
@@ -348,6 +351,7 @@ func oauth2ServerAuthorizeSubmit(e *core.RequestEvent) error {
 	}
 
 	loginFailed := func(message string) error {
+		logFailedSSO(e, collection, "authorize", "", message)
 		return renderOAuth2ServerLoginPage(e, http.StatusBadRequest, collection, client, form.oauth2ServerAuthorizeParams, form.Identity, message)
 	}
 
@@ -462,6 +466,7 @@ func oauth2ServerCompleteSignIn(
 		return err
 	}
 	if message != "" {
+		logFailedSSO(e, collection, "authorize", authMethod, message)
 		return renderOAuth2ServerLoginPage(e, http.StatusBadRequest, collection, client, params, identity, message)
 	}
 
@@ -513,6 +518,7 @@ func oauth2ServerPasskeyOffer(e *core.RequestEvent, collection *core.Collection,
 }
 
 func oauth2ServerAuthorizeFailure(e *core.RequestEvent, collection *core.Collection, params oauth2ServerAuthorizeParams, authErr *oauth2ServerAuthorizeError) error {
+	logFailedSSO(e, collection, "authorize", "", authErr.description)
 	if authErr.redirect {
 		return e.Redirect(http.StatusSeeOther, oauth2ServerRedirectURL(params.RedirectURI, map[string]string{
 			"error":             authErr.code,
@@ -572,13 +578,15 @@ type oauth2ServerTokenForm struct {
 }
 
 func oauth2ServerTokenError(e *core.RequestEvent, status int, code string, description string) error {
+	logFailedSSO(e, nil, "token", "", description)
 	return e.JSON(status, map[string]string{
 		"error":             code,
 		"error_description": description,
 	})
 }
 
-func oauth2ServerToken(e *core.RequestEvent) error {
+func oauth2ServerToken(e *core.RequestEvent) (resultErr error) {
+	defer func() { logFailedSSOError(e, nil, "token", "", resultErr) }()
 	e.Response.Header().Set("Cache-Control", "no-store")
 	e.Response.Header().Set("Pragma", "no-cache")
 

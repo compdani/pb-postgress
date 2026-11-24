@@ -7,9 +7,23 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
-// LogQuery returns a new Log select query.
+// LogInstanceScope restricts logs to the current instance. Unattributed
+// historical logs are excluded. Identity lookup failures never broaden access.
+func LogInstanceScope(app App) dbx.Expression {
+	base := AsBaseApp(app)
+	if base == nil {
+		return dbx.NewExp("1=0")
+	}
+	id, err := base.InstanceID()
+	if err != nil || id == "" {
+		return dbx.NewExp("1=0")
+	}
+	return dbx.HashExp{"instanceId": id}
+}
+
+// LogQuery returns a new Log select query scoped to the current instance.
 func (app *BaseApp) LogQuery() *dbx.SelectQuery {
-	return app.AuxModelQuery(&Log{})
+	return app.AuxModelQuery(&Log{}).AndWhere(LogInstanceScope(app))
 }
 
 // FindLogById finds a single Log entry by its id.
@@ -76,7 +90,7 @@ func (app *BaseApp) LogsStats(expr dbx.Expression) ([]*LogsStatsItem, error) {
 // aka. no delete model hook events will be fired.
 func (app *BaseApp) DeleteOldLogs(createdBefore time.Time) error {
 	formattedDate := createdBefore.UTC().Format(types.DefaultDateLayout)
-	expr := dbx.NewExp("[[created]] <= {:date}", dbx.Params{"date": formattedDate})
+	expr := dbx.And(LogInstanceScope(app), dbx.NewExp("[[created]] <= {:date}", dbx.Params{"date": formattedDate}))
 
 	_, err := app.auxNonconcurrentDB.Delete((&Log{}).TableName(), expr).Execute()
 

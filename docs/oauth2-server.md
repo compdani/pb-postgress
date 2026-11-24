@@ -106,3 +106,11 @@ Notes:
 - `prompt=none` (silent sign-in) is not supported by the popup, so the user is always asked.
 - Accounts that require MFA can't sign in this way, because the sign-in page has no second step.
 
+
+### Failed sign-in logs
+
+In the dashboard, open **Logs → Settings** and enable **Enable failed SSO login logging**. Set log retention above zero and the minimum level to **WARN** or lower. The option defaults to off.
+
+Failed hosted sign-ins, OAuth2 provider callbacks, and code exchanges produce warning entries named `SSO login failed`, with `data.type = "sso_login_failure"`, a stage, a reason, and collection/provider details when available. These entries exclude submitted credentials, authorization codes, tokens, and raw provider responses. IP addresses follow the existing IP logging option. Closing a popup before it reaches the server cannot produce a server failure log.
+
+All logs belong to the instance identified by the local `db.json` instance ID. The Logs API, statistics, deletion, and retention cleanup operate on that instance only, including when instances share a database. Existing logs without an instance ID remain stored but are excluded from instance views because their source cannot be determined reliably.

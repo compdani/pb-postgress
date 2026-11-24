@@ -25,6 +25,8 @@ const (
 type Log struct {
 	BaseModel
 
+	InstanceID string `db:"instanceId" json:"instanceId"`
+
 	Created types.DateTime     `db:"created" json:"created"`
 	Data    types.JSONMap[any] `db:"data" json:"data"`
 	Message string             `db:"message" json:"message"`
@@ -40,10 +42,19 @@ func (m *Log) TableName() string {
 // It also truncates the log's message and data to ensure that it is
 // under app.Settings().Logs.MaxDataSize.
 func (m *Log) DBExport(app App) (map[string]any, error) {
+	if m.InstanceID == "" {
+		id, err := AsBaseApp(app).InstanceID()
+		if err != nil {
+			return nil, err
+		}
+		m.InstanceID = id
+	}
+
 	result := map[string]any{
-		"id":      m.Id,
-		"created": m.Created,
-		"level":   m.Level,
+		"id":         m.Id,
+		"instanceId": m.InstanceID,
+		"created":    m.Created,
+		"level":      m.Level,
 	}
 
 	// PostgreSQL text columns reject invalid UTF-8 and NUL bytes (SQLite

@@ -598,6 +598,9 @@ func (c MetaConfig) Validate() error {
 // -------------------------------------------------------------------
 
 type LogsConfig struct {
+	// LogFailedSSO enables structured warning logs for failed SSO sign-ins.
+	LogFailedSSO bool `form:"logFailedSSO" json:"logFailedSSO"`
+
 	// MaxDataSize specifies the maximum allowed serialized log data
 	// size before it gets truncated (see [Log.DBExport]).
 	//
